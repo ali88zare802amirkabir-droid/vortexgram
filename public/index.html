@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VORTEXGRAM // 2126</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== AUTH ===== -->
+  <div id="auth-screen">
+    <div class="auth-box">
+      <h1 class="brand">VORTEX<span>GRAM</span></h1>
+      <p class="tagline">// پروتکل گیمینگ ۲۱۲۶ — با هوش مصنوعی Vortex</p>
+      <div class="tabs">
+        <button id="tab-login" class="tab active">ورود</button>
+        <button id="tab-register" class="tab">ثبت‌نام</button>
+      </div>
+      <input id="auth-username" type="text" placeholder="نام کاربری (انگلیسی)" maxlength="20" autocomplete="username" />
+      <input id="auth-password" type="password" placeholder="رمز عبور" maxlength="60" autocomplete="current-password" />
+      <button id="auth-submit">ورود به آرنا</button>
+      <p id="auth-error" class="auth-error"></p>
+    </div>
+  </div>
+
+  <!-- ===== APP ===== -->
+  <div id="app" class="hidden">
+    <aside id="sidebar">
+      <header class="side-head">
+        <h2 class="brand small">VX<span>//2126</span></h2>
+        <button id="profile-btn" class="icon-btn" title="پروفایل من">
+          <span id="my-avatar" class="avatar sm"></span>
+        </button>
+        <button id="admin-btn" class="icon-btn hidden" title="پنل ادمین">⚙</button>
+      </header>
+      <div class="room-tabs">
+        <button id="room-general" class="room-tab active">🌐 گروه عمومی</button>
+      </div>
+      <div class="dm-head">PLAYERS ONLINE</div>
+      <ul id="user-list"></ul>
+    </aside>
+
+    <main id="chat-area">
+      <header id="chat-header">
+        <strong id="chat-title">گروه عمومی</strong>
+        <span id="typing-indicator" class="hidden"></span>
+      </header>
+      <div id="messages"></div>
+      <div class="composer">
+        <button id="emoji-btn" class="icon-btn" title="ایموجی">🙂</button>
+        <button id="sticker-btn" class="icon-btn" title="استیکر">🎴</button>
+        <button id="attach-btn" class="icon-btn" title="ارسال فایل">📎</button>
+        <input id="file-input" type="file" hidden />
+        <input id="msg-input" type="text" placeholder="پیام خود را مخابره کن..." maxlength="4000" autocomplete="off" />
+        <button id="send-btn" class="send-btn">SEND</button>
+      </div>
+      <div id="emoji-picker" class="picker hidden"></div>
+      <div id="sticker-picker" class="picker hidden"></div>
+    </main>
+  </div>
+
+  <!-- ===== PROFILE MODAL ===== -->
+  <div id="profile-modal" class="modal hidden">
+    <div class="modal-box">
+      <button class="modal-close" data-close="profile-modal">✕</button>
+      <h3>پروفایل من</h3>
+      <label>نام نمایشی (تغییر نیاز به تایید ادمین دارد)</label>
+      <div class="row">
+        <input id="rename-input" type="text" maxlength="25" />
+        <button id="rename-btn" class="mini-btn">ثبت درخواست</button>
+      </div>
+      <p id="rename-status" class="hint"></p>
+      <hr />
+      <button id="logout-btn" class="danger-btn">خروج از حساب</button>
+    </div>
+  </div>
+
+  <!-- ===== ADMIN MODAL ===== -->
+  <div id="admin-modal" class="modal hidden">
+    <div class="modal-box wide">
+      <button class="modal-close" data-close="admin-modal">✕</button>
+      <h3>پنل ادمین</h3>
+      <h4>درخواست‌های تغییر نام</h4>
+      <ul id="admin-requests" class="admin-list"></ul>
+      <h4>کاربران</h4>
+      <ul id="admin-users" class="admin-list"></ul>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

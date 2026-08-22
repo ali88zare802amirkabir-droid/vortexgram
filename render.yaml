@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: fake-telegram
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 1458
