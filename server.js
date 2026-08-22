@@ -1,4 +1,4 @@
-const path = require('path');
+﻿const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
@@ -15,15 +15,16 @@ for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('
 const { chatCompletion } = require('./ai/groq');
 const prompts = require('./ai/prompts');
 
-const BOT_USERNAME = 'vortex_bot';
-const BOT_NAME = 'Vortex AI';
-
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const MAX_MSG_LEN = 4000;
 const HISTORY_LIMIT = 200;
+const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+
+const BOT_USERNAME = 'vortex_bot';
+const BOT_NAME = 'Vortex AI';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -42,112 +43,44 @@ function saveDB() {
   }, 250);
 }
 
+// ---------- sessions / security ----------
 const sessions = new Map();
 const online = new Map();
 const msgTimestamps = new Map();
+const loginFails = new Map();
 
-function hash(pw, salt) {
-  return crypto.createHash('sha256').update(salt + ':' + pw).digest('hex');
-}
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
+}
+function createSession(username) {
+  const token = newToken();
+  sessions.set(token, { username, exp: Date.now() + SESSION_TTL });
+  return token;
+}
+function getSession(token) {
+  const s = token && sessions.get(token);
+  if (!s || s.exp < Date.now()) return null;
+  return s.username;
+}
+function hash(pw, salt) {
+  return crypto.createHash('sha256').update(salt + ':' + pw).digest('hex');
 }
 function publicUser(u) {
   return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned };
 }
-function roomKey(a, b) {
-  return 'dm:' + [a, b].sort().join('|');
-}
-
-// ---------- AI chat (پورت از ربات clan) ----------
-const RUDE_WORDS = [
-  "بی\u200cادب", "عوضی", "احمق", "حماق", "گمشو", "برو گمشو", "خجالت",
-  "بی\u200cناموس", "پست", "نکبت", "کثافت", "تو حیوانی", "میکشمت",
-  "دهنتو ببند", "خفه شو", "خفه", "بسته", "کره خر",
-  "الاغ", "گاو", "سگ", "نفهم", "بی\u200cسواد", "بی\u200cشعور",
-  "حرومزاده", "ناموس",
-];
-const aiState = {
-  history: new Map(),
-  enabled: new Map(),
-  aggression: new Map(),
-  lastReply: new Map(),
-};
-const AI_MIN_INTERVAL = 5000;
-const AI_MAX_HISTORY = 20;
-
-function isRude(text) {
-  const lower = (text || '').toLowerCase();
-  return RUDE_WORDS.some((w) => lower.includes(w));
-}
-function storeHistory(roomId, senderName, text) {
-  if (!text || !text.trim()) return;
-  if (!aiState.history.has(roomId)) aiState.history.set(roomId, []);
-  const arr = aiState.history.get(roomId);
-  arr.push(`${senderName}: ${text.slice(0, 100)}`);
-  if (arr.length > AI_MAX_HISTORY) aiState.history.set(roomId, arr.slice(-AI_MAX_HISTORY));
-}
-async function maybeAiReply(roomId, user, rawText) {
-  try {
-    if (!process.env.GROQ_API_KEYS_STR) return;
-    const isDmWithBot = roomId === `dm:${[user.username, BOT_USERNAME].sort().join('|')}`;
-    const enabled = aiState.enabled.get(roomId) !== false;
-    const text = (rawText || '').trim();
-
-    let triggered = isDmWithBot;
-    if (!triggered && enabled) {
-      triggered =
-        text.includes('ربات') ||
-        /vortex/i.test(text) ||
-        isRude(text);
-    }
-    if (!triggered) { storeHistory(roomId, user.displayName, text); return; }
-
-    // دستورات ادمین
-    if (text === 'خاموش' && user.isAdmin && !isDmWithBot) {
-      aiState.enabled.set(roomId, false);
-      broadcast({ type: 'message', message: botMsg(roomId, 'خاموش شدم 🔇') });
-      return;
-    }
-    if (text === 'روشن' && user.isAdmin) {
-      aiState.enabled.set(roomId, true);
-      broadcast({ type: 'message', message: botMsg(roomId, 'روشن شدم ✅') });
-      return;
-    }
-    if ((text === 'تندتر' || text === 'آروم\u200cتر' || text === 'اروم تر') && !isDmWithBot) {
-      const cur = aiState.aggression.get(roomId) ?? 1;
-      const next = text.includes('تند') ? Math.min(2, cur + 1) : Math.max(0, cur - 1);
-      aiState.aggression.set(roomId, next);
-      const levels = ['آروم\u200cتر 😌', 'عادی 😊', 'تند 🔥'];
-      broadcast({ type: 'message', message: botMsg(roomId, `سطح تندی: ${levels[next]}`) });
-      return;
-    }
-
-    const now = Date.now();
-    if (now - (aiState.lastReply.get(roomId) || 0) < AI_MIN_INTERVAL) { storeHistory(roomId, user.displayName, text); return; }
-
-    const clean = text.replace(new RegExp(`@?${BOT_USERNAME}`, 'gi'), '').replace(/ربات/g, '').replace(/[:،]/g, '').trim() || text;
-    storeHistory(roomId, user.displayName, text);
-    const history = (aiState.history.get(roomId) || []).slice(0, -1);
-    const msgs = prompts.buildMessages(clean, history, user.username, isRude(text), !!user.isAdmin, aiState.aggression.get(roomId) ?? 1);
-
-    broadcast({ type: 'ai-thinking', roomId });
-    const reply = await chatCompletion(msgs);
-    aiState.lastReply.set(roomId, Date.now());
-    if (!reply) return;
-    broadcast({ type: 'message', message: botMsg(roomId, reply) });
-  } catch (e) {
-    console.error('AI reply failed:', e.message);
-  }
-}
-function botMsg(roomId, content) {
-  return {
-    id: crypto.randomUUID(), roomId, from: BOT_USERNAME, fromName: BOT_NAME,
-    kind: 'text', content, time: Date.now(),
-  };
+function isDmAllowed(roomId, username) {
+  if (typeof roomId !== 'string' || !roomId.startsWith('dm:')) return false;
+  return roomId.slice(3).split('|').includes(username);
 }
 
 const app = express();
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -169,25 +102,34 @@ app.post('/api/register', (req, res) => {
   };
   db.users.push(user);
   saveDB();
-  const token = newToken();
-  sessions.set(token, user.username);
+  const token = createSession(user.username);
   res.json({ token, me: publicUser(user) });
 });
 
 app.post('/api/login', (req, res) => {
+  const ip = req.socket.remoteAddress || '?';
+  const rec = loginFails.get(ip) || { count: 0, resetAt: 0 };
+  if (rec.count >= 5 && Date.now() < rec.resetAt) {
+    return res.status(429).json({ error: 'تلاش‌های زیاد؛ ۱۰ دقیقه دیگر امتحان کن' });
+  }
   const { username, password } = req.body || {};
   const user = db.users.find((u) => u.username.toLowerCase() === String(username || '').toLowerCase());
-  if (!user || user.passHash !== hash(String(password || ''), user.salt)) return res.status(401).json({ error: 'نام کاربری یا رمز اشتباه است' });
+  if (!user || user.passHash !== hash(String(password || ''), user.salt)) {
+    rec.count++;
+    rec.resetAt = Date.now() + 10 * 60 * 1000;
+    loginFails.set(ip, rec);
+    return res.status(401).json({ error: 'نام کاربری یا رمز اشتباه است' });
+  }
   if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
-  const token = newToken();
-  sessions.set(token, user.username);
+  loginFails.delete(ip);
+  const token = createSession(user.username);
   res.json({ token, me: publicUser(user) });
 });
 
 function auth(req, res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  const username = token && sessions.get(token);
+  const username = getSession(token);
   const user = username && db.users.find((u) => u.username === username);
   if (!user || user.banned) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
   req.user = user;
@@ -309,7 +251,7 @@ wss.on('connection', (ws) => {
     try { data = JSON.parse(raw.toString()); } catch { return; }
 
     if (data.type === 'auth') {
-      const uname = sessions.get(data.token);
+      const uname = getSession(data.token);
       const user = uname && db.users.find((u) => u.username === uname);
       if (!user || user.banned) return wsSend(ws, { type: 'auth-failed' });
       username = user.username;
@@ -322,10 +264,7 @@ wss.on('connection', (ws) => {
 
     if (data.type === 'history') {
       const roomId = String(data.roomId || '').slice(0, 100);
-      if (roomId.startsWith('dm:')) {
-        const parts = roomId.slice(3).split('|');
-        if (!parts.includes(username)) return;
-      }
+      if (!isDmAllowed(roomId, username)) return;
       const msgs = (db.messages[roomId] || []).slice(-100);
       wsSend(ws, { type: 'history', roomId, messages: msgs });
       return;
@@ -341,11 +280,7 @@ wss.on('connection', (ws) => {
       const user = db.users.find((u) => u.username === username);
       if (!user || user.banned) return;
       const roomId = String(data.roomId || '').slice(0, 100);
-      if (!roomId) return;
-      if (roomId.startsWith('dm:')) {
-        const parts = roomId.slice(3).split('|');
-        if (!parts.includes(username)) return;
-      }
+      if (!isDmAllowed(roomId, username)) return;
       const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file'].includes(data.kind) ? data.kind : 'text';
       let content = String(data.content ?? '').slice(0, MAX_MSG_LEN);
       if (kind !== 'text' && kind !== 'sticker') {
@@ -379,4 +314,69 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(PORT, () => console.log(`fake-telegram on http://localhost:${PORT}`));
+// ---------- AI chat (پورت از ربات clan) ----------
+const RUDE_WORDS = [
+  "بی\u200cادب", "عوضی", "احمق", "حماق", "گمشو", "برو گمشو", "خجالت",
+  "بی\u200cناموس", "پست", "نکبت", "کثافت", "تو حیوانی", "میکشمت",
+  "دهنتو ببند", "خفه شو", "خفه", "بسته", "کره خر",
+  "الاغ", "گاو", "سگ", "نفهم", "بی\u200cسواد", "بی\u200cشعور",
+  "حرومزاده", "ناموس",
+];
+const aiState = {
+  history: new Map(),
+  aggression: new Map(),
+  lastReply: new Map(),
+};
+const AI_MIN_INTERVAL = 5000;
+const AI_MAX_HISTORY = 20;
+
+function isRude(text) {
+  const lower = (text || '').toLowerCase();
+  return RUDE_WORDS.some((w) => lower.includes(w));
+}
+function storeHistory(roomId, senderName, text) {
+  if (!text || !text.trim()) return;
+  if (!aiState.history.has(roomId)) aiState.history.set(roomId, []);
+  const arr = aiState.history.get(roomId);
+  arr.push(`${senderName}: ${text.slice(0, 100)}`);
+  if (arr.length > AI_MAX_HISTORY) aiState.history.set(roomId, arr.slice(-AI_MAX_HISTORY));
+}
+async function maybeAiReply(roomId, user, rawText) {
+  try {
+    if (!process.env.GROQ_API_KEYS_STR) return;
+    const text = (rawText || '').trim();
+
+    if ((text === 'تندتر' || text === 'آروم\u200cتر' || text === 'اروم تر')) {
+      const cur = aiState.aggression.get(roomId) ?? 1;
+      const next = text.includes('تند') ? Math.min(2, cur + 1) : Math.max(0, cur - 1);
+      aiState.aggression.set(roomId, next);
+      const levels = ['آروم\u200cتر 😌', 'عادی 😊', 'تند 🔥'];
+      broadcast({ type: 'message', message: botMsg(roomId, `سطح تندی: ${levels[next]}`) });
+      return;
+    }
+
+    const now = Date.now();
+    if (now - (aiState.lastReply.get(roomId) || 0) < AI_MIN_INTERVAL) { storeHistory(roomId, user.displayName, text); return; }
+
+    const clean = text.replace(new RegExp(`@?${BOT_USERNAME}`, 'gi'), '').replace(/ربات/g, '').replace(/[:،]/g, '').trim() || text;
+    storeHistory(roomId, user.displayName, text);
+    const history = (aiState.history.get(roomId) || []).slice(0, -1);
+    const msgs = prompts.buildMessages(clean, history, user.username, isRude(text), !!user.isAdmin, aiState.aggression.get(roomId) ?? 1);
+
+    notifyUser(user.username, { type: 'ai-thinking', roomId });
+    const reply = await chatCompletion(msgs);
+    aiState.lastReply.set(roomId, Date.now());
+    if (!reply) return;
+    broadcast({ type: 'message', message: botMsg(roomId, reply) });
+  } catch (e) {
+    console.error('AI reply failed:', e.message);
+  }
+}
+function botMsg(roomId, content) {
+  return {
+    id: crypto.randomUUID(), roomId, from: BOT_USERNAME, fromName: BOT_NAME,
+    kind: 'text', content, time: Date.now(),
+  };
+}
+
+server.listen(PORT, () => console.log(`vortexgram on http://localhost:${PORT}`));

@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('ft_token') || null,
   me: null,
-  room: 'general',
+  room: null,
   users: [],
   ws: null,
   typingTimer: null,
@@ -82,7 +82,6 @@ function enterApp() {
   $('admin-btn').classList.toggle('hidden', !state.me.isAdmin);
   renderMyAvatar();
   connectWS();
-  openRoom('general', 'گروه عمومی');
 }
 
 function logout() {
@@ -100,7 +99,7 @@ function connectWS() {
   state.ws.onmessage = (ev) => {
     const d = JSON.parse(ev.data);
     switch (d.type) {
-      case 'users': state.users = d.users; renderUsers(); break;
+      case 'users': state.users = d.users; renderUsers(); showEmptyHint(); break;
       case 'history':
         if (d.roomId !== state.room) break;
         $('messages').innerHTML = '';
@@ -154,18 +153,16 @@ function initial(name) { return (name || '?').trim().charAt(0).toUpperCase(); }
 
 function renderMyAvatar() {
   $('my-avatar').textContent = initial(state.me.displayName || state.me.username);
-  $('room-general').classList.toggle('active', state.room === 'general');
 }
 
 function openRoom(roomId, title) {
   state.room = roomId;
   $('chat-title').textContent = title;
   $('messages').innerHTML = '';
+  $('empty-hint')?.remove();
   state.lastDay = null;
-  $('room-general').classList.toggle('active', roomId === 'general');
   state.ws.send(JSON.stringify({ type: 'history', roomId }));
 }
-$('room-general').onclick = () => openRoom('general', 'گروه عمومی');
 
 /* ================= MESSAGES ================= */
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
@@ -204,8 +201,19 @@ function addMessage(m) {
 
 function scrollBottom() { const el = $('messages'); el.scrollTop = el.scrollHeight; }
 
+function showEmptyHint() {
+  if (state.room || $('messages').children.length) return;
+  if ($('empty-hint')) return;
+  const div = document.createElement('div');
+  div.id = 'empty-hint';
+  div.className = 'system-note';
+  div.textContent = 'برای شروع، از لیست کنار یک نفر (یا Vortex AI) را انتخاب کن 👋';
+  $('messages').appendChild(div);
+}
+
 /* ================= SENDING ================= */
 function send(obj) {
+  if (!state.room) return;
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ ...obj, roomId: state.room }));
 }
 
