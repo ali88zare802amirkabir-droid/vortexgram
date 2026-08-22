@@ -4,11 +4,14 @@ const state = {
   token: localStorage.getItem('ft_token') || null,
   me: null,
   room: null,
+  roomTitle: '',
   users: [],
+  groups: [],
   ws: null,
   typingTimer: null,
   typingHide: null,
   lastDay: null,
+  call: null,
 };
 
 const BOT_USERNAME = 'vortex_bot';
@@ -100,6 +103,33 @@ function connectWS() {
     const d = JSON.parse(ev.data);
     switch (d.type) {
       case 'users': state.users = d.users; renderUsers(); showEmptyHint(); break;
+      case 'groups': state.groups = d.groups; renderGroups(); break;
+      case 'message-edited': {
+        const el = document.querySelector(`[data-id="${d.id}"] .msg-body`);
+        if (el) { el.textContent = d.content; el.parentElement.querySelector('.edited-tag')?.remove(); const t = document.createElement('span'); t.className = 'edited-tag'; t.textContent = '(ویرایش شد)'; el.parentElement.appendChild(t); }
+        break;
+      }
+      case 'message-deleted': document.querySelector(`[data-id="${d.id}"]`)?.remove(); break;
+      case 'call-offer':
+        if (state.call) { state.ws.send(JSON.stringify({ type: 'call-end', to: d.from })); break; }
+        state.call = { peer: d.from, fromName: d.fromName, offer: d.sdp };
+        $('incoming-name').textContent = d.fromName || d.from;
+        $('incoming-modal').classList.remove('hidden');
+        break;
+      case 'call-answer':
+        if (state.call?.pc && d.sdp) {
+          state.call.pc.setRemoteDescription(new RTCSessionDescription(d.sdp)).catch(() => {});
+        }
+        break;
+      case 'call-ice':
+        if (state.call?.pc && d.candidate) {
+          state.call.pc.addIceCandidate(new RTCIceCandidate(d.candidate)).catch(() => {});
+        }
+        break;
+      case 'call-end':
+        cleanupCall();
+        if (!$('incoming-modal').classList.contains('hidden')) $('incoming-modal').classList.add('hidden');
+        break;
       case 'history':
         if (d.roomId !== state.room) break;
         $('messages').innerHTML = '';
@@ -157,12 +187,41 @@ function renderMyAvatar() {
 
 function openRoom(roomId, title) {
   state.room = roomId;
+  state.roomTitle = title;
   $('chat-title').textContent = title;
   $('messages').innerHTML = '';
   $('empty-hint')?.remove();
   state.lastDay = null;
+  const isDmHuman = roomId.startsWith('dm:') && !roomId.includes(BOT_USERNAME);
+  $('call-btn').classList.toggle('hidden', !isDmHuman);
   state.ws.send(JSON.stringify({ type: 'history', roomId }));
 }
+
+function renderGroups() {
+  const ul = $('group-list');
+  ul.innerHTML = '';
+  state.groups.forEach((g) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="avatar sm" style="border-radius:10px;background:linear-gradient(135deg,#0ea5e9,var(--primary))">${initial(g.name)}</span>
+      <span class="grow">${esc(g.name)} <small>${g.members} عضو${g.joined ? '' : ' — برای ورود کلیک کن'}</small></span>
+      ${g.owner === state.me.username ? '<span class="badge-admin">OWNER</span>' : ''}`;
+    li.onclick = async () => {
+      if (!g.joined) {
+        await api(`/api/groups/${g.id}/join`, { method: 'POST' });
+        g.joined = true;
+      }
+      openRoom('group:' + g.id, '👥 ' + g.name);
+    };
+    ul.appendChild(li);
+  });
+  if (!ul.children.length) ul.innerHTML = '<li class="empty">گروهی نیست — با + بساز</li>';
+}
+
+$('new-group-btn').onclick = async () => {
+  const name = prompt('نام گروه جدید:');
+  if (!name || name.trim().length < 2) return;
+  await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
+};
 
 /* ================= MESSAGES ================= */
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
@@ -184,9 +243,10 @@ function addMessage(m) {
   const mine = m.from === state.me.username;
   const div = document.createElement('div');
   div.className = `msg ${mine ? 'out' : 'in'}${m.kind === 'sticker' ? ' sticker' : ''}`;
+  div.dataset.id = m.id;
 
   let body = '';
-  if (m.kind === 'text') body = esc(m.content);
+  if (m.kind === 'text') body = `<span class="msg-body">${esc(m.content)}</span>`;
   else if (m.kind === 'sticker') body = esc(m.content);
   else if (m.kind === 'image' || m.kind === 'gif') body = `<img class="media" src="${esc(m.url)}" alt="${esc(m.name || '')}" loading="lazy" />`;
   else if (m.kind === 'video') body = `<video class="media" src="${esc(m.url)}" controls preload="metadata"></video>`;
@@ -194,7 +254,30 @@ function addMessage(m) {
   else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}" download="${esc(m.name || '')}">📄 <span>${esc(m.name || 'فایل')}</span> <small>دانلود</small></a>`;
 
   const head = mine ? '' : `<span class="from">${esc(m.fromName)}</span>`;
-  div.innerHTML = `${head}${body}<span class="meta">${fmtTime(m.time)}</span>`;
+  div.innerHTML = `${head}${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}</span>`;
+
+  if (mine && m.kind === 'text') {
+    const acts = document.createElement('span');
+    acts.className = 'msg-actions';
+    const editBtn = document.createElement('button');
+    editBtn.textContent = '✎'; editBtn.title = 'ویرایش';
+    editBtn.onclick = () => {
+      const nv = prompt('ویرایش پیام:', m.content);
+      if (nv && nv.trim() && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify({ type: 'edit-message', roomId: m.roomId, id: m.id, content: nv.trim() }));
+      }
+    };
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '🗑'; delBtn.title = 'حذف';
+    delBtn.onclick = () => {
+      if (confirm('این پیام حذف شود؟') && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify({ type: 'delete-message', roomId: m.roomId, id: m.id }));
+      }
+    };
+    acts.append(editBtn, delBtn);
+    div.appendChild(acts);
+  }
+
   $('messages').appendChild(div);
   scrollBottom();
 }
@@ -380,6 +463,158 @@ document.querySelectorAll('.modal-close').forEach((b) => {
 document.querySelectorAll('.modal').forEach((m) => {
   m.addEventListener('click', (e) => { if (e.target === m) m.classList.add('hidden'); });
 });
+
+/* ================= CALLS (WebRTC) ================= */
+const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+function peerOfRoom() {
+  if (!state.room || !state.room.startsWith('dm:')) return null;
+  const parts = state.room.slice(3).split('|');
+  return parts.find((p) => p !== state.me.username) || null;
+}
+
+$('call-btn').onclick = () => startCall(false);
+
+async function createPC(peer) {
+  const pc = new RTCPeerConnection(RTC_CFG);
+  pc.onicecandidate = (e) => {
+    if (e.candidate && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify({ type: 'call-ice', to: peer, candidate: e.candidate }));
+    }
+  };
+  pc.ontrack = (e) => onRemoteTrack(e);
+  pc.onconnectionstatechange = () => {
+    if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) endCall(true);
+  };
+  return pc;
+}
+
+async function startCall(withScreen) {
+  const peer = peerOfRoom();
+  if (!peer) { alert('تماس فقط در چت خصوصی است'); return; }
+  try {
+    const audio = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const pc = await createPC(peer);
+    pc.addTransceiver('video', { direction: 'sendrecv' });
+    audio.getTracks().forEach((t) => pc.addTrack(t, audio));
+    state.call = { peer, pc, localStream: audio, screenStream: null, muted: false };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    state.ws.send(JSON.stringify({ type: 'call-offer', to: peer, sdp: pc.localDescription }));
+    showCallBar(`در حال تماس با ${peer}...`);
+  } catch (e) {
+    alert('دسترسی به میکروفون داده نشد: ' + e.message);
+  }
+}
+
+async function acceptCall(from) {
+  try {
+    const audio = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const pc = await createPC(state.call.peer);
+    pc.addTransceiver('video', { direction: 'sendrecv' });
+    audio.getTracks().forEach((t) => pc.addTrack(t, audio));
+    state.call.pc = pc;
+    state.call.localStream = audio;
+    await pc.setRemoteDescription(new RTCSessionDescription(state.call.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    state.ws.send(JSON.stringify({ type: 'call-answer', to: state.call.peer, sdp: pc.localDescription }));
+    showCallBar(`در تماس با ${state.call.fromName}`);
+  } catch (e) {
+    alert('میکروفون در دسترس نیست: ' + e.message);
+    declineCall();
+  }
+}
+
+function declineCall() {
+  if (state.call?.peer && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'call-end', to: state.call.peer }));
+  }
+  cleanupCall();
+}
+
+function endCall(silent) {
+  if (state.call?.peer && state.ws.readyState === WebSocket.OPEN && !silent) {
+    state.ws.send(JSON.stringify({ type: 'call-end', to: state.call.peer }));
+  }
+  cleanupCall();
+}
+
+function cleanupCall() {
+  state.call?.localStream?.getTracks().forEach((t) => t.stop());
+  state.call?.screenStream?.getTracks().forEach((t) => t.stop());
+  state.call?.pc?.close();
+  state.call = null;
+  $('call-bar').classList.add('hidden');
+  $('remote-media').innerHTML = '';
+  $('screen-btn').textContent = '🖥 اشتراک صفحه';
+}
+
+function showCallBar(status) {
+  $('call-bar').classList.remove('hidden');
+  $('call-status').textContent = status;
+}
+$('end-call-btn').onclick = () => endCall(false);
+$('mute-btn').onclick = () => {
+  if (!state.call?.localStream) return;
+  const track = state.call.localStream.getAudioTracks()[0];
+  track.enabled = !track.enabled;
+  state.call.muted = !track.enabled;
+  $('mute-btn').textContent = state.call.muted ? '🎤 وصل صدا' : '🎤 قطع صدا';
+};
+
+$('screen-btn').onclick = async () => {
+  if (!state.call?.pc) return;
+  try {
+    if (state.call.screenStream) {
+      state.call.screenStream.getTracks().forEach((t) => t.stop());
+      state.call.screenStream = null;
+      const sender = state.call.pc.getSenders().find((s) => s.track?.kind === 'video');
+      if (sender) await sender.replaceTrack(null);
+      $('screen-btn').textContent = '🖥 اشتراک صفحه';
+      return;
+    }
+    const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    state.call.screenStream = screen;
+    let sender = state.call.pc.getSenders().find((s) => s.track?.kind === 'video');
+    if (!sender) sender = state.call.pc.addTrack(screen.getVideoTracks()[0], screen);
+    else await sender.replaceTrack(screen.getVideoTracks()[0]);
+    screen.getVideoTracks()[0].onended = () => { $('screen-btn').click(); };
+    $('screen-btn').textContent = '⏹ قطع اشتراک';
+  } catch (e) { /* کاربر لغو کرد */ }
+};
+
+function onRemoteTrack(e) {
+  const [stream] = e.streams;
+  if (!stream) return;
+  const hasVideo = stream.getVideoTracks().length > 0;
+  let el = $('remote-' + (hasVideo ? 'video' : 'audio'));
+  if (hasVideo) {
+    if (!$('remote-video')) {
+      const v = document.createElement('video');
+      v.id = 'remote-video'; v.autoplay = true; v.playsInline = true;
+      $('remote-media').appendChild(v);
+    }
+    $('remote-video').srcObject = stream;
+  } else {
+    if (!$('remote-audio')) {
+      const a = document.createElement('audio');
+      a.id = 'remote-audio'; a.autoplay = true;
+      document.body.appendChild(a);
+    }
+    $('remote-audio').srcObject = stream;
+  }
+  showCallBar(`در تماس...`);
+}
+
+$('accept-call').onclick = () => {
+  $('incoming-modal').classList.add('hidden');
+  if (state.call?.offer) acceptCall();
+};
+$('reject-call').onclick = () => {
+  $('incoming-modal').classList.add('hidden');
+  declineCall();
+};
 
 /* ================= BOOT ================= */
 (async () => {

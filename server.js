@@ -29,7 +29,7 @@ const BOT_NAME = 'Vortex AI';
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-let db = { users: [], renameRequests: [], messages: {} };
+let db = { users: [], renameRequests: [], messages: {}, groups: [] };
 try {
   const raw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   db = { users: [], renameRequests: [], messages: {}, ...raw };
@@ -71,6 +71,15 @@ function publicUser(u) {
 function isDmAllowed(roomId, username) {
   if (typeof roomId !== 'string' || !roomId.startsWith('dm:')) return false;
   return roomId.slice(3).split('|').includes(username);
+}
+function canAccess(roomId, username) {
+  if (typeof roomId !== 'string') return false;
+  if (roomId.startsWith('dm:')) return roomId.slice(3).split('|').includes(username);
+  if (roomId.startsWith('group:')) {
+    const g = db.groups.find((x) => x.id === roomId.slice(6));
+    return !!g && g.members.includes(username);
+  }
+  return false;
 }
 
 const app = express();
@@ -218,6 +227,39 @@ app.post('/api/upload', auth, upload.single('file'), (req, res) => {
 });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
+// ---------- groups ----------
+function publicGroups(username) {
+  return db.groups.map((g) => ({
+    id: g.id, name: g.name, owner: g.owner,
+    members: g.members.length,
+    joined: g.members.includes(username),
+  }));
+}
+function broadcastGroups() {
+  for (const [, info] of online) {
+    wsSend(info.ws, { type: 'groups', groups: publicGroups(info.pub.username) });
+  }
+}
+app.post('/api/groups', auth, (req, res) => {
+  const name = String((req.body || {}).name || '').trim();
+  if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'نام گروه باید ۲ تا ۳۰ کاراکتر باشد' });
+  const g = { id: crypto.randomBytes(6).toString('hex'), name, owner: req.user.username, members: [req.user.username], createdAt: Date.now() };
+  db.groups.push(g);
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true, group: { id: g.id, name: g.name } });
+});
+app.post('/api/groups/:id/join', auth, (req, res) => {
+  const g = db.groups.find((x) => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'گروه یافت نشد' });
+  if (!g.members.includes(req.user.username)) {
+    g.members.push(req.user.username);
+    saveDB();
+    broadcastGroups();
+  }
+  res.json({ ok: true });
+});
+
 // ---------- websocket ----------
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -256,7 +298,7 @@ wss.on('connection', (ws) => {
       if (!user || user.banned) return wsSend(ws, { type: 'auth-failed' });
       username = user.username;
       online.set(username, { ws, pub: publicUser(user) });
-      wsSend(ws, { type: 'ready', me: publicUser(user) });
+      wsSend(ws, { type: 'ready', me: publicUser(user), groups: publicGroups(username) });
       pushUsers();
       return;
     }
@@ -264,7 +306,7 @@ wss.on('connection', (ws) => {
 
     if (data.type === 'history') {
       const roomId = String(data.roomId || '').slice(0, 100);
-      if (!isDmAllowed(roomId, username)) return;
+      if (!canAccess(roomId, username)) return;
       const msgs = (db.messages[roomId] || []).slice(-100);
       wsSend(ws, { type: 'history', roomId, messages: msgs });
       return;
@@ -280,7 +322,7 @@ wss.on('connection', (ws) => {
       const user = db.users.find((u) => u.username === username);
       if (!user || user.banned) return;
       const roomId = String(data.roomId || '').slice(0, 100);
-      if (!isDmAllowed(roomId, username)) return;
+      if (!canAccess(roomId, username)) return;
       const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file'].includes(data.kind) ? data.kind : 'text';
       let content = String(data.content ?? '').slice(0, MAX_MSG_LEN);
       if (kind !== 'text' && kind !== 'sticker') {
@@ -300,6 +342,44 @@ wss.on('connection', (ws) => {
       broadcast({ type: 'message', message: msg });
       const aiText = kind === 'text' ? content : kind === 'sticker' ? `[استیکر فرستاد: ${content}]` : '[فایل فرستاد]';
       maybeAiReply(roomId, user, aiText);
+      return;
+    }
+
+    if (data.type === 'edit-message') {
+      const { roomId, id, content } = data;
+      if (!canAccess(roomId, username)) return;
+      const arr = db.messages[roomId] || [];
+      const msg = arr.find((m) => m.id === id);
+      if (!msg || msg.from !== username || msg.kind !== 'text') return;
+      msg.content = String(content || '').slice(0, MAX_MSG_LEN).trim();
+      if (!msg.content) return;
+      msg.edited = true;
+      saveDB();
+      broadcast({ type: 'message-edited', roomId, id, content: msg.content });
+      return;
+    }
+
+    if (data.type === 'delete-message') {
+      const { roomId, id } = data;
+      if (!canAccess(roomId, username)) return;
+      const arr = db.messages[roomId] || [];
+      const idx = arr.findIndex((m) => m.id === id);
+      if (idx === -1) return;
+      if (arr[idx].from !== username && !db.users.find((u) => u.username === username)?.isAdmin) return;
+      arr.splice(idx, 1);
+      saveDB();
+      broadcast({ type: 'message-deleted', roomId, id });
+      return;
+    }
+
+    // ---- call signaling relay ----
+    if (['call-offer', 'call-answer', 'call-ice', 'call-end'].includes(data.type)) {
+      const target = online.get(String(data.to || ''));
+      if (!target) {
+        if (data.type === 'call-offer') wsSend(ws, { type: 'error', text: 'کاربر آنلاین نیست' });
+        return;
+      }
+      wsSend(target.ws, { type: data.type, from: username, fromName: db.users.find((u) => u.username === username)?.displayName, sdp: data.sdp, candidate: data.candidate });
       return;
     }
 

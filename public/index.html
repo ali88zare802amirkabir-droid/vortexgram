@@ -34,16 +34,30 @@
         </button>
         <button id="admin-btn" class="icon-btn hidden" title="پنل ادمین">⚙</button>
       </header>
-      <div class="dm-head">PRIVATE CHATS</div>
-      <div class="dm-sub">فقط چت خصوصی — هیچ گروهی وجود ندارد</div>
+      <div class="side-head-row">
+        <div class="dm-head">PRIVATE CHATS</div>
+        <button id="new-group-btn" class="icon-btn sm" title="ساخت گروه جدید">+</button>
+      </div>
       <ul id="user-list"></ul>
+      <div class="dm-head">GROUPS</div>
+      <ul id="group-list"></ul>
     </aside>
 
     <main id="chat-area">
       <header id="chat-header">
-        <strong id="chat-title">گروه عمومی</strong>
+        <strong id="chat-title">یک گفتگو را انتخاب کنید</strong>
         <span id="typing-indicator" class="hidden"></span>
+        <button id="call-btn" class="icon-btn sm hidden" title="تماس صوتی">📞</button>
       </header>
+
+      <div id="call-bar" class="call-bar hidden">
+        <span id="call-status">در حال تماس...</span>
+        <span class="spacer"></span>
+        <button id="mute-btn" class="mini-btn no">🎤 قطع صدا</button>
+        <button id="screen-btn" class="mini-btn">🖥 اشتراک صفحه</button>
+        <button id="end-call-btn" class="send-btn" style="padding:8px 14px">قطع</button>
+      </div>
+      <div id="remote-media"></div>
       <div id="messages"></div>
       <div class="composer">
         <button id="emoji-btn" class="icon-btn" title="ایموجی">🙂</button>
@@ -56,6 +70,18 @@
       <div id="emoji-picker" class="picker hidden"></div>
       <div id="sticker-picker" class="picker hidden"></div>
     </main>
+  </div>
+
+  <!-- ===== INCOMING CALL ===== -->
+  <div id="incoming-modal" class="modal hidden">
+    <div class="modal-box" style="text-align:center">
+      <h3>📞 تماس ورودی</h3>
+      <p id="incoming-name" style="margin:14px 0;font-size:16px;font-weight:700"></p>
+      <div class="row">
+        <button id="accept-call" class="mini-btn ok" style="flex:1;padding:12px">پذیرفتن</button>
+        <button id="reject-call" class="danger-btn" style="width:auto;flex:1">رد کردن</button>
+      </div>
+    </div>
   </div>
 
   <!-- ===== PROFILE MODAL ===== -->
