@@ -198,11 +198,11 @@ function renderUsers() {
   if (state.me.isAdmin) {
     state.users.filter((u) => u.username !== state.me.username).forEach((u) => {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="presence ${u.banned ? '' : 'on'}"></span>
+      li.innerHTML = `<span class="presence ${u.online && !u.banned ? 'on' : ''}"></span>
         <span class="avatar sm" data-av></span>
-        <span class="grow">${esc(u.displayName)}${u.isPremium ? premiumBadge() : ''} <small>@${esc(u.username)}</small></span>
+        <span class="grow">${esc(u.displayName)}${u.isPremium ? premiumBadge() : ''} <small>@${esc(u.username)}${u.online ? '' : ' — آفلاین'}</small></span>
         ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}`;
-      setAvatar(li.querySelector('[data-av]'), u);
+      setAvatar(li.querySelector('[data-av]'), { ...u, isPremium: u.isPremium });
       li.onclick = () => openRoom(dmRoom(u), u.displayName);
       ul.appendChild(li);
     });
@@ -809,7 +809,7 @@ function renderAdminMessages(msgs, title) {
       box.appendChild(sep);
     }
     const div = document.createElement('div');
-    div.className = 'msg in';
+    div.className = 'msg in' + (m.kind === 'sticker' ? ' sticker' : '');
     let body = '';
     if (m.kind === 'text') body = `<span class="msg-body">${esc(m.content)}</span>`;
     else if (m.kind === 'sticker') body = esc(m.content);
@@ -817,7 +817,23 @@ function renderAdminMessages(msgs, title) {
     else if (m.kind === 'video') body = `<video class="media" src="${esc(m.url)}" controls preload="metadata"></video>`;
     else if (m.kind === 'audio') body = `<audio src="${esc(m.url)}" controls></audio>`;
     else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}">📄 ${esc(m.name || 'فایل')}</a>`;
-    div.innerHTML = `<span class="from">${esc(m.fromName)}${m.from === BOT_USERNAME ? ' 🤖' : ''}</span>${body}<span class="meta">${fmtTime(m.time)}</span>`;
+    const botTag = m.from === BOT_USERNAME ? ' <span class="badge-admin">AI</span>' : '';
+    div.innerHTML = `
+      <span class="from">${esc(m.fromName)}${botTag}${m.fromPremium ? premiumBadge() : ''} <small class="ac-un">@${esc(m.from)}</small></span>
+      ${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}</span>`;
+    if (m.fromAvatar) {
+      div.classList.add('with-av');
+      const av = document.createElement('span');
+      av.className = 'avatar xs';
+      setAvatar(av, { avatar: m.fromAvatar, isPremium: m.fromPremium });
+      div.prepend(av);
+    } else {
+      div.classList.add('with-av');
+      const av = document.createElement('span');
+      av.className = 'avatar xs';
+      av.textContent = initial(m.fromName);
+      div.prepend(av);
+    }
     box.appendChild(div);
   });
 }

@@ -282,6 +282,16 @@ app.get('/api/users/exists/:username', auth, (req, res) => {
   res.json({ username: u.username, displayName: u.displayName, avatar: u.avatar || null, isPremium: !!u.isPremium, online: online.has(u.username) });
 });
 
+// تکمیل مشخصات فرستنده در پیام‌های قدیمی که آواتار/پرمیوم ندارند
+function enrichMsg(m) {
+  const u = db.users.find((x) => x.username === m.from);
+  return {
+    ...m,
+    fromAvatar: m.fromAvatar || (u && u.avatar) || null,
+    fromPremium: m.fromPremium || !!(u && u.isPremium),
+  };
+}
+
 // ادمین: اتاق‌های چت یک کاربر
 app.get('/api/admin/user/:username/rooms', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
@@ -313,7 +323,7 @@ app.get('/api/admin/user/:username/rooms', auth, (req, res) => {
 app.get('/api/admin/room/messages', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
   const roomId = String(req.query.roomId || '').slice(0, 120);
-  const msgs = db.messages[roomId] || [];
+  const msgs = (db.messages[roomId] || []).map(enrichMsg);
   res.json({ roomId, messages: msgs });
 });
 
@@ -480,10 +490,16 @@ function broadcast(obj, exceptWs) {
   }
 }
 function pushUsers() {
-  const list = [...online.values()].map((i) => i.pub);
+  const onlineList = [...online.values()].map((i) => i.pub);
   for (const [, info] of online) {
-    // لیست کاربران آنلاین فقط برای ادمین نمایش داده می‌شود
-    wsSend(info.ws, { type: 'users', users: info.pub.isAdmin ? list : [] });
+    if (info.pub.isAdmin) {
+      // ادمین همه کاربران ثبت‌شده را می‌بیند (آنلاین و آفلاین)
+      const all = db.users.map((u) => ({ ...publicUser(u), online: online.has(u.username) }));
+      wsSend(info.ws, { type: 'users', users: all });
+    } else {
+      // لیست کاربران فقط برای ادمین است
+      wsSend(info.ws, { type: 'users', users: [] });
+    }
   }
 }
 function kickUser(username) {
@@ -518,7 +534,7 @@ wss.on('connection', (ws) => {
     if (data.type === 'history') {
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
-      const msgs = (db.messages[roomId] || []).slice(-100);
+      const msgs = (db.messages[roomId] || []).slice(-100).map(enrichMsg);
       wsSend(ws, { type: 'history', roomId, messages: msgs });
       return;
     }
