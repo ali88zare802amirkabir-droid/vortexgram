@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VORTEXGRAM // 2126</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
 
@@ -49,6 +49,7 @@
 
     <main id="chat-area">
       <header id="chat-header">
+        <button id="menu-btn" class="icon-btn sm" title="منو">☰</button>
         <strong id="chat-title">یک گفتگو را انتخاب کنید</strong>
         <span id="typing-indicator" class="hidden"></span>
         <button id="group-settings-btn" class="icon-btn sm hidden" title="مدیریت اعضا">⚙</button>
@@ -68,6 +69,10 @@
         <div class="up-track"><div id="up-fill" class="up-fill"></div></div>
       </div>
       <div id="messages"></div>
+      <div id="reply-bar" class="hidden">
+        <span id="reply-preview"></span>
+        <button id="reply-cancel" title="لغو نقل قول">✕</button>
+      </div>
       <div class="composer">
         <button id="emoji-btn" class="icon-btn" title="ایموجی">🙂</button>
         <button id="sticker-btn" class="icon-btn" title="استیکر">🎴</button>
@@ -135,6 +140,8 @@
 
       <div id="admin-main">
         <h3>پنل ادمین</h3>
+        <h4>درخواست‌های ثبت‌نام</h4>
+        <ul id="admin-signups" class="admin-list"></ul>
         <h4>درخواست‌های تغییر نام</h4>
         <ul id="admin-requests" class="admin-list"></ul>
         <h4>کاربران</h4>
@@ -185,6 +192,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>

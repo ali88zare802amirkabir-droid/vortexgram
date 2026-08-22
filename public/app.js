@@ -1,5 +1,13 @@
 const $ = (id) => document.getElementById(id);
 
+window.onerror = (msg, src, line) => {
+  let t = $('err-overlay');
+  if (!t) { t = document.createElement('div'); t.id = 'err-overlay'; document.body.appendChild(t); }
+  t.textContent = '⚠ ' + msg + ' (@line ' + line + ')';
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.remove(), 8000);
+};
+
 const state = {
   token: localStorage.getItem('ft_token') || null,
   me: null,
@@ -54,6 +62,13 @@ $('auth-submit').onclick = async () => {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'خطا');
+    if (authMode === 'register' && data.pending) {
+      $('auth-error').style.color = '#34d399';
+      $('auth-error').textContent = data.message;
+      setAuthMode('login');
+      return;
+    }
+    $('auth-error').style.color = '';
     state.token = data.token;
     state.me = data.me;
     localStorage.setItem('ft_token', data.token);
@@ -83,8 +98,14 @@ function enterApp() {
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('admin-btn').classList.toggle('hidden', !state.me.isAdmin);
+  applyTierLimits();
   renderMyAvatar();
   connectWS();
+}
+
+function applyTierLimits() {
+  const maxLen = (state.me.isPremium || state.me.isAdmin) ? 4000 : 700;
+  $('msg-input').maxLength = maxLen;
 }
 
 function logout() {
@@ -153,10 +174,15 @@ function connectWS() {
         if (state.me) {
           state.me.isPremium = d.isPremium;
           renderMyAvatar();
+          applyTierLimits();
           alert(d.isPremium ? '🌟 تبریک! حساب شما پرمیوم شد' : 'عضویت پرمیوم شما لغو شد');
         }
         break;
       case 'kicked': alert('حساب شما توسط ادمین مسدود شد'); logout(); break;
+      case 'signup-request':
+        alert(`📨 درخواست ثبت‌نام جدید: @${d.username}`);
+        if (!$('admin-modal').classList.contains('hidden')) loadAdmin();
+        break;
       case 'error': alert(d.text); break;
       case 'auth-failed': logout(); break;
     }
@@ -237,6 +263,16 @@ $('contact-add-btn').onclick = async () => {
 };
 $('contact-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('contact-add-btn').click(); });
 
+/* ---- mobile sidebar toggle ---- */
+$('menu-btn').onclick = () => $('sidebar').classList.toggle('open');
+document.addEventListener('click', (e) => {
+  const sb = $('sidebar');
+  if (sb.classList.contains('open') && !sb.contains(e.target) && e.target.id !== 'menu-btn' && !$('menu-btn').contains(e.target)) {
+    sb.classList.remove('open');
+  }
+});
+$('reply-cancel').onclick = clearReply;
+
 function initial(name) { return (name || '?').trim().charAt(0).toUpperCase(); }
 
 function renderMyAvatar() {
@@ -255,6 +291,27 @@ function setAvatar(el, user, size) {
 
 function premiumBadge() { return ' <span class="badge-premium">⭐</span>'; }
 
+function msgPreview(m) {
+  if (m.kind === 'text') return m.content;
+  if (m.kind === 'sticker') return '[استیکر]';
+  if (m.kind === 'image' || m.kind === 'gif') return '[عکس]';
+  if (m.kind === 'video') return '[ویدیو]';
+  if (m.kind === 'audio') return '[صدا]';
+  return '[فایل]';
+}
+
+function setReplyTo(m) {
+  state.replyTo = { id: m.id, name: m.fromName || m.from, snippet: String(msgPreview(m)).slice(0, 120) };
+  $('reply-preview').innerHTML = `<b>پاسخ به ${esc(state.replyTo.name)}</b> — ${esc(state.replyTo.snippet)}`;
+  $('reply-bar').classList.remove('hidden');
+  if (!$('msg-input').disabled) $('msg-input').focus();
+}
+
+function clearReply() {
+  state.replyTo = null;
+  $('reply-bar').classList.add('hidden');
+}
+
 function openRoom(roomId, title) {
   state.room = roomId;
   state.roomTitle = title;
@@ -262,6 +319,7 @@ function openRoom(roomId, title) {
   $('messages').innerHTML = '';
   $('empty-hint')?.remove();
   state.lastDay = null;
+  clearReply();
   const isDmHuman = roomId.startsWith('dm:') && !roomId.includes(BOT_USERNAME);
   $('call-btn').classList.toggle('hidden', !isDmHuman);
   const g = currentGroup();
@@ -477,6 +535,25 @@ function addMessage(m) {
 
   const head = mine ? '' : `<span class="from">${esc(m.fromName)}${m.fromPremium ? premiumBadge() : ''}</span>`;
   div.innerHTML = `${head}${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}</span>`;
+
+  // نقل قول پیام
+  if (m.replyTo && m.replyTo.id) {
+    const q = document.createElement('div');
+    q.className = 'reply-quote';
+    q.innerHTML = `<b>${esc(m.replyTo.name || '؟')}</b> ${esc((m.replyTo.snippet || '').slice(0, 100))}`;
+    q.onclick = () => {
+      const orig = document.querySelector(`[data-id="${m.replyTo.id}"]`);
+      if (orig) {
+        orig.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        orig.classList.add('flash');
+        setTimeout(() => orig.classList.remove('flash'), 1500);
+      }
+    };
+    const bodyEl = div.querySelector('.msg-body');
+    if (bodyEl) div.insertBefore(q, bodyEl);
+    else div.appendChild(q);
+  }
+
   if (!mine && m.fromAvatar) {
     div.classList.add('with-av');
     const av = document.createElement('span');
@@ -485,9 +562,14 @@ function addMessage(m) {
     div.prepend(av);
   }
 
+  // دکمه‌های پیام: ریپلای برای همه، ویرایش/حذف فقط برای خودم
+  const acts = document.createElement('span');
+  acts.className = 'msg-actions';
+  const replyBtn = document.createElement('button');
+  replyBtn.textContent = '↩'; replyBtn.title = 'پاسخ';
+  replyBtn.onclick = () => setReplyTo(m);
+  acts.appendChild(replyBtn);
   if (mine && m.kind === 'text') {
-    const acts = document.createElement('span');
-    acts.className = 'msg-actions';
     const editBtn = document.createElement('button');
     editBtn.textContent = '✎'; editBtn.title = 'ویرایش';
     editBtn.onclick = () => {
@@ -504,8 +586,8 @@ function addMessage(m) {
       }
     };
     acts.append(editBtn, delBtn);
-    div.appendChild(acts);
   }
+  div.appendChild(acts);
 
   $('messages').appendChild(div);
   scrollBottom();
@@ -532,8 +614,9 @@ function send(obj) {
 function sendText() {
   const text = $('msg-input').value.trim();
   if (!text) return;
-  send({ type: 'message', kind: 'text', content: text });
+  send({ type: 'message', kind: 'text', content: text, replyTo: state.replyTo || undefined });
   $('msg-input').value = '';
+  clearReply();
 }
 $('send-btn').onclick = sendText;
 $('msg-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendText(); });
@@ -563,7 +646,7 @@ function buildPicker(el, dataFn, gridClass) {
     items.forEach((ch) => {
       const b = document.createElement('button');
       b.textContent = ch;
-      b.onclick = () => { send({ type: 'message', kind: el.id === 'emoji-picker' ? 'text' : 'sticker', content: ch }); togglePicker(el, false); };
+      b.onclick = () => { send({ type: 'message', kind: el.id === 'emoji-picker' ? 'text' : 'sticker', content: ch, replyTo: state.replyTo || undefined }); togglePicker(el, false); clearReply(); };
       g.appendChild(b);
     });
     el.appendChild(g);
@@ -616,7 +699,8 @@ function uploadWithProgress(file) {
     try {
       const data = JSON.parse(xhr.responseText);
       if (xhr.status !== 200) throw new Error(data.error || 'خطا در آپلود');
-      send({ type: 'message', kind: data.kind, url: data.url, mime: data.mime, name: data.name, content: '' });
+      send({ type: 'message', kind: data.kind, url: data.url, mime: data.mime, name: data.name, content: '', replyTo: state.replyTo || undefined });
+      clearReply();
     } catch (err) { alert(err.message); }
   };
   xhr.onerror = () => { $('upload-progress').classList.add('hidden'); alert('آپلود قطع شد'); };
@@ -650,10 +734,11 @@ function refreshProfileUI() {
   setAvatar($('profile-avatar'), state.me);
   $('profile-displayname').textContent = state.me.displayName + (state.me.isPremium ? premiumBadge() : '');
   $('profile-username').textContent = '@' + state.me.username;
+  applyTierLimits();
   const p = $('profile-premium');
-  if (state.me.isAdmin) p.textContent = '👑 ادمین سیستم';
-  else if (state.me.isPremium) p.textContent = '⭐ عضویت پرمیوم — آپلود ۱۰۰ مگ + بیو بلند';
-  else p.textContent = 'حساب رایگان — آپلود ۳۰ مگ (پرمیوم از ادمین بگیر)';
+  if (state.me.isAdmin) p.textContent = '👑 ادمین سیستم — همه امکانات';
+  else if (state.me.isPremium) p.textContent = '⭐ پرمیوم: آپلود ۱۰۰مگ + پیام ۴۰۰۰ نویسه + بیو بلند + ساخت ۱۰ گروه/کانال + نشان طلایی';
+  else p.textContent = 'رایگان: آپلود ۳۰مگ + پیام ۷۰۰ نویسه + ۲ گروه — پرمیوم از ادمین بگیر ⭐';
 }
 function updateBioCount() {
   const max = state.me.isPremium ? 200 : 80;
@@ -717,11 +802,29 @@ $('admin-btn').onclick = async () => {
 };
 
 async function loadAdmin() {
-  const rq = $('admin-requests'), us = $('admin-users');
-  rq.innerHTML = '<li class="empty">...</li>'; us.innerHTML = '<li class="empty">...</li>';
-  const [reqRes, usrRes] = await Promise.all([api('/api/admin/requests'), api('/api/admin/users')]);
+  const rq = $('admin-requests'), us = $('admin-users'), su = $('admin-signups');
+  rq.innerHTML = '<li class="empty">...</li>'; us.innerHTML = '<li class="empty">...</li>'; su.innerHTML = '<li class="empty">...</li>';
+  const [reqRes, usrRes, signRes] = await Promise.all([api('/api/admin/requests'), api('/api/admin/users'), api('/api/admin/signups')]);
   const reqs = (await reqRes.json()).requests || [];
   const users = (await usrRes.json()).users || [];
+  const signups = (await signRes.json()).signups || [];
+
+  su.innerHTML = '';
+  if (!signups.length) su.innerHTML = '<li class="empty">درخواست ثبت‌نامی نیست</li>';
+  signups.forEach((s) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="grow"><b>@${esc(s.username)}</b> <small>می‌خواهد عضو شود</small></span>`;
+    const ok = mkBtn('✔ تایید', 'mini-btn ok', async () => {
+      await api(`/api/admin/signups/${s.id}`, { method: 'POST', body: JSON.stringify({ approve: true }) });
+      loadAdmin();
+    });
+    const no = mkBtn('✖ رد', 'mini-btn no', async () => {
+      await api(`/api/admin/signups/${s.id}`, { method: 'POST', body: JSON.stringify({ approve: false }) });
+      loadAdmin();
+    });
+    li.append(ok, no);
+    su.appendChild(li);
+  });
 
   rq.innerHTML = '';
   if (!reqs.length) rq.innerHTML = '<li class="empty">درخواستی نیست</li>';

@@ -32,11 +32,12 @@ const BOT_NAME = 'Vortex AI';
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-let db = { users: [], renameRequests: [], messages: {}, groups: [] };
+let db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [] };
 try {
   const raw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  db = { users: [], renameRequests: [], messages: {}, groups: [], ...raw };
+  db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [], ...raw };
   if (!Array.isArray(db.groups)) db.groups = [];
+  if (!Array.isArray(db.signupRequests)) db.signupRequests = [];
   // مهاجرت اعضای قدیمی (رشته) به ساختار نقش‌دار
   for (const g of db.groups) {
     if (!g.type) g.type = 'group';
@@ -46,11 +47,18 @@ try {
 } catch {}
 
 let saveTimer = null;
+function flushDB() {
+  clearTimeout(saveTimer);
+  try { fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) { console.error('save failed', e.message); }
+}
 function saveDB() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) { console.error('save failed', e); }
-  }, 250);
+  saveTimer = setTimeout(flushDB, 250);
+}
+// جلوگیری از از دست رفتن داده هنگام ری‌استارت/کشته شدن پروسه
+process.on('exit', flushDB);
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { flushDB(); process.exit(0); });
 }
 
 // ---------- sessions / security ----------
@@ -124,21 +132,27 @@ app.post('/api/register', (req, res) => {
   const { username, password } = req.body || {};
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ error: 'نام کاربری: ۳ تا ۲۰ حرف انگلیسی/عدد/_ ' });
   if (!password || String(password).length < 4) return res.status(400).json({ error: 'رمز حداقل ۴ کاراکتر' });
-  if (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) return res.status(409).json({ error: 'این نام کاربری قبلا ثبت شده' });
+  const unameLower = username.toLowerCase();
+  if (db.users.some((u) => u.username.toLowerCase() === unameLower)) return res.status(409).json({ error: 'این نام کاربری قبلا ثبت شده' });
+  if (db.signupRequests.some((r) => r.username.toLowerCase() === unameLower)) return res.status(409).json({ error: 'درخواست ثبت‌نام تو منتظر تایید ادمین است' });
+
+  // ثبت‌نام آزاد نیست — به‌صورت درخواست برای تایید ادمین ذخیره می‌شود
   const salt = crypto.randomBytes(16).toString('hex');
-  const user = {
+  db.signupRequests.push({
+    id: crypto.randomUUID(),
     username,
     salt,
     passHash: hash(String(password), salt),
-    displayName: username,
-    isAdmin: db.users.length === 0,
-    banned: false,
-    createdAt: Date.now(),
-  };
-  db.users.push(user);
+    at: Date.now(),
+  });
   saveDB();
-  const token = createSession(user.username);
-  res.json({ token, me: publicUser(user) });
+
+  // خبر به همه ادمین‌های آنلاین
+  for (const u of db.users.filter((x) => x.isAdmin)) {
+    notifyUser(u.username, { type: 'signup-request', username });
+  }
+
+  res.json({ ok: true, pending: true, message: 'درخواست ثبت‌نامت ثبت شد ✅ بعد از تایید ادمین می‌توانی وارد شوی' });
 });
 
 app.post('/api/login', (req, res) => {
@@ -148,6 +162,8 @@ app.post('/api/login', (req, res) => {
     return res.status(429).json({ error: 'تلاش‌های زیاد؛ ۱۰ دقیقه دیگر امتحان کن' });
   }
   const { username, password } = req.body || {};
+  const pending = db.signupRequests.find((r) => r.username.toLowerCase() === String(username || '').toLowerCase());
+  if (pending) return res.status(403).json({ error: 'ثبت‌نامت هنوز توسط ادمین تایید نشده ⏳' });
   const user = db.users.find((u) => u.username.toLowerCase() === String(username || '').toLowerCase());
   if (!user || user.passHash !== hash(String(password || ''), user.salt)) {
     rec.count++;
@@ -259,6 +275,37 @@ app.post('/api/admin/requests/:id', auth, (req, res) => {
 app.get('/api/admin/users', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
   res.json({ users: db.users.map(publicUser) });
+});
+
+// درخواست‌های ثبت‌نام در انتظار تایید
+app.get('/api/admin/signups', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  res.json({ signups: db.signupRequests.map((r) => ({ id: r.id, username: r.username, at: r.at })) });
+});
+
+app.post('/api/admin/signups/:id', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const approve = !!(req.body || {}).approve;
+  const idx = db.signupRequests.findIndex((r) => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'درخواست یافت نشد' });
+  const reqItem = db.signupRequests[idx];
+  db.signupRequests.splice(idx, 1);
+  if (approve) {
+    db.users.push({
+      username: reqItem.username,
+      salt: reqItem.salt,
+      passHash: reqItem.passHash,
+      displayName: reqItem.username,
+      isAdmin: false,
+      banned: false,
+      createdAt: Date.now(),
+    });
+    saveDB();
+    pushUsers();
+  } else {
+    saveDB();
+  }
+  res.json({ ok: true, approved: approve, username: reqItem.username });
 });
 
 app.post('/api/admin/ban', auth, (req, res) => {
@@ -383,6 +430,12 @@ app.post('/api/groups', auth, (req, res) => {
   const name = String((req.body || {}).name || '').trim();
   const type = (req.body || {}).type === 'channel' ? 'channel' : 'group';
   if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'نام باید ۲ تا ۳۰ کاراکتر باشد' });
+  // محدودیت ساخت برای حساب رایگان
+  if (!req.user.isAdmin) {
+    const owned = db.groups.filter((g) => g.owner === req.user.username).length;
+    const maxOwned = req.user.isPremium ? 10 : 2;
+    if (owned >= maxOwned) return res.status(403).json({ error: req.user.isPremium ? 'سقف ساخت: ۱۰ گروه/کانال' : 'حساب رایگان: حداکثر ۲ گروه/کانال — پرمیوم شو ⭐' });
+  }
   const g = { id: crypto.randomBytes(6).toString('hex'), type, name, owner: req.user.username, members: [{ username: req.user.username, role: 'owner' }], createdAt: Date.now() };
   db.groups.push(g);
   saveDB();
@@ -552,17 +605,29 @@ wss.on('connection', (ws) => {
       if (!canAccess(roomId, username)) return;
       if (!canPost(roomId, username)) return wsSend(ws, { type: 'error', text: 'در کانال فقط مدیران می‌توانند پیام بفرستند' });
       const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file'].includes(data.kind) ? data.kind : 'text';
-      let content = String(data.content ?? '').slice(0, MAX_MSG_LEN);
+      const maxLen = (user.isPremium || user.isAdmin) ? MAX_MSG_LEN : 700;
+      let content = String(data.content ?? '').slice(0, maxLen);
       if (kind !== 'text' && kind !== 'sticker') {
         if (typeof data.url !== 'string' || !/^\/uploads\/[\w.-]+$/.test(data.url)) return;
       }
       if ((kind === 'text' || kind === 'sticker') && !content.trim()) return;
+
+      // نقل قول (ریپلای)
+      let replyTo;
+      if (data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.id === 'string') {
+        replyTo = {
+          id: data.replyTo.id.slice(0, 40),
+          name: String(data.replyTo.name || '').slice(0, 40),
+          snippet: String(data.replyTo.snippet || '').slice(0, 120),
+        };
+      }
 
       const msg = {
         id: crypto.randomUUID(), roomId, from: username, fromName: user.displayName, kind,
         content, url: data.url || undefined, mime: typeof data.mime === 'string' ? data.mime.slice(0, 60) : undefined,
         name: typeof data.name === 'string' ? data.name.slice(0, 80) : undefined, time: now,
         fromAvatar: user.avatar || undefined, fromPremium: !!user.isPremium,
+        replyTo,
       };
       if (!db.messages[roomId]) db.messages[roomId] = [];
       db.messages[roomId].push(msg);
