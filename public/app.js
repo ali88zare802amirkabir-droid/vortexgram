@@ -106,7 +106,10 @@ function connectWS() {
         if (d.groups) { state.groups = d.groups; renderGroups(); }
         break;
       case 'users': state.users = d.users; renderUsers(); showEmptyHint(); break;
-      case 'groups': state.groups = d.groups; renderGroups(); break;
+      case 'groups': state.groups = d.groups; renderGroups(); updateComposerLock(); break;
+      case 'added-to':
+        alert(`شما به ${d.type2 === 'channel' ? 'کانال' : 'گروه'} «${d.name}» اضافه شدید`);
+        break;
       case 'message-edited': {
         const el = document.querySelector(`[data-id="${d.id}"] .msg-body`);
         if (el) { el.textContent = d.content; el.parentElement.querySelector('.edited-tag')?.remove(); const t = document.createElement('span'); t.className = 'edited-tag'; t.textContent = '(ویرایش شد)'; el.parentElement.appendChild(t); }
@@ -217,7 +220,31 @@ function openRoom(roomId, title) {
   state.lastDay = null;
   const isDmHuman = roomId.startsWith('dm:') && !roomId.includes(BOT_USERNAME);
   $('call-btn').classList.toggle('hidden', !isDmHuman);
+  const g = currentGroup();
+  $('group-settings-btn').classList.toggle('hidden', !(g && g.joined));
+  updateComposerLock();
   state.ws.send(JSON.stringify({ type: 'history', roomId }));
+}
+
+function groupIcon(g) { return g.type === 'channel' ? '📢' : '👥'; }
+
+function currentGroup() {
+  if (!state.room || !state.room.startsWith('group:')) return null;
+  return state.groups.find((g) => g.id === state.room.slice(6)) || null;
+}
+
+function canPostHere() {
+  const g = currentGroup();
+  if (!g) return true;
+  if (g.type !== 'channel') return true;
+  return g.myRole === 'owner' || g.myRole === 'admin';
+}
+
+function updateComposerLock() {
+  const ok = canPostHere();
+  $('msg-input').disabled = !ok;
+  $('send-btn').disabled = !ok;
+  $('msg-input').placeholder = ok ? 'پیام خود را مخابره کن...' : '📢 در کانال فقط مدیران می‌توانند پیام بفرستند';
 }
 
 function renderGroups() {
@@ -225,25 +252,153 @@ function renderGroups() {
   ul.innerHTML = '';
   state.groups.forEach((g) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="avatar sm" style="border-radius:10px;background:linear-gradient(135deg,#0ea5e9,var(--primary))">${initial(g.name)}</span>
+    li.innerHTML = `<span class="avatar sm" style="border-radius:10px;background:linear-gradient(135deg,#0ea5e9,var(--primary))">${g.type === 'channel' ? '📢' : '👥'}</span>
       <span class="grow">${esc(g.name)} <small>${g.members} عضو${g.joined ? '' : ' — برای ورود کلیک کن'}</small></span>
-      ${g.owner === state.me.username ? '<span class="badge-admin">OWNER</span>' : ''}`;
+      ${g.joined && g.myRole === 'owner' ? '<span class="badge-admin">OWNER</span>' : ''}
+      ${g.joined && g.myRole === 'admin' ? '<span class="badge-admin" style="background:#0ea5e9">ADMIN</span>' : ''}`;
     li.onclick = async () => {
       if (!g.joined) {
         await api(`/api/groups/${g.id}/join`, { method: 'POST' });
         g.joined = true;
+        g.myRole = 'member';
+        updateComposerLock();
       }
-      openRoom('group:' + g.id, '👥 ' + g.name);
+      openRoom('group:' + g.id, `${groupIcon(g)} ${g.name}`);
     };
     ul.appendChild(li);
   });
   if (!ul.children.length) ul.innerHTML = '<li class="empty">گروهی نیست — با + بساز</li>';
 }
 
-$('new-group-btn').onclick = async () => {
-  const name = prompt('نام گروه جدید:');
-  if (!name || name.trim().length < 2) return;
-  await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
+/* ---- new group/channel modal ---- */
+$('new-group-btn').onclick = () => {
+  $('ng-name').value = '';
+  $('ng-error').textContent = '';
+  $('new-group-modal').classList.remove('hidden');
+  $('ng-name').focus();
+};
+$('ng-create').onclick = async () => {
+  const name = $('ng-name').value.trim();
+  const type = document.querySelector('input[name="ng-type"]:checked').value;
+  try {
+    const r = await api('/api/groups', { method: 'POST', body: JSON.stringify({ name, type }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    $('new-group-modal').classList.add('hidden');
+    if (data.group) openRoom('group:' + data.group.id, `${groupIcon(data.group)} ${data.group.name}`);
+  } catch (e) { $('ng-error').textContent = e.message; }
+};
+
+/* ---- group settings modal ---- */
+let gsData = null;
+
+$('group-settings-btn').onclick = async () => {
+  const g = currentGroup();
+  if (!g) return;
+  $('gsettings-modal').classList.remove('hidden');
+  await loadGroupSettings();
+};
+
+async function loadGroupSettings() {
+  const g = currentGroup();
+  if (!g) return;
+  try {
+    const r = await api(`/api/groups/${g.id}/members`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    gsData = data;
+    renderGroupSettings();
+  } catch (e) { alert(e.message); }
+}
+
+function renderGroupSettings() {
+  if (!gsData) return;
+  const { group, members } = gsData;
+  const g = currentGroup();
+  const amOwner = g ? g.myRole === 'owner' : false;
+
+  $('gs-title').textContent = `${group.type === 'channel' ? '📢 کانال' : '👥 گروه'} «${group.name}»`;
+  $('gs-add-row').classList.toggle('hidden', !amOwner);
+  $('gs-delete').classList.toggle('hidden', !amOwner);
+
+  const ul = $('gs-members');
+  ul.innerHTML = '';
+  members.forEach((m) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="avatar sm">${initial(m.displayName)}</span>
+      <span class="grow">${esc(m.displayName)} <small>@${esc(m.username)}</small></span>
+      ${m.role === 'owner' ? '<span class="badge-admin">OWNER</span>' : ''}
+      ${m.role === 'admin' ? '<span class="badge-admin" style="background:#0ea5e9">ADMIN</span>' : ''}`;
+    if (m.role !== 'owner') {
+      if (amOwner) {
+        const roleBtn = mkBtn(m.role === 'member' ? '⬆ ادمین کن' : '⬇ عزل از ادمینی', m.role === 'member' ? 'mini-btn ok' : 'mini-btn no',
+          async () => {
+            await api(`/api/groups/${group.id}/role`, { method: 'POST', body: JSON.stringify({ username: m.username, role: m.role === 'member' ? 'admin' : 'member' }) });
+            loadGroupSettings();
+          });
+        li.appendChild(roleBtn);
+        if (!state.me.isAdmin || state.me.username !== m.username) {
+          const kickBtn = mkBtn('حذف', 'mini-btn no', async () => {
+            await api(`/api/groups/${group.id}/kick`, { method: 'POST', body: JSON.stringify({ username: m.username }) });
+            loadGroupSettings();
+          });
+          li.appendChild(kickBtn);
+        }
+      }
+      if (m.username === state.me.username) {
+        const leaveBtn = mkBtn('خروج', 'mini-btn no', async () => {
+          if (!confirm('از گروه خارج شوی؟')) return;
+          await api(`/api/groups/${group.id}/leave`, { method: 'POST' });
+          $('gsettings-modal').classList.add('hidden');
+          openRoom('', '');
+          state.room = null;
+          $('chat-title').textContent = 'یک گفتگو را انتخاب کنید';
+        });
+        li.appendChild(leaveBtn);
+      }
+    }
+    ul.appendChild(li);
+  });
+}
+
+$('gs-add-btn').onclick = async () => {
+  const g = currentGroup();
+  if (!g) return;
+  const username = $('gs-add-input').value.trim();
+  if (!username) return;
+  try {
+    const r = await api(`/api/groups/${g.id}/members`, { method: 'POST', body: JSON.stringify({ username }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    $('gs-add-input').value = '';
+    loadGroupSettings();
+  } catch (e) { alert(e.message); }
+};
+$('gs-add-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('gs-add-btn').click(); });
+
+$('gs-leave').onclick = async () => {
+  const g = currentGroup();
+  if (!g) return;
+  if (g.myRole === 'owner') { alert('مالک نمی‌تواند خارج شود؛ ابتدا گروه را حذف کن'); return; }
+  if (!confirm('از این گروه خارج شوی؟')) return;
+  await api(`/api/groups/${g.id}/leave`, { method: 'POST' });
+  $('gsettings-modal').classList.add('hidden');
+  state.room = null;
+  $('messages').innerHTML = '';
+  $('chat-title').textContent = 'یک گفتگو را انتخاب کنید';
+  $('group-settings-btn').classList.add('hidden');
+};
+
+$('gs-delete').onclick = async () => {
+  const g = currentGroup();
+  if (!g) return;
+  if (!confirm(`«${g.name}» برای همیشه حذف شود؟`)) return;
+  await api(`/api/groups/${g.id}/delete`, { method: 'POST' });
+  $('gsettings-modal').classList.add('hidden');
+  state.room = null;
+  $('messages').innerHTML = '';
+  $('chat-title').textContent = 'یک گفتگو را انتخاب کنید';
+  $('group-settings-btn').classList.add('hidden');
 };
 
 /* ================= MESSAGES ================= */

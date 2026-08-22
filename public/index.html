@@ -47,6 +47,7 @@
       <header id="chat-header">
         <strong id="chat-title">یک گفتگو را انتخاب کنید</strong>
         <span id="typing-indicator" class="hidden"></span>
+        <button id="group-settings-btn" class="icon-btn sm hidden" title="مدیریت اعضا">⚙</button>
         <button id="call-btn" class="icon-btn sm hidden" title="تماس صوتی">📞</button>
       </header>
 
@@ -132,6 +133,41 @@
       <ul id="admin-requests" class="admin-list"></ul>
       <h4>کاربران</h4>
       <ul id="admin-users" class="admin-list"></ul>
+    </div>
+  </div>
+
+  <!-- ===== NEW GROUP/CHANNEL MODAL ===== -->
+  <div id="new-group-modal" class="modal hidden">
+    <div class="modal-box">
+      <button class="modal-close" data-close="new-group-modal">✕</button>
+      <h3>ساخت گروه یا کانال</h3>
+      <label>نام</label>
+      <input id="ng-name" type="text" maxlength="30" placeholder="مثلاً Squad Alpha" />
+      <label style="margin-top:12px">نوع</label>
+      <div class="row" style="gap:8px">
+        <label class="type-opt"><input type="radio" name="ng-type" value="group" checked /> 👥 گروه (همه می‌نویسند)</label>
+        <label class="type-opt"><input type="radio" name="ng-type" value="channel" /> 📢 کانال (فقط ادمین‌ها)</label>
+      </div>
+      <p id="ng-error" class="hint" style="color:var(--danger,#f43f5e)"></p>
+      <button id="ng-create" class="send-btn" style="width:100%;margin-top:10px">ساخت</button>
+    </div>
+  </div>
+
+  <!-- ===== GROUP SETTINGS MODAL ===== -->
+  <div id="gsettings-modal" class="modal hidden">
+    <div class="modal-box wide">
+      <button class="modal-close" data-close="gsettings-modal">✕</button>
+      <h3 id="gs-title">مدیریت گروه</h3>
+      <div id="gs-add-row" class="row hidden" style="margin-bottom:10px">
+        <input id="gs-add-input" type="text" placeholder="نام کاربری برای افزودن..." maxlength="20" />
+        <button id="gs-add-btn" class="mini-btn ok">+ افزودن</button>
+      </div>
+      <ul id="gs-members" class="admin-list"></ul>
+      <hr />
+      <div class="row" style="gap:8px">
+        <button id="gs-leave" class="danger-btn" style="flex:1">خروج از گروه</button>
+        <button id="gs-delete" class="danger-btn hidden" style="flex:1;background:#7f1d1d">حذف گروه</button>
+      </div>
     </div>
   </div>
 

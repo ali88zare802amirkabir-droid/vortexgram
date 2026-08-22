@@ -37,6 +37,12 @@ try {
   const raw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   db = { users: [], renameRequests: [], messages: {}, groups: [], ...raw };
   if (!Array.isArray(db.groups)) db.groups = [];
+  // مهاجرت اعضای قدیمی (رشته) به ساختار نقش‌دار
+  for (const g of db.groups) {
+    if (!g.type) g.type = 'group';
+    g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
+    if (!g.members.some((m) => m.username === g.owner)) g.members.push({ username: g.owner, role: 'owner' });
+  }
 } catch {}
 
 let saveTimer = null;
@@ -86,10 +92,20 @@ function canAccess(roomId, username) {
   if (typeof roomId !== 'string') return false;
   if (roomId.startsWith('dm:')) return roomId.slice(3).split('|').includes(username);
   if (roomId.startsWith('group:')) {
-    const g = db.groups.find((x) => x.id === roomId.slice(6));
-    return !!g && g.members.includes(username);
+    const g = findGroup(roomId.slice(6));
+    return !!g && !!memberOf(g, username);
   }
   return false;
+}
+function canPost(roomId, username) {
+  if (typeof roomId !== 'string') return false;
+  if (roomId.startsWith('group:')) {
+    const g = findGroup(roomId.slice(6));
+    if (!g) return false;
+    if ((g.type || 'group') === 'channel') return g.owner === username || isGroupAdmin(g, username);
+    return true;
+  }
+  return true;
 }
 
 const app = express();
@@ -286,36 +302,125 @@ app.post('/api/upload', auth, upload.single('file'), (req, res) => {
 });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// ---------- groups ----------
+// ---------- groups & channels ----------
 function publicGroups(username) {
-  return db.groups.map((g) => ({
-    id: g.id, name: g.name, owner: g.owner,
-    members: g.members.length,
-    joined: g.members.includes(username),
-  }));
+  return db.groups.map((g) => {
+    const me = g.members.find((m) => m.username === username);
+    return {
+      id: g.id, type: g.type || 'group', name: g.name, owner: g.owner,
+      members: g.members.length,
+      joined: !!me,
+      myRole: me ? me.role : null,
+    };
+  });
 }
 function broadcastGroups() {
   for (const [, info] of online) {
     wsSend(info.ws, { type: 'groups', groups: publicGroups(info.pub.username) });
   }
 }
+function findGroup(id) { return db.groups.find((x) => x.id === id); }
+function memberOf(g, username) { return (g.members || []).find((m) => m.username === username); }
+function isGroupAdmin(g, username) {
+  const m = memberOf(g, username);
+  return !!m && (m.role === 'owner' || m.role === 'admin');
+}
+
 app.post('/api/groups', auth, (req, res) => {
   const name = String((req.body || {}).name || '').trim();
-  if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'نام گروه باید ۲ تا ۳۰ کاراکتر باشد' });
-  const g = { id: crypto.randomBytes(6).toString('hex'), name, owner: req.user.username, members: [req.user.username], createdAt: Date.now() };
+  const type = (req.body || {}).type === 'channel' ? 'channel' : 'group';
+  if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'نام باید ۲ تا ۳۰ کاراکتر باشد' });
+  const g = { id: crypto.randomBytes(6).toString('hex'), type, name, owner: req.user.username, members: [{ username: req.user.username, role: 'owner' }], createdAt: Date.now() };
   db.groups.push(g);
   saveDB();
   broadcastGroups();
-  res.json({ ok: true, group: { id: g.id, name: g.name } });
+  res.json({ ok: true, group: { id: g.id, name: g.name, type } });
 });
+
 app.post('/api/groups/:id/join', auth, (req, res) => {
-  const g = db.groups.find((x) => x.id === req.params.id);
-  if (!g) return res.status(404).json({ error: 'گروه یافت نشد' });
-  if (!g.members.includes(req.user.username)) {
-    g.members.push(req.user.username);
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!memberOf(g, req.user.username)) {
+    g.members.push({ username: req.user.username, role: 'member' });
     saveDB();
     broadcastGroups();
   }
+  res.json({ ok: true });
+});
+
+app.post('/api/groups/:id/leave', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (g.owner === req.user.username) return res.status(400).json({ error: 'مالک نمی‌تواند خارج شود؛ گروه را حذف کن' });
+  g.members = g.members.filter((m) => m.username !== req.user.username);
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+app.post('/api/groups/:id/delete', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (g.owner !== req.user.username && !req.user.isAdmin) return res.status(403).json({ error: 'فقط مالک' });
+  db.groups = db.groups.filter((x) => x.id !== g.id);
+  delete db.messages['group:' + g.id];
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+app.get('/api/groups/:id/members', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!memberOf(g, req.user.username)) return res.status(403).json({ error: 'عضو نیستی' });
+  res.json({
+    group: { id: g.id, name: g.name, type: g.type, owner: g.owner },
+    members: g.members.map((m) => ({ ...m, displayName: (db.users.find((u) => u.username === m.username) || {}).displayName || m.username, avatar: (db.users.find((u) => u.username === m.username) || {}).avatar || null })),
+    allUsers: req.user.isAdmin || g.owner === req.user.username ? db.users.map((u) => ({ username: u.username, displayName: u.displayName })) : undefined,
+  });
+});
+
+app.post('/api/groups/:id/members', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (g.owner !== req.user.username && !req.user.isAdmin) return res.status(403).json({ error: 'فقط مالک می‌تواند عضو اضافه کند' });
+  const uname = String((req.body || {}).username || '');
+  const target = db.users.find((u) => u.username === uname);
+  if (!target) return res.status(404).json({ error: 'چنین کاربری ثبت‌نشده' });
+  if (memberOf(g, uname)) return res.status(409).json({ error: 'از قبل عضو است' });
+  g.members.push({ username: uname, role: 'member' });
+  saveDB();
+  notifyUser(uname, { type: 'added-to', groupId: g.id, name: g.name, type2: g.type });
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+app.post('/api/groups/:id/role', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (g.owner !== req.user.username && !req.user.isAdmin) return res.status(403).json({ error: 'فقط مالک' });
+  const { username, role } = req.body || {};
+  const m = memberOf(g, String(username || ''));
+  if (!m) return res.status(404).json({ error: 'عضو نیست' });
+  if (m.role === 'owner') return res.status(400).json({ error: 'نقش مالک تغییر نمی‌کند' });
+  if (!['admin', 'member'].includes(role)) return res.status(400).json({ error: 'نقش نامعتبر' });
+  m.role = role;
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+app.post('/api/groups/:id/kick', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (g.owner !== req.user.username && !req.user.isAdmin) return res.status(403).json({ error: 'فقط مالک' });
+  const uname = String((req.body || {}).username || '');
+  const m = memberOf(g, uname);
+  if (!m) return res.status(404).json({ error: 'عضو نیست' });
+  if (m.role === 'owner') return res.status(400).json({ error: 'مالک حذف نمی‌شود' });
+  g.members = g.members.filter((x) => x.username !== uname);
+  saveDB();
+  broadcastGroups();
   res.json({ ok: true });
 });
 
@@ -383,6 +488,7 @@ wss.on('connection', (ws) => {
       if (!user || user.banned) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
+      if (!canPost(roomId, username)) return wsSend(ws, { type: 'error', text: 'در کانال فقط مدیران می‌توانند پیام بفرستند' });
       const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file'].includes(data.kind) ? data.kind : 'text';
       let content = String(data.content ?? '').slice(0, MAX_MSG_LEN);
       if (kind !== 'text' && kind !== 'sticker') {
@@ -485,6 +591,8 @@ function storeHistory(roomId, senderName, text) {
 async function maybeAiReply(roomId, user, rawText) {
   try {
     if (!process.env.GROQ_API_KEYS_STR) return;
+    // ربات فقط در چت خصوصیِ خودش پاسخ می‌دهد — نه در گروه‌ها و کانال‌ها
+    if (roomId !== 'dm:' + [user.username, BOT_USERNAME].sort().join('|')) return;
     const text = (rawText || '').trim();
 
     if ((text === 'تندتر' || text === 'آروم\u200cتر' || text === 'اروم تر')) {

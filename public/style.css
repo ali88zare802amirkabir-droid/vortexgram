@@ -471,3 +471,17 @@ hr { border: none; border-top: 1px solid var(--border-soft); margin: 16px 0; }
   #sidebar { width: 220px; }
   .msg { max-width: 82%; }
 }
+/* ---- group / channel ---- */
+.type-opt {
+  flex: 1; display: flex; align-items: center; gap: 6px;
+  background: var(--muted); border: 1px solid transparent;
+  border-radius: 10px; padding: 10px 12px;
+  font-size: 12.5px; cursor: pointer;
+}
+.type-opt:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+.type-opt input { accent-color: var(--accent); }
+#msg-input:disabled {
+  opacity: 0.45; cursor: not-allowed;
+  background: repeating-linear-gradient(45deg, var(--muted), var(--muted) 8px, rgba(255,255,255,0.02) 8px, rgba(255,255,255,0.02) 16px);
+}
+#send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
