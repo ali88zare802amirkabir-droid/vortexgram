@@ -15,6 +15,9 @@ for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('
 const { chatCompletion } = require('./ai/groq');
 const prompts = require('./ai/prompts');
 
+process.on('uncaughtException', (e) => console.error('UNCAUGHT:', e));
+process.on('unhandledRejection', (e) => console.error('UNHANDLED:', e));
+
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
@@ -32,7 +35,8 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 let db = { users: [], renameRequests: [], messages: {}, groups: [] };
 try {
   const raw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  db = { users: [], renameRequests: [], messages: {}, ...raw };
+  db = { users: [], renameRequests: [], messages: {}, groups: [], ...raw };
+  if (!Array.isArray(db.groups)) db.groups = [];
 } catch {}
 
 let saveTimer = null;
