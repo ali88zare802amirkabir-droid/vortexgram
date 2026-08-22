@@ -168,6 +168,21 @@ function connectWS() {
 /* ================= ROOMS & USERS ================= */
 function dmRoom(u) { return 'dm:' + [state.me.username, u.username].sort().join('|'); }
 
+function contactsKey() { return 'vx_contacts_' + state.me.username; }
+function getContacts() {
+  try { return JSON.parse(localStorage.getItem(contactsKey()) || '{}'); } catch { return {}; }
+}
+function saveContacts(c) { localStorage.setItem(contactsKey(), JSON.stringify(c)); }
+
+function contactLi(username, displayName, isOnline) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="presence ${isOnline ? 'on' : ''}"></span>
+    <span class="avatar sm" data-av>${esc(initial(displayName))}</span>
+    <span class="grow">${esc(displayName)} <small>@${esc(username)}</small></span>`;
+  li.onclick = () => openRoom(dmRoom({ username }), displayName);
+  return li;
+}
+
 function renderUsers() {
   const ul = $('user-list');
   ul.innerHTML = '';
@@ -180,18 +195,47 @@ function renderUsers() {
   bot.onclick = () => openRoom('dm:' + [state.me.username, BOT_USERNAME].sort().join('|'), BOT_NAME);
   ul.appendChild(bot);
 
-  state.users.filter((u) => u.username !== state.me.username).forEach((u) => {
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="presence ${u.banned ? '' : 'on'}"></span>
-      <span class="avatar sm" data-av></span>
-      <span class="grow">${esc(u.displayName)}${u.isPremium ? premiumBadge() : ''}</span>
-      ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}`;
-    setAvatar(li.querySelector('[data-av]'), u);
-    li.onclick = () => openRoom(dmRoom(u), u.displayName);
-    ul.appendChild(li);
-  });
-  if (!ul.children.length) ul.innerHTML = '<li class="empty">فقط تو آنلاین هستی 🌙</li>';
+  if (state.me.isAdmin) {
+    state.users.filter((u) => u.username !== state.me.username).forEach((u) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="presence ${u.banned ? '' : 'on'}"></span>
+        <span class="avatar sm" data-av></span>
+        <span class="grow">${esc(u.displayName)}${u.isPremium ? premiumBadge() : ''} <small>@${esc(u.username)}</small></span>
+        ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}`;
+      setAvatar(li.querySelector('[data-av]'), u);
+      li.onclick = () => openRoom(dmRoom(u), u.displayName);
+      ul.appendChild(li);
+    });
+  } else {
+    const contacts = getContacts();
+    Object.entries(contacts).forEach(([username, displayName]) => {
+      ul.appendChild(contactLi(username, displayName, false));
+    });
+    if (!Object.keys(contacts).length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'مخاطبی نداری — با @آیدی اضافه کن';
+      ul.appendChild(li);
+    }
+  }
 }
+
+$('contact-add-btn').onclick = async () => {
+  let uname = $('contact-input').value.trim().replace(/^@/, '');
+  $('contact-input').value = '';
+  if (!uname) return;
+  if (uname === state.me.username) { alert('خودت هستی!'); return; }
+  try {
+    const r = await api('/api/users/exists/' + encodeURIComponent(uname));
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    const c = getContacts();
+    c[data.username] = data.displayName;
+    saveContacts(c);
+    renderUsers();
+  } catch (e) { alert(e.message); }
+};
+$('contact-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('contact-add-btn').click(); });
 
 function initial(name) { return (name || '?').trim().charAt(0).toUpperCase(); }
 
@@ -666,6 +710,8 @@ $('rename-btn').onclick = async () => {
 const api = (url, opts = {}) => fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + state.token, ...(opts.headers || {}) } });
 
 $('admin-btn').onclick = async () => {
+  $('admin-chats').classList.add('hidden');
+  $('admin-main').classList.remove('hidden');
   $('admin-modal').classList.remove('hidden');
   loadAdmin();
 };
@@ -695,6 +741,9 @@ async function loadAdmin() {
       <span class="grow">${esc(u.displayName)} <small>@${esc(u.username)}</small></span>
       ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}
       ${u.banned ? '<small>مسدود</small>' : ''}`;
+    if (u.username !== state.me.username) {
+      li.appendChild(mkBtn('💬 چت‌ها', 'mini-btn', async () => openAdminChats(u.username, u.displayName)));
+    }
     if (!u.isAdmin) {
       const banBtn = mkBtn(u.banned ? 'رفع مسدودی' : 'مسدودسازی', u.banned ? 'mini-btn ok' : 'mini-btn no',
         async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u.username, banned: !u.banned }) }); loadAdmin(); });
@@ -712,6 +761,71 @@ function mkBtn(text, cls, fn) {
   b.onclick = fn;
   return b;
 }
+
+/* ---- admin: read users' chats ---- */
+async function openAdminChats(username, displayName) {
+  $('admin-main').classList.add('hidden');
+  $('admin-chats').classList.remove('hidden');
+  $('ac-msgs').classList.add('hidden');
+  $('ac-msgs').innerHTML = '';
+  $('ac-title').textContent = `💬 چت‌های ${displayName}`;
+  const ul = $('ac-rooms');
+  ul.innerHTML = '<li class="empty">...</li>';
+  try {
+    const r = await api(`/api/admin/user/${encodeURIComponent(username)}/rooms`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    ul.innerHTML = '';
+    if (!data.rooms.length) { ul.innerHTML = '<li class="empty">این کاربر هنوز چتی نداشته</li>'; return; }
+    data.rooms.forEach((room) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="grow">${esc(room.title)}</span><small>${room.count} پیام</small>`;
+      li.appendChild(mkBtn('خواندن', 'mini-btn ok', async () => {
+        try {
+          const rr = await api('/api/admin/room/messages?roomId=' + encodeURIComponent(room.roomId));
+          const dd = await rr.json();
+          if (!rr.ok) throw new Error(dd.error);
+          renderAdminMessages(dd.messages, room.title);
+        } catch (e) { alert(e.message); }
+      }));
+      ul.appendChild(li);
+    });
+  } catch (e) { ul.innerHTML = `<li class="empty">${esc(e.message)}</li>`; }
+}
+
+function renderAdminMessages(msgs, title) {
+  const box = $('ac-msgs');
+  box.classList.remove('hidden');
+  box.innerHTML = '';
+  if (!msgs.length) { box.innerHTML = '<p class="empty">پیامی نیست</p>'; return; }
+  let lastDay = null;
+  msgs.forEach((m) => {
+    const day = new Date(m.time).toDateString();
+    if (day !== lastDay) {
+      lastDay = day;
+      const sep = document.createElement('div');
+      sep.className = 'day-sep';
+      sep.textContent = new Date(m.time).toLocaleDateString('fa-IR', { weekday: 'long', day: 'numeric', month: 'long' });
+      box.appendChild(sep);
+    }
+    const div = document.createElement('div');
+    div.className = 'msg in';
+    let body = '';
+    if (m.kind === 'text') body = `<span class="msg-body">${esc(m.content)}</span>`;
+    else if (m.kind === 'sticker') body = esc(m.content);
+    else if (m.kind === 'image' || m.kind === 'gif') body = `<img class="media" src="${esc(m.url)}" loading="lazy" />`;
+    else if (m.kind === 'video') body = `<video class="media" src="${esc(m.url)}" controls preload="metadata"></video>`;
+    else if (m.kind === 'audio') body = `<audio src="${esc(m.url)}" controls></audio>`;
+    else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}">📄 ${esc(m.name || 'فایل')}</a>`;
+    div.innerHTML = `<span class="from">${esc(m.fromName)}${m.from === BOT_USERNAME ? ' 🤖' : ''}</span>${body}<span class="meta">${fmtTime(m.time)}</span>`;
+    box.appendChild(div);
+  });
+}
+
+$('ac-back').onclick = () => {
+  $('admin-chats').classList.add('hidden');
+  $('admin-main').classList.remove('hidden');
+};
 
 /* close modals */
 document.querySelectorAll('.modal-close').forEach((b) => {

@@ -485,3 +485,19 @@ hr { border: none; border-top: 1px solid var(--border-soft); margin: 16px 0; }
   background: repeating-linear-gradient(45deg, var(--muted), var(--muted) 8px, rgba(255,255,255,0.02) 8px, rgba(255,255,255,0.02) 16px);
 }
 #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- contacts & admin chat viewer ---- */
+.add-contact-row {
+  display: flex; gap: 6px; padding: 0 10px 8px;
+}
+.add-contact-row input {
+  flex: 1; min-width: 0; padding: 7px 10px;
+  background: var(--muted); border: 1px solid transparent; border-radius: 9px;
+  color: var(--text); font-size: 12px; direction: ltr; text-align: left;
+}
+.add-contact-row input:focus { outline: none; border-color: var(--accent); }
+#ac-msgs {
+  max-height: 46vh; overflow-y: auto;
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px; padding: 12px; margin-top: 10px;
+}

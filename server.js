@@ -274,6 +274,49 @@ app.post('/api/admin/ban', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// بررسی وجود کاربر برای افزودن مخاطب با آیدی
+app.get('/api/users/exists/:username', auth, (req, res) => {
+  const uname = String(req.params.username || '').trim().replace(/^@/, '');
+  const u = db.users.find((x) => x.username.toLowerCase() === uname.toLowerCase());
+  if (!u) return res.status(404).json({ error: 'کاربری با این آیدی ثبت نشده' });
+  res.json({ username: u.username, displayName: u.displayName, avatar: u.avatar || null, isPremium: !!u.isPremium, online: online.has(u.username) });
+});
+
+// ادمین: اتاق‌های چت یک کاربر
+app.get('/api/admin/user/:username/rooms', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const target = db.users.find((u) => u.username === req.params.username);
+  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  const uname = target.username;
+  const rooms = [];
+  for (const [roomId, arr] of Object.entries(db.messages)) {
+    let title = null;
+    if (roomId.startsWith('dm:')) {
+      const parts = roomId.slice(3).split('|');
+      if (!parts.includes(uname)) continue;
+      const other = parts.find((p) => p !== uname);
+      const otherUser = other && db.users.find((u) => u.username === other);
+      title = '💬 ' + ((otherUser && otherUser.displayName) || other || '?');
+    } else if (roomId.startsWith('group:')) {
+      const g = findGroup(roomId.slice(6));
+      if (!g || !memberOf(g, uname)) continue;
+      title = (g.type === 'channel' ? '📢 ' : '👥 ') + g.name;
+    } else continue;
+    const last = arr[arr.length - 1];
+    rooms.push({ roomId, title, count: arr.length, lastTime: last ? last.time : 0 });
+  }
+  rooms.sort((a, b) => b.lastTime - a.lastTime);
+  res.json({ user: { username: uname, displayName: target.displayName }, rooms });
+});
+
+// ادمین: پیام‌های هر اتاق
+app.get('/api/admin/room/messages', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const roomId = String(req.query.roomId || '').slice(0, 120);
+  const msgs = db.messages[roomId] || [];
+  res.json({ roomId, messages: msgs });
+});
+
 // ---------- uploads ----------
 const EXT_BY_MIME = {
   'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
@@ -438,7 +481,10 @@ function broadcast(obj, exceptWs) {
 }
 function pushUsers() {
   const list = [...online.values()].map((i) => i.pub);
-  broadcast({ type: 'users', users: list });
+  for (const [, info] of online) {
+    // لیست کاربران آنلاین فقط برای ادمین نمایش داده می‌شود
+    wsSend(info.ws, { type: 'users', users: info.pub.isAdmin ? list : [] });
+  }
 }
 function kickUser(username) {
   const info = online.get(username);
