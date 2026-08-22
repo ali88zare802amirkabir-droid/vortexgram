@@ -102,6 +102,9 @@ function connectWS() {
   state.ws.onmessage = (ev) => {
     const d = JSON.parse(ev.data);
     switch (d.type) {
+      case 'ready':
+        if (d.groups) { state.groups = d.groups; renderGroups(); }
+        break;
       case 'users': state.users = d.users; renderUsers(); showEmptyHint(); break;
       case 'groups': state.groups = d.groups; renderGroups(); break;
       case 'message-edited': {

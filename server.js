@@ -95,7 +95,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
 
 // ---------- auth api ----------
 app.post('/api/register', (req, res) => {
@@ -304,6 +304,7 @@ wss.on('connection', (ws) => {
       online.set(username, { ws, pub: publicUser(user) });
       wsSend(ws, { type: 'ready', me: publicUser(user), groups: publicGroups(username) });
       pushUsers();
+      broadcastGroups();
       return;
     }
     if (!username) return;
