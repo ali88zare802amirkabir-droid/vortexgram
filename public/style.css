@@ -190,8 +190,54 @@ button:hover { filter: brightness(1.15); }
   color: #fff; font-weight: 800; font-size: 17px;
   flex-shrink: 0;
   user-select: none;
+  overflow: hidden;
 }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar.has-img { background: var(--muted); }
 .avatar.sm { width: 32px; height: 32px; font-size: 13px; }
+.avatar.xs { width: 28px; height: 28px; font-size: 12px; }
+.avatar.lg { width: 72px; height: 72px; font-size: 26px; }
+.avatar.premium {
+  box-shadow: 0 0 0 2px #fbbf24, 0 0 10px rgba(251, 191, 36, 0.55);
+}
+
+.badge-premium { font-size: 11px; filter: drop-shadow(0 0 4px rgba(251,191,36,0.8)); }
+.mini-btn.prem { background: linear-gradient(135deg, #d97706, #fbbf24); color: #1a1a1a; }
+
+.msg .avatar.xs { position: absolute; right: -38px; top: 2px; }
+
+/* profile modal */
+.profile-top { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; }
+.avatar-edit { position: relative; display: inline-flex; align-items: flex-end; }
+.avatar-edit .icon-btn { position: absolute; bottom: -4px; left: -6px; min-width: 30px; min-height: 30px; font-size: 13px; border-radius: 50%; }
+.pd-name { font-size: 16px; font-weight: 800; }
+.pd-user { font-size: 12.5px; color: var(--dim); direction: ltr; text-align: right; }
+.pd-premium { font-size: 11.5px; color: #fbbf24; margin-top: 4px; }
+textarea#bio-input {
+  width: 100%; resize: none;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: rgba(124, 58, 237, 0.06);
+  color: var(--text); outline: none; font-size: 13.5px;
+  font-family: inherit;
+}
+textarea#bio-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+
+/* upload progress */
+.upload-progress {
+  padding: 8px 20px;
+  background: rgba(124, 58, 237, 0.12);
+  border-top: 1px solid var(--border-soft);
+}
+.up-info { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--dim); margin-bottom: 5px; direction: ltr; }
+.up-track { height: 6px; background: var(--muted); border-radius: 99px; overflow: hidden; }
+.up-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--secondary), var(--primary));
+  border-radius: 99px;
+  transition: width 0.15s ease;
+}
 
 /* ============ CHAT ============ */
 #chat-area { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }

@@ -146,6 +146,13 @@ function connectWS() {
         if (d.approved && state.me) { state.me.displayName = d.displayName; renderMyAvatar(); }
         alert(d.approved ? 'درخواست تغییر نام تایید شد ✅' : 'درخواست تغییر نام رد شد ❌');
         break;
+      case 'premium-changed':
+        if (state.me) {
+          state.me.isPremium = d.isPremium;
+          renderMyAvatar();
+          alert(d.isPremium ? '🌟 تبریک! حساب شما پرمیوم شد' : 'عضویت پرمیوم شما لغو شد');
+        }
+        break;
       case 'kicked': alert('حساب شما توسط ادمین مسدود شد'); logout(); break;
       case 'error': alert(d.text); break;
       case 'auth-failed': logout(); break;
@@ -173,9 +180,10 @@ function renderUsers() {
   state.users.filter((u) => u.username !== state.me.username).forEach((u) => {
     const li = document.createElement('li');
     li.innerHTML = `<span class="presence ${u.banned ? '' : 'on'}"></span>
-      <span class="avatar sm">${initial(u.displayName)}</span>
-      <span class="grow">${esc(u.displayName)}</span>
+      <span class="avatar sm" data-av></span>
+      <span class="grow">${esc(u.displayName)}${u.isPremium ? premiumBadge() : ''}</span>
       ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}`;
+    setAvatar(li.querySelector('[data-av]'), u);
     li.onclick = () => openRoom(dmRoom(u), u.displayName);
     ul.appendChild(li);
   });
@@ -185,8 +193,20 @@ function renderUsers() {
 function initial(name) { return (name || '?').trim().charAt(0).toUpperCase(); }
 
 function renderMyAvatar() {
-  $('my-avatar').textContent = initial(state.me.displayName || state.me.username);
+  setAvatar($('my-avatar'), state.me);
 }
+
+/* avatar helper: img if exists else letter */
+function setAvatar(el, user, size) {
+  if (!el) return;
+  el.classList.toggle('has-img', !!user?.avatar);
+  el.classList.toggle('premium', !!user?.isPremium);
+  el.innerHTML = user?.avatar
+    ? `<img src="${esc(user.avatar)}" alt="" />`
+    : esc(initial(user?.displayName || user?.username || '?'));
+}
+
+function premiumBadge() { return ' <span class="badge-premium">⭐</span>'; }
 
 function openRoom(roomId, title) {
   state.room = roomId;
@@ -256,8 +276,15 @@ function addMessage(m) {
   else if (m.kind === 'audio') body = `<audio src="${esc(m.url)}" controls></audio>`;
   else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}" download="${esc(m.name || '')}">📄 <span>${esc(m.name || 'فایل')}</span> <small>دانلود</small></a>`;
 
-  const head = mine ? '' : `<span class="from">${esc(m.fromName)}</span>`;
+  const head = mine ? '' : `<span class="from">${esc(m.fromName)}${m.fromPremium ? premiumBadge() : ''}</span>`;
   div.innerHTML = `${head}${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}</span>`;
+  if (!mine && m.fromAvatar) {
+    div.classList.add('with-av');
+    const av = document.createElement('span');
+    av.className = 'avatar xs';
+    setAvatar(av, { avatar: m.fromAvatar, isPremium: m.fromPremium });
+    div.prepend(av);
+  }
 
   if (mine && m.kind === 'text') {
     const acts = document.createElement('span');
@@ -358,20 +385,47 @@ $('sticker-btn').onclick = () => togglePicker($('sticker-picker'));
 
 /* ================= UPLOAD ================= */
 $('attach-btn').onclick = () => $('file-input').click();
-$('file-input').onchange = async () => {
+$('file-input').onchange = () => {
   const f = $('file-input').files[0];
   if (!f) return;
-  if (f.size > 30 * 1024 * 1024) { alert('حداکثر حجم ۳۰ مگابایت'); return; }
-  const fd = new FormData();
-  fd.append('file', f);
-  try {
-    const r = await fetch('/api/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token }, body: fd });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error);
-    send({ type: 'message', kind: data.kind, url: data.url, mime: data.mime, name: data.name, content: '' });
-  } catch (e) { alert(e.message); }
-  $('file-input').value = '';
+  const maxMB = state.me.isPremium ? 100 : 30;
+  if (f.size > maxMB * 1024 * 1024) {
+    alert(`حداکثر ${maxMB} مگابایت` + (state.me.isPremium ? '' : ' — با پرمیوم تا ۱۰۰ مگ'));
+    $('file-input').value = '';
+    return;
+  }
+  uploadWithProgress(f);
 };
+
+function uploadWithProgress(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const xhr = new XMLHttpRequest();
+  $('upload-progress').classList.remove('hidden');
+  $('up-name').textContent = '⬆ ' + file.name;
+  $('up-fill').style.width = '0%';
+  $('up-percent').textContent = '0%';
+
+  xhr.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round((e.loaded / e.total) * 100);
+    $('up-fill').style.width = pct + '%';
+    $('up-percent').textContent = pct + '%';
+  };
+  xhr.onload = () => {
+    $('upload-progress').classList.add('hidden');
+    try {
+      const data = JSON.parse(xhr.responseText);
+      if (xhr.status !== 200) throw new Error(data.error || 'خطا در آپلود');
+      send({ type: 'message', kind: data.kind, url: data.url, mime: data.mime, name: data.name, content: '' });
+    } catch (err) { alert(err.message); }
+  };
+  xhr.onerror = () => { $('upload-progress').classList.add('hidden'); alert('آپلود قطع شد'); };
+  xhr.open('POST', '/api/upload');
+  xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+  xhr.send(fd);
+  $('file-input').value = '';
+}
 
 document.addEventListener('click', (e) => {
   if (e.target.classList?.contains('media')) {
@@ -389,6 +443,48 @@ $('profile-btn').onclick = () => {
   $('profile-modal').classList.remove('hidden');
   $('rename-input').value = state.me.displayName;
   $('rename-status').textContent = '';
+  $('bio-input').value = state.me.bio || '';
+  updateBioCount();
+  refreshProfileUI();
+};
+function refreshProfileUI() {
+  setAvatar($('profile-avatar'), state.me);
+  $('profile-displayname').textContent = state.me.displayName + (state.me.isPremium ? premiumBadge() : '');
+  $('profile-username').textContent = '@' + state.me.username;
+  const p = $('profile-premium');
+  if (state.me.isAdmin) p.textContent = '👑 ادمین سیستم';
+  else if (state.me.isPremium) p.textContent = '⭐ عضویت پرمیوم — آپلود ۱۰۰ مگ + بیو بلند';
+  else p.textContent = 'حساب رایگان — آپلود ۳۰ مگ (پرمیوم از ادمین بگیر)';
+}
+function updateBioCount() {
+  const max = state.me.isPremium ? 200 : 80;
+  $('bio-count').textContent = `${$('bio-input').value.length}/${max}`;
+}
+$('bio-input').addEventListener('input', updateBioCount);
+$('avatar-btn').onclick = () => $('avatar-input').click();
+$('avatar-input').onchange = async () => {
+  const f = $('avatar-input').files[0];
+  if (!f) return;
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const r = await fetch('/api/profile/avatar', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token }, body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    state.me.avatar = data.avatar;
+    refreshProfileUI();
+    renderMyAvatar();
+  } catch (e) { alert(e.message); }
+  $('avatar-input').value = '';
+};
+$('bio-btn').onclick = async () => {
+  try {
+    const r = await api('/api/profile/bio', { method: 'POST', body: JSON.stringify({ bio: $('bio-input').value }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    state.me.bio = data.me.bio;
+    $('rename-status').textContent = 'بیو ذخیره شد ✅';
+  } catch (e) { $('rename-status').textContent = e.message; }
 };
 $('logout-btn').onclick = logout;
 $('rename-btn').onclick = async () => {
@@ -448,6 +544,9 @@ async function loadAdmin() {
       const banBtn = mkBtn(u.banned ? 'رفع مسدودی' : 'مسدودسازی', u.banned ? 'mini-btn ok' : 'mini-btn no',
         async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u.username, banned: !u.banned }) }); loadAdmin(); });
       li.appendChild(banBtn);
+      const premBtn = mkBtn(u.isPremium ? 'لغو پرمیوم' : '⭐ پرمیوم کن', u.isPremium ? 'mini-btn no' : 'mini-btn prem',
+        async () => { await api('/api/admin/premium', { method: 'POST', body: JSON.stringify({ username: u.username, isPremium: !u.isPremium }) }); loadAdmin(); });
+      li.appendChild(premBtn);
     }
     us.appendChild(li);
   });

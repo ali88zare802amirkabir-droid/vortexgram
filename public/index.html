@@ -58,6 +58,10 @@
         <button id="end-call-btn" class="send-btn" style="padding:8px 14px">قطع</button>
       </div>
       <div id="remote-media"></div>
+      <div id="upload-progress" class="upload-progress hidden">
+        <div class="up-info"><span id="up-name"></span><span id="up-percent">0%</span></div>
+        <div class="up-track"><div id="up-fill" class="up-fill"></div></div>
+      </div>
       <div id="messages"></div>
       <div class="composer">
         <button id="emoji-btn" class="icon-btn" title="ایموجی">🙂</button>
@@ -89,12 +93,31 @@
     <div class="modal-box">
       <button class="modal-close" data-close="profile-modal">✕</button>
       <h3>پروفایل من</h3>
+      <div class="profile-top">
+        <div id="avatar-wrap" class="avatar-edit">
+          <span id="profile-avatar" class="avatar lg"></span>
+          <button id="avatar-btn" class="icon-btn sm" title="تغییر عکس">📷</button>
+          <input id="avatar-input" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+        </div>
+        <div class="profile-meta">
+          <div id="profile-displayname" class="pd-name"></div>
+          <div id="profile-username" class="pd-user"></div>
+          <div id="profile-premium" class="pd-premium"></div>
+        </div>
+      </div>
+      <label>بیوگرافی</label>
+      <textarea id="bio-input" rows="3" maxlength="200" placeholder="درباره خودت بنویس..."></textarea>
+      <div class="row" style="margin-top:8px">
+        <span id="bio-count" class="hint" style="flex:1"></span>
+        <button id="bio-btn" class="mini-btn">ذخیره بیو</button>
+      </div>
+      <p id="rename-status" class="hint"></p>
+      <hr />
       <label>نام نمایشی (تغییر نیاز به تایید ادمین دارد)</label>
       <div class="row">
         <input id="rename-input" type="text" maxlength="25" />
         <button id="rename-btn" class="mini-btn">ثبت درخواست</button>
       </div>
-      <p id="rename-status" class="hint"></p>
       <hr />
       <button id="logout-btn" class="danger-btn">خروج از حساب</button>
     </div>

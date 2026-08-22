@@ -70,8 +70,14 @@ function hash(pw, salt) {
   return crypto.createHash('sha256').update(salt + ':' + pw).digest('hex');
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium };
 }
+const LIMITS = {
+  normalUploadMB: 30,
+  premiumUploadMB: 100,
+  normalBio: 80,
+  premiumBio: 200,
+};
 function isDmAllowed(roomId, username) {
   if (typeof roomId !== 'string' || !roomId.startsWith('dm:')) return false;
   return roomId.slice(3).split('|').includes(username);
@@ -154,6 +160,50 @@ app.get('/api/me', auth, (req, res) => {
   res.json({ me: publicUser(req.user), renamePending: pending });
 });
 
+// ---------- profile ----------
+app.post('/api/profile/bio', auth, (req, res) => {
+  const bio = String((req.body || {}).bio || '').trim();
+  const max = req.user.isPremium ? LIMITS.premiumBio : LIMITS.normalBio;
+  if (bio.length > max) return res.status(400).json({ error: `بیو حداکثر ${max} کاراکتر` + (req.user.isPremium ? '' : ' — برای بیشتر پرمیوم شو') });
+  req.user.bio = bio;
+  saveDB();
+  pushUsers();
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: UPLOAD_DIR,
+    filename: (req, file, cb) => cb(null, 'av-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex') + (EXT_BY_MIME[file.mimetype] || '')),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)),
+});
+app.post('/api/profile/avatar', auth, avatarUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'عکس مجاز نیست (فقط jpg/png/webp تا ۵MB)' });
+  if (req.user.avatar) {
+    const old = path.join(UPLOAD_DIR, path.basename(req.user.avatar));
+    fs.unlink(old, () => {});
+  }
+  req.user.avatar = '/uploads/' + req.file.filename;
+  saveDB();
+  pushUsers();
+  res.json({ ok: true, avatar: req.user.avatar, me: publicUser(req.user) });
+});
+
+// ---------- premium ----------
+app.post('/api/admin/premium', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const { username, isPremium } = req.body || {};
+  const target = db.users.find((u) => u.username === username);
+  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  target.isPremium = !!isPremium;
+  saveDB();
+  pushUsers();
+  notifyUser(target.username, { type: 'premium-changed', isPremium: target.isPremium });
+  res.json({ ok: true, user: publicUser(target) });
+});
+
 app.post('/api/rename', auth, (req, res) => {
   const newName = String((req.body || {}).displayName || '').trim();
   if (newName.length < 2 || newName.length > 25) return res.status(400).json({ error: 'نام نمایشی باید ۲ تا ۲۵ کاراکتر باشد' });
@@ -220,11 +270,16 @@ const upload = multer({
     destination: UPLOAD_DIR,
     filename: (req, file, cb) => cb(null, Date.now() + '-' + crypto.randomBytes(5).toString('hex') + (EXT_BY_MIME[file.mimetype] || '')),
   }),
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: { fileSize: LIMITS.premiumUploadMB * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, !!EXT_BY_MIME[file.mimetype]),
 });
 app.post('/api/upload', auth, upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'فایل مجاز نیست یا حجمش زیاد است (حداکثر ۳۰MB)' });
+  if (!req.file) return res.status(400).json({ error: 'فایل مجاز نیست یا حجمش زیاد است' });
+  const maxMB = req.user.isPremium ? LIMITS.premiumUploadMB : LIMITS.normalUploadMB;
+  if (req.file.size > maxMB * 1024 * 1024) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: `حداکثر ${maxMB} مگابایت` + (req.user.isPremium ? '' : ' — با پرمیوم تا ۱۰۰ مگ') });
+  }
   const m = req.file.mimetype;
   const kind = m.startsWith('image/') ? (m === 'image/gif' ? 'gif' : 'image') : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : 'file';
   res.json({ url: '/uploads/' + req.file.filename, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
@@ -339,6 +394,7 @@ wss.on('connection', (ws) => {
         id: crypto.randomUUID(), roomId, from: username, fromName: user.displayName, kind,
         content, url: data.url || undefined, mime: typeof data.mime === 'string' ? data.mime.slice(0, 60) : undefined,
         name: typeof data.name === 'string' ? data.name.slice(0, 80) : undefined, time: now,
+        fromAvatar: user.avatar || undefined, fromPremium: !!user.isPremium,
       };
       if (!db.messages[roomId]) db.messages[roomId] = [];
       db.messages[roomId].push(msg);
