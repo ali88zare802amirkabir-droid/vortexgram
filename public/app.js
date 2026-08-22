@@ -20,7 +20,40 @@ const state = {
   typingHide: null,
   lastDay: null,
   call: null,
+  chatState: {},
+  readState: {},
+  showArchive: false,
+  peerStatus: '',
+  rec: null,
 };
+
+function chatFlags(roomId) { return state.chatState[roomId] || {}; }
+function peerReadTime(roomId) {
+  const readers = state.readState[roomId] || {};
+  let t = 0;
+  for (const [u, time] of Object.entries(readers)) if (u !== state.me.username && time > t) t = time;
+  return t;
+}
+async function setChatState(roomId, patch) {
+  state.chatState[roomId] = { ...chatFlags(roomId), ...patch };
+  renderGroups(); renderUsers();
+  try {
+    await api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId, ...patch }) });
+  } catch (e) {}
+}
+function timeAgo(ts) {
+  if (!ts) return '';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 30) return 'همین الان';
+  if (s < 60) return `${s} ثانیه پیش`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} دقیقه پیش`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} ساعت پیش`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d} روز پیش`;
+  return new Date(ts).toLocaleDateString('fa-IR');
+}
 
 const BOT_USERNAME = 'vortex_bot';
 const BOT_NAME = 'Vortex AI';
@@ -125,9 +158,17 @@ function connectWS() {
     switch (d.type) {
       case 'ready':
         if (d.groups) { state.groups = d.groups; renderGroups(); }
+        if (d.chatState) state.chatState = d.chatState;
+        if (d.readState) state.readState = d.readState;
+        updateArchiveCount();
         break;
       case 'users': state.users = d.users; renderUsers(); showEmptyHint(); break;
       case 'groups': state.groups = d.groups; renderGroups(); updateComposerLock(); break;
+      case 'room-read':
+        if (!state.readState[d.roomId]) state.readState[d.roomId] = {};
+        state.readState[d.roomId][d.username] = d.time;
+        if (state.room === d.roomId) updateTicks();
+        break;
       case 'added-to':
         alert(`شما به ${d.type2 === 'channel' ? 'کانال' : 'گروه'} «${d.name}» اضافه شدید`);
         break;
@@ -164,7 +205,7 @@ function connectWS() {
         d.messages.forEach(addMessage);
         scrollBottom();
         break;
-      case 'message': addMessage(d.message); break;
+      case 'message': addMessage(d.message); if (d.message && d.message.roomId === state.room) markRead(state.room); break;
       case 'typing': showTyping(d); break;
       case 'rename-result':
         if (d.approved && state.me) { state.me.displayName = d.displayName; renderMyAvatar(); }
@@ -200,12 +241,15 @@ function getContacts() {
 }
 function saveContacts(c) { localStorage.setItem(contactsKey(), JSON.stringify(c)); }
 
-function contactLi(username, displayName, isOnline) {
+function contactLi(username, displayName) {
+  const roomId = dmRoom({ username });
   const li = document.createElement('li');
-  li.innerHTML = `<span class="presence ${isOnline ? 'on' : ''}"></span>
+  li.dataset.roomId = roomId;
+  li.innerHTML = `${chatFlags(roomId).pinned ? '<span class="pin">📌</span>' : ''}<span class="presence"></span>
     <span class="avatar sm" data-av>${esc(initial(displayName))}</span>
     <span class="grow">${esc(displayName)} <small>@${esc(username)}</small></span>`;
-  li.onclick = () => openRoom(dmRoom({ username }), displayName);
+  li.onclick = () => openRoom(roomId, displayName);
+  li.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, roomId); };
   return li;
 }
 
@@ -213,36 +257,42 @@ function renderUsers() {
   const ul = $('user-list');
   ul.innerHTML = '';
 
-  const bot = document.createElement('li');
-  bot.innerHTML = `<span class="presence on"></span>
-    <span class="avatar sm" style="background:linear-gradient(135deg,var(--accent),var(--primary))">V</span>
-    <span class="grow">${BOT_NAME}</span>
-    <span class="badge-admin">AI</span>`;
-  bot.onclick = () => openRoom('dm:' + [state.me.username, BOT_USERNAME].sort().join('|'), BOT_NAME);
-  ul.appendChild(bot);
+  const botRoom = 'dm:' + [state.me.username, BOT_USERNAME].sort().join('|');
+  const items = [{ username: BOT_USERNAME, displayName: BOT_NAME, isPremium: false, online: true, roomId: botRoom }];
 
   if (state.me.isAdmin) {
     state.users.filter((u) => u.username !== state.me.username).forEach((u) => {
-      const li = document.createElement('li');
-      li.innerHTML = `<span class="presence ${u.online && !u.banned ? 'on' : ''}"></span>
-        <span class="avatar sm" data-av></span>
-        <span class="grow">${esc(u.displayName)}${u.isPremium ? premiumBadge() : ''} <small>@${esc(u.username)}${u.online ? '' : ' — آفلاین'}</small></span>
-        ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}`;
-      setAvatar(li.querySelector('[data-av]'), { ...u, isPremium: u.isPremium });
-      li.onclick = () => openRoom(dmRoom(u), u.displayName);
-      ul.appendChild(li);
+      items.push({ username: u.username, displayName: u.displayName, isPremium: u.isPremium, online: u.online && !u.banned, roomId: dmRoom(u) });
     });
   } else {
     const contacts = getContacts();
     Object.entries(contacts).forEach(([username, displayName]) => {
-      ul.appendChild(contactLi(username, displayName, false));
+      items.push({ username, displayName, isPremium: false, online: false, roomId: dmRoom({ username }) });
     });
-    if (!Object.keys(contacts).length) {
+  }
+
+  items
+    .filter((it) => !!chatFlags(it.roomId).archived === state.showArchive)
+    .sort((a, b) => (chatFlags(b.roomId).pinned ? 1 : 0) - (chatFlags(a.roomId).pinned ? 1 : 0))
+    .forEach((it) => {
       const li = document.createElement('li');
-      li.className = 'empty';
-      li.textContent = 'مخاطبی نداری — با @آیدی اضافه کن';
+      li.dataset.roomId = it.roomId;
+      li.innerHTML = `${chatFlags(it.roomId).pinned ? '<span class="pin">📌</span>' : ''}<span class="presence ${it.online ? 'on' : ''}"></span>
+        <span class="avatar sm" data-av>${esc(initial(it.displayName))}</span>
+        <span class="grow">${esc(it.displayName)}${it.isPremium ? premiumBadge() : ''} <small>@${esc(it.username)}${it.online ? '' : ''}</small></span>
+        ${it.username === BOT_USERNAME ? '<span class="badge-admin">AI</span>' : ''}
+        ${it.username !== BOT_USERNAME && state.me.isAdmin && it.online === false ? '<small>آفلاین</small>' : ''}`;
+      if (it.avatar) setAvatar(li.querySelector('[data-av]'), { avatar: it.avatar, isPremium: it.isPremium });
+      li.onclick = () => openRoom(it.roomId, it.displayName);
+      li.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, it.roomId); };
       ul.appendChild(li);
-    }
+    });
+
+  if (!ul.children.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = state.showArchive ? 'چت بایگانی‌شده‌ای نیست' : (state.me.isAdmin ? 'کاربری آنلاین نیست' : 'مخاطبی نداری — با @آیدی اضافه کن');
+    ul.appendChild(li);
   }
 }
 
@@ -326,6 +376,35 @@ function openRoom(roomId, title) {
   $('group-settings-btn').classList.toggle('hidden', !(g && g.joined));
   updateComposerLock();
   state.ws.send(JSON.stringify({ type: 'history', roomId }));
+  // علامت‌گذاری به‌عنوان خوانده‌شده + وضعیت طرف مقابل
+  markRead(roomId);
+  if (isDmHuman) {
+    const peer = roomId.slice(3).split('|').find((p) => p !== state.me.username);
+    fetchPeerStatus(peer);
+  } else {
+    state.peerStatus = '';
+    refreshTitle();
+  }
+}
+
+function markRead(roomId) {
+  if (!roomId) return;
+  api('/api/chats/read', { method: 'POST', body: JSON.stringify({ roomId }) }).catch(() => {});
+}
+
+async function fetchPeerStatus(peer) {
+  try {
+    const r = await api('/api/users/exists/' + encodeURIComponent(peer));
+    const d = await r.json();
+    state.peerStatus = d.online ? 'آنلاین' : (d.lastSeen ? 'آخرین بازدید ' + timeAgo(d.lastSeen) : '');
+  } catch { state.peerStatus = ''; }
+  if (state.room.startsWith('dm:') && state.room.includes(peer)) refreshTitle();
+}
+
+function refreshTitle() {
+  let t = state.roomTitle;
+  if (state.peerStatus && state.room.startsWith('dm:')) t += ' — ' + state.peerStatus;
+  $('chat-title').textContent = t;
 }
 
 function groupIcon(g) { return g.type === 'channel' ? '📢' : '👥'; }
@@ -352,25 +431,64 @@ function updateComposerLock() {
 function renderGroups() {
   const ul = $('group-list');
   ul.innerHTML = '';
-  state.groups.forEach((g) => {
+  const items = state.groups
+    .map((g) => ({ g, roomId: 'group:' + g.id }))
+    .filter(({ g, roomId }) => !!chatFlags(roomId).archived === state.showArchive)
+    .sort((a, b) => (chatFlags(b.roomId).pinned ? 1 : 0) - (chatFlags(a.roomId).pinned ? 1 : 0));
+  items.forEach(({ g, roomId }) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="avatar sm" style="border-radius:10px;background:linear-gradient(135deg,#0ea5e9,var(--primary))">${g.type === 'channel' ? '📢' : '👥'}</span>
-      <span class="grow">${esc(g.name)} <small>${g.members} عضو${g.joined ? '' : ' — برای ورود کلیک کن'}</small></span>
-      ${g.joined && g.myRole === 'owner' ? '<span class="badge-admin">OWNER</span>' : ''}
-      ${g.joined && g.myRole === 'admin' ? '<span class="badge-admin" style="background:#0ea5e9">ADMIN</span>' : ''}`;
-    li.onclick = async () => {
-      if (!g.joined) {
-        await api(`/api/groups/${g.id}/join`, { method: 'POST' });
-        g.joined = true;
-        g.myRole = 'member';
-        updateComposerLock();
-      }
-      openRoom('group:' + g.id, `${groupIcon(g)} ${g.name}`);
-    };
+    li.dataset.roomId = roomId;
+    li.innerHTML = `${chatFlags(roomId).pinned ? '<span class="pin">📌</span>' : ''}<span class="avatar sm" style="border-radius:10px;background:linear-gradient(135deg,#0ea5e9,var(--primary))">${g.type === 'channel' ? '📢' : '👥'}</span>
+      <span class="grow">${esc(g.name)} <small>${g.members} عضو</small></span>
+      ${g.myRole === 'owner' ? '<span class="badge-admin">OWNER</span>' : ''}
+      ${g.myRole === 'admin' ? '<span class="badge-admin" style="background:#0ea5e9">ADMIN</span>' : ''}`;
+    li.onclick = () => openRoom(roomId, `${groupIcon(g)} ${g.name}`);
+    li.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, roomId); };
     ul.appendChild(li);
   });
-  if (!ul.children.length) ul.innerHTML = '<li class="empty">گروهی نیست — با + بساز</li>';
+  if (!ul.children.length) ul.innerHTML = `<li class="empty">${state.showArchive ? 'چت بایگانی‌شده‌ای نیست' : 'گروهی نیست — با + بساز'}</li>`;
 }
+
+function updateArchiveCount() {
+  let n = 0;
+  const all = [...state.groups.map((g) => 'group:' + g.id), ...state.users.map((u) => dmRoom(u)), 'dm:' + [state.me.username, BOT_USERNAME].sort().join('|')];
+  const c = getContacts();
+  Object.keys(c).forEach((u) => all.push(dmRoom({ username: u })));
+  all.forEach((rid) => { if (chatFlags(rid).archived) n++; });
+  const el = $('archive-count');
+  if (n > 0) { el.textContent = n; el.classList.remove('hidden'); }
+  else el.classList.add('hidden');
+  const at = $('archive-toggle');
+  at.classList.toggle('active', state.showArchive);
+  at.querySelector('.ar-label').textContent = state.showArchive ? 'بازگشت به چت‌ها' : 'بایگانی‌ها';
+}
+
+$('archive-toggle').onclick = () => {
+  state.showArchive = !state.showArchive;
+  renderGroups(); renderUsers(); updateArchiveCount();
+};
+
+/* منوی راست‌کلیک/لمس طولانی روی چت: سنجاق + بایگانی */
+function openChatMenu(e, roomId) {
+  closeChatMenu();
+  const popup = document.createElement('div');
+  popup.id = 'chat-menu';
+  popup.className = 'chat-menu';
+  const pinned = chatFlags(roomId).pinned;
+  const archived = chatFlags(roomId).archived;
+  popup.innerHTML = `
+    <button data-act="pin">${pinned ? '🔽 برداشتن سنجاق' : '📌 سنجاق کردن'}</button>
+    <button data-act="archive">${archived ? '📤 خارج از بایگانی' : '📥 بایگانی کردن'}</button>
+    <button data-act="cancel">لغو</button>`;
+  popup.style.left = Math.min(e.clientX, window.innerWidth - 180) + 'px';
+  popup.style.top = Math.min(e.clientY, window.innerHeight - 130) + 'px';
+  document.body.appendChild(popup);
+  popup.querySelector('[data-act="pin"]').onclick = async () => { closeChatMenu(); await setChatState(roomId, { pinned: !pinned }); updateArchiveCount(); };
+  popup.querySelector('[data-act="archive"]').onclick = async () => { closeChatMenu(); await setChatState(roomId, { archived: !archived }); updateArchiveCount(); };
+  popup.querySelector('[data-act="cancel"]').onclick = closeChatMenu;
+}
+function closeChatMenu() { const p = $('chat-menu'); if (p) p.remove(); }
+document.addEventListener('click', (e) => { if ($('chat-menu') && !$('chat-menu').contains(e.target)) closeChatMenu(); });
 
 /* ---- new group/channel modal ---- */
 $('new-group-btn').onclick = () => {
@@ -533,8 +651,10 @@ function addMessage(m) {
   else if (m.kind === 'audio') body = `<audio src="${esc(m.url)}" controls></audio>`;
   else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}" download="${esc(m.name || '')}">📄 <span>${esc(m.name || 'فایل')}</span> <small>دانلود</small></a>`;
 
+  const fwd = m.fwdFrom ? `<div class="fwd">↪ بازنشر از ${esc(m.fwdFrom)}</div>` : '';
+  const ticks = mine ? `<span class="ticks" data-room="${m.roomId}" data-time="${m.time}">${peerReadTime(m.roomId) >= m.time ? '✓✓' : '✓'}</span>` : '';
   const head = mine ? '' : `<span class="from">${esc(m.fromName)}${m.fromPremium ? premiumBadge() : ''}</span>`;
-  div.innerHTML = `${head}${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}</span>`;
+  div.innerHTML = `${fwd}${head}${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}${ticks}</span>`;
 
   // نقل قول پیام
   if (m.replyTo && m.replyTo.id) {
@@ -569,6 +689,10 @@ function addMessage(m) {
   replyBtn.textContent = '↩'; replyBtn.title = 'پاسخ';
   replyBtn.onclick = () => setReplyTo(m);
   acts.appendChild(replyBtn);
+  const fwdBtn = document.createElement('button');
+  fwdBtn.textContent = '⏩'; fwdBtn.title = 'فوروارد';
+  fwdBtn.onclick = () => forwardMessage(m);
+  acts.appendChild(fwdBtn);
   if (mine && m.kind === 'text') {
     const editBtn = document.createElement('button');
     editBtn.textContent = '✎'; editBtn.title = 'ویرایش';
@@ -595,6 +719,67 @@ function addMessage(m) {
 
 function scrollBottom() { const el = $('messages'); el.scrollTop = el.scrollHeight; }
 
+function updateTicks() {
+  if (!state.room) return;
+  const t = peerReadTime(state.room);
+  document.querySelectorAll('.ticks').forEach((sp) => {
+    if (sp.dataset.room === state.room) sp.textContent = (parseInt(sp.dataset.time, 10) <= t) ? '✓✓' : '✓';
+  });
+}
+
+function forwardMessage(m) {
+  const targets = [];
+  state.groups.forEach((g) => targets.push(['👥 ' + g.name, 'group:' + g.id]));
+  const c = getContacts();
+  Object.entries(c).forEach(([u, d]) => targets.push(['@' + u, dmRoom({ username: u })]));
+  if (!targets.length) { alert('چتی برای فوروارد نداری'); return; }
+  const list = targets.map((t, i) => `${i + 1}) ${t[0]}`).join('\n');
+  const ans = prompt('فوروارد به کدام چت؟\n(شماره را وارد کن)\n\n' + list, '1');
+  const idx = parseInt(ans, 10) - 1;
+  if (isNaN(idx) || !targets[idx]) return;
+  const [label, rid] = targets[idx];
+  send({
+    type: 'message', kind: m.kind, content: m.content || '', url: m.url || undefined,
+    mime: m.mime, name: m.name, fwdFrom: m.fromName,
+  }, rid);
+  alert('فوروارد شد به ' + label);
+}
+
+/* ---- ضبط پیام صوتی ---- */
+let recChunks = [], recTimer = null, recStart = 0;
+async function startRec() {
+  if (state.rec) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream);
+    recChunks = [];
+    mr.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+    mr.onstop = () => {
+      stream.getTracks().forEach((tr) => tr.stop());
+      const blob = new Blob(recChunks, { type: 'audio/webm' });
+      const file = new File([blob], 'voice_' + Date.now() + '.webm', { type: 'audio/webm' });
+      $('rec-bar').classList.add('hidden');
+      clearInterval(recTimer);
+      uploadWithProgress(file);
+      state.rec = null;
+    };
+    mr.start();
+    state.rec = mr;
+    $('rec-bar').classList.remove('hidden');
+    recStart = Date.now();
+    recTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - recStart) / 1000);
+      $('rec-time').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 500);
+  } catch (e) { alert('دسترسی به میکروفون داده نشد: ' + e.message); }
+}
+$('mic-btn').onclick = startRec;
+$('rec-stop').onclick = () => { if (state.rec && state.rec.state !== 'inactive') state.rec.stop(); };
+$('rec-cancel').onclick = () => {
+  if (state.rec) { state.rec.stop(); state.rec = null; }
+  $('rec-bar').classList.add('hidden'); clearInterval(recTimer);
+};
+
 function showEmptyHint() {
   if (state.room || $('messages').children.length) return;
   if ($('empty-hint')) return;
@@ -606,9 +791,10 @@ function showEmptyHint() {
 }
 
 /* ================= SENDING ================= */
-function send(obj) {
-  if (!state.room) return;
-  if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ ...obj, roomId: state.room }));
+function send(obj, roomIdOverride) {
+  const roomId = roomIdOverride || state.room;
+  if (!roomId) return;
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ ...obj, roomId }));
 }
 
 function sendText() {

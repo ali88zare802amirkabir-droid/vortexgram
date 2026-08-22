@@ -35,16 +35,21 @@
         <button id="admin-btn" class="icon-btn hidden" title="پنل ادمین">⚙</button>
       </header>
       <div class="side-head-row">
-        <div class="dm-head">PRIVATE CHATS</div>
+        <div class="dm-head">CHATS</div>
         <button id="new-group-btn" class="icon-btn sm" title="ساخت گروه جدید">+</button>
       </div>
+      <button id="archive-toggle" class="archive-row">
+        <span class="ar-icon">📦</span>
+        <span class="ar-label">بایگانی‌ها</span>
+        <span id="archive-count" class="ar-count hidden"></span>
+      </button>
+      <ul id="group-list"></ul>
+      <div class="dm-head">PRIVATE</div>
       <div class="add-contact-row">
         <input id="contact-input" type="text" placeholder="@آیدی مخاطب..." maxlength="20" />
         <button id="contact-add-btn" class="icon-btn sm" title="افزودن مخاطب">+</button>
       </div>
       <ul id="user-list"></ul>
-      <div class="dm-head">GROUPS</div>
-      <ul id="group-list"></ul>
     </aside>
 
     <main id="chat-area">
@@ -69,6 +74,13 @@
         <div class="up-track"><div id="up-fill" class="up-fill"></div></div>
       </div>
       <div id="messages"></div>
+      <div id="rec-bar" class="hidden">
+        <span class="rec-dot"></span>
+        <span id="rec-time">0:00</span>
+        <span class="grow">در حال ضبط...</span>
+        <button id="rec-cancel" class="mini-btn no">لغو</button>
+        <button id="rec-stop" class="mini-btn ok">ارسال</button>
+      </div>
       <div id="reply-bar" class="hidden">
         <span id="reply-preview"></span>
         <button id="reply-cancel" title="لغو نقل قول">✕</button>
@@ -77,6 +89,7 @@
         <button id="emoji-btn" class="icon-btn" title="ایموجی">🙂</button>
         <button id="sticker-btn" class="icon-btn" title="استیکر">🎴</button>
         <button id="attach-btn" class="icon-btn" title="ارسال فایل">📎</button>
+        <button id="mic-btn" class="icon-btn" title="پیام صوتی">🎤</button>
         <input id="file-input" type="file" hidden />
         <input id="msg-input" type="text" placeholder="پیام خود را مخابره کن..." maxlength="4000" autocomplete="off" />
         <button id="send-btn" class="send-btn">SEND</button>
@@ -192,6 +205,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

@@ -564,3 +564,43 @@ hr { border: none; border-top: 1px solid var(--border-soft); margin: 16px 0; }
   #ac-msgs { max-height: 52vh; }
   .admin-list li { flex-wrap: wrap; }
 }
+
+/* ---- pin / archive / chat menu / ticks ---- */
+.pin { margin-left: 2px; filter: grayscale(0.2); }
+.archive-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 12px; margin-bottom: 4px;
+  background: var(--muted); border: none; border-radius: 10px;
+  color: var(--text); font-size: 12.5px; cursor: pointer; text-align: right;
+}
+.archive-row .ar-icon { font-size: 15px; }
+.archive-row.active { background: var(--accent); color: #fff; }
+.archive-row .ar-count {
+  margin-right: auto; background: var(--accent); color: #fff;
+  border-radius: 10px; padding: 1px 7px; font-size: 11px;
+}
+.archive-row.active .ar-count { background: #fff; color: var(--accent); }
+.chat-menu {
+  position: fixed; z-index: 300; background: var(--card);
+  border: 1px solid var(--border); border-radius: 12px; padding: 6px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5); min-width: 160px;
+}
+.chat-menu button {
+  display: block; width: 100%; text-align: right; padding: 9px 12px;
+  background: none; border: none; border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer;
+}
+.chat-menu button:hover { background: var(--muted); }
+.ticks { font-size: 10px; color: var(--dim); margin-inline-start: 4px; }
+.ticks::after { content: ""; }
+div.msg.out .ticks { color: #67e8f9; }
+.fwd { font-size: 11px; color: var(--accent); margin-bottom: 3px; opacity: 0.85; }
+
+/* ---- voice recording bar ---- */
+#rec-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 20px 8px; padding: 8px 12px;
+  background: var(--muted); border-radius: 10px; font-size: 12px;
+}
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+#rec-bar .grow { flex: 1; }

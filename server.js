@@ -326,7 +326,7 @@ app.get('/api/users/exists/:username', auth, (req, res) => {
   const uname = String(req.params.username || '').trim().replace(/^@/, '');
   const u = db.users.find((x) => x.username.toLowerCase() === uname.toLowerCase());
   if (!u) return res.status(404).json({ error: 'کاربری با این آیدی ثبت نشده' });
-  res.json({ username: u.username, displayName: u.displayName, avatar: u.avatar || null, isPremium: !!u.isPremium, online: online.has(u.username) });
+  res.json({ username: u.username, displayName: u.displayName, avatar: u.avatar || null, isPremium: !!u.isPremium, online: online.has(u.username), lastSeen: u.lastSeen || null });
 });
 
 // تکمیل مشخصات فرستنده در پیام‌های قدیمی که آواتار/پرمیوم ندارند
@@ -404,12 +404,13 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ---------- groups & channels ----------
 function publicGroups(username) {
-  return db.groups.map((g) => {
-    const me = g.members.find((m) => m.username === username);
+  // گروه‌ها خصوصی‌اند: فقط برای اعضا نمایش داده می‌شوند
+  return db.groups.filter((g) => memberOf(g, username)).map((g) => {
+    const me = memberOf(g, username);
     return {
       id: g.id, type: g.type || 'group', name: g.name, owner: g.owner,
       members: g.members.length,
-      joined: !!me,
+      joined: true,
       myRole: me ? me.role : null,
     };
   });
@@ -530,6 +531,42 @@ app.post('/api/groups/:id/kick', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- وضعیت چت‌ها: بایگانی / سنجاق ----------
+function chatStateOf(username) {
+  if (!db.chatState) db.chatState = {};
+  if (!db.chatState[username]) db.chatState[username] = {};
+  return db.chatState[username];
+}
+function readStateOf() {
+  if (!db.readState) db.readState = {};
+  return db.readState;
+}
+
+app.post('/api/chats/state', auth, (req, res) => {
+  const roomId = String((req.body || {}).roomId || '').slice(0, 100);
+  if (!canAccess(roomId, req.user.username)) return res.status(403).json({ error: 'دسترسی نداری' });
+  const st = chatStateOf(req.user.username);
+  const cur = st[roomId] || {};
+  st[roomId] = {
+    archived: 'archived' in (req.body || {}) ? !!req.body.archived : !!cur.archived,
+    pinned: 'pinned' in (req.body || {}) ? !!req.body.pinned : !!cur.pinned,
+  };
+  saveDB();
+  res.json({ ok: true });
+});
+
+// تیک خوانده‌شدن
+app.post('/api/chats/read', auth, (req, res) => {
+  const roomId = String((req.body || {}).roomId || '').slice(0, 100);
+  if (!canAccess(roomId, req.user.username)) return res.status(403).json({ error: 'دسترسی نداری' });
+  const rs = readStateOf();
+  if (!rs[roomId]) rs[roomId] = {};
+  rs[roomId][req.user.username] = Date.now();
+  saveDB();
+  broadcast({ type: 'room-read', roomId, username: req.user.username, time: rs[roomId][req.user.username] });
+  res.json({ ok: true });
+});
+
 // ---------- websocket ----------
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -577,7 +614,16 @@ wss.on('connection', (ws) => {
       if (!user || user.banned) return wsSend(ws, { type: 'auth-failed' });
       username = user.username;
       online.set(username, { ws, pub: publicUser(user) });
-      wsSend(ws, { type: 'ready', me: publicUser(user), groups: publicGroups(username) });
+      user.lastSeen = Date.now();
+      const myReadState = {};
+      const rsAll = readStateOf();
+      for (const [rid, readers] of Object.entries(rsAll)) {
+        if (canAccess(rid, username)) myReadState[rid] = readers;
+      }
+      wsSend(ws, {
+        type: 'ready', me: publicUser(user), groups: publicGroups(username),
+        chatState: chatStateOf(username), readState: myReadState,
+      });
       pushUsers();
       broadcastGroups();
       return;
@@ -628,6 +674,7 @@ wss.on('connection', (ws) => {
         name: typeof data.name === 'string' ? data.name.slice(0, 80) : undefined, time: now,
         fromAvatar: user.avatar || undefined, fromPremium: !!user.isPremium,
         replyTo,
+        fwdFrom: typeof data.fwdFrom === 'string' ? data.fwdFrom.slice(0, 40) : undefined,
       };
       if (!db.messages[roomId]) db.messages[roomId] = [];
       db.messages[roomId].push(msg);
@@ -684,7 +731,12 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    if (username) { online.delete(username); pushUsers(); }
+    if (username) {
+      online.delete(username);
+      const u = db.users.find((x) => x.username === username);
+      if (u) { u.lastSeen = Date.now(); saveDB(); }
+      pushUsers();
+    }
   });
 });
 
