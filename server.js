@@ -87,6 +87,8 @@ function hash(pw, salt) {
 }
 function normalizePhone(p) {
   p = String(p || '').replace(/[\s\-()]/g, '');
+  p = p.replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+       .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
   if (p.startsWith('+98')) p = '0' + p.slice(3);
   else if (p.startsWith('98') && p.length === 12) p = '0' + p.slice(2);
   if (!/^09\d{9}$/.test(p)) return null;
