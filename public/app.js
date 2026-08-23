@@ -390,6 +390,7 @@ function openProfile(rid) {
 function openViewer(src, kind) { const v = document.createElement('div'); v.className = 'viewer'; v.innerHTML = (kind === 'video' ? '<video src="' + src + '" controls autoplay></video>' : '<img src="' + src + '">') + '<div class="v-close" onclick="this.parentNode.remove()">' + ic('x') + '</div>'; v.onclick = (e) => { if (e.target === v) v.remove(); }; document.body.appendChild(v); luc(); }
 
 /* COMMAND PALETTE */
+let paletteItems = [], paletteSel = 0;
 function openPalette() {
   const p = $('command-palette'); p.classList.remove('hidden'); const inp = $('palette-input'); inp.value = ''; const list = $('palette-list'); list.innerHTML = '';
   const actions = [
@@ -398,13 +399,21 @@ function openPalette() {
     { id: 'newgroup', label: 'گروه جدید', icon: 'users', run: () => startGroup() },
     { id: 'settings', label: 'تنظیمات', icon: 'settings', run: () => switchNav('settings') },
     { id: 'theme', label: 'تغییر تم', icon: 'palette', run: cycleTheme },
-    { id: 'cloud', label: 'حافظه ابری', icon: 'cloud', run: () => switchNav('cloud') },
+    { id: 'cloud', label: 'حفظه ابری', icon: 'cloud', run: () => switchNav('cloud') },
     { id: 'tasks', label: 'وظایف', icon: 'check-square', run: () => switchNav('tasks') },
     { id: 'calendar', label: 'تقویم', icon: 'calendar', run: () => switchNav('calendar') },
     { id: 'logout', label: 'خروج', icon: 'log-out', run: logout },
   ];
-  const render = (q) => { list.innerHTML = ''; actions.filter((a) => a.label.includes(q)).forEach((a) => { const el = document.createElement('div'); el.className = 'palette-item'; el.innerHTML = ic(a.icon) + '<span>' + a.label + '</span>'; el.onclick = () => { p.classList.add('hidden'); a.run(); }; list.appendChild(el); }); luc(); };
-  render(''); inp.oninput = () => render(inp.value); inp.focus();
+  paletteItems = []; paletteSel = 0;
+  const highlightPalette = () => paletteItems.forEach((el, i) => el.classList.toggle('sel', i === paletteSel));
+  const render = (q) => { list.innerHTML = ''; paletteItems = []; paletteSel = 0; actions.filter((a) => a.label.includes(q)).forEach((a) => { const el = document.createElement('div'); el.className = 'palette-item'; el.innerHTML = ic(a.icon) + '<span>' + a.label + '</span>'; el.onclick = () => { p.classList.add('hidden'); a.run(); }; list.appendChild(el); paletteItems.push(el); }); highlightPalette(); luc(); };
+  inp.oninput = () => render(inp.value);
+  inp.onkeydown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); paletteSel = Math.min(paletteSel + 1, paletteItems.length - 1); highlightPalette(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); paletteSel = Math.max(paletteSel - 1, 0); highlightPalette(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (paletteItems[paletteSel]) paletteItems[paletteSel].click(); }
+  };
+  render(''); inp.focus();
   $('palette-close').onclick = () => p.classList.add('hidden');
   p.onclick = (e) => { if (e.target === p) p.classList.add('hidden'); };
 }
@@ -477,7 +486,17 @@ function settingsHTML() {
 }
 
 /* INIT */
-window.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); } });
+function closeAllOverlays() {
+  if ($('command-palette') && !$('command-palette').classList.contains('hidden')) { $('command-palette').classList.add('hidden'); return true; }
+  if ($('emoji-pop') && !$('emoji-pop').classList.contains('hidden')) { $('emoji-pop').classList.add('hidden'); return true; }
+  if ($('details-panel') && !$('details-panel').classList.contains('hidden')) { $('details-panel').classList.add('hidden'); return true; }
+  return false;
+}
+window.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); e.stopPropagation(); if ($('command-palette').classList.contains('hidden')) openPalette(); else $('command-palette').classList.add('hidden'); return; }
+  if (e.key === 'Escape') { if (closeAllOverlays()) { e.preventDefault(); e.stopPropagation(); } }
+}, true);
 document.addEventListener('click', (e) => { const dp = document.querySelector('.ctx-menu'); });
 (async function init() {
   if (state.token) {
