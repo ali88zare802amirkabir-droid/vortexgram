@@ -2,330 +2,114 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
-  <title>VORTEXGRAM // 2126</title>
-   <link rel="stylesheet" href="style.css?v=21" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>VORTEX Messenger</title>
+  <link rel="stylesheet" href="style.css?v=31" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-
-  <!-- ===== AUTH ===== -->
   <div id="auth-screen">
     <div class="auth-box">
-      <h1 class="brand">VORTEX<span>GRAM</span></h1>
-      <p class="tagline">// پروتکل گیمینگ ۲۱۲۶ — با هوش مصنوعی Vortex</p>
-
+      <div class="brand">VORTEX<b>Messenger</b></div>
+      <p class="tag">// پروتکل گیمینگ ۲۱۲۶ — پیام‌رسان نسل بعدی</p>
       <div id="auth-step-phone">
         <input id="auth-phone" type="tel" inputmode="numeric" placeholder="شماره موبایل (۰۹۱۲۳۴۵۶۷۸۹)" maxlength="11" autocomplete="tel" />
-        <button id="auth-send">دریافت کد</button>
+        <button class="primary" id="auth-send">دریافت کد</button>
       </div>
-
       <div id="auth-step-code" class="hidden">
         <p id="auth-phone-label" class="hint" style="text-align:center;margin-bottom:6px"></p>
         <input id="auth-code" type="text" inputmode="numeric" placeholder="کد ۶ رقمی" maxlength="6" autocomplete="one-time-code" />
-        <button id="auth-verify">تایید کد</button>
+        <button class="primary" id="auth-verify">تایید کد</button>
       </div>
-
       <div id="auth-step-name" class="hidden">
         <input id="auth-name" type="text" placeholder="نام نمایشی" maxlength="25" />
         <input id="auth-username" type="text" placeholder="نام کاربری (اختیاری)" maxlength="20" />
-        <button id="auth-finish">ساخت حساب</button>
+        <button class="primary" id="auth-finish">ساخت حساب</button>
       </div>
-
       <p id="auth-error" class="auth-error"></p>
+      <button class="auth-logout" id="auth-logout">خروج از حساب فعلی</button>
     </div>
   </div>
 
-  <!-- ===== APP ===== -->
   <div id="app" class="hidden">
-    <aside id="sidebar">
-      <header class="side-head">
-        <h2 class="brand small">VX<span>//2126</span></h2>
-        <button id="profile-btn" class="icon-btn" title="پروفایل من">
-          <span id="my-avatar" class="avatar sm"></span>
-        </button>
-        <button id="admin-btn" class="icon-btn hidden" title="پنل ادمین" data-icon="gear"></button>
-      </header>
-      <div class="side-head-row">
-        <div class="dm-head">CHATS</div>
-        <button id="new-group-btn" class="icon-btn sm" title="ساخت گروه جدید" data-icon="plus"></button>
+    <aside id="nav-sidebar">
+      <button class="nav-toggle" id="nav-toggle" title="باز/بسته"><i data-lucide="panel-left-open" class="icon"></i></button>
+      <div class="nav-logo"><span class="mark">V</span><b>VORTEX</b><small> Messenger</small></div>
+      <div class="nav-profile" id="nav-profile">
+        <div class="av sm" id="nav-av">?</div>
+        <div class="meta"><div class="nm" id="nav-name">...</div><div class="st">● آنلاین</div></div>
       </div>
-      <button id="archive-toggle" class="archive-row">
-        <span class="ar-icon" data-icon="archive"></span>
-        <span class="ar-label">بایگانی‌ها</span>
-        <span id="archive-count" class="ar-count hidden"></span>
-      </button>
-      <ul id="group-list"></ul>
-      <div class="dm-head">PRIVATE</div>
-      <div class="add-contact-row">
-        <input id="contact-input" type="text" placeholder="@آیدی مخاطب..." maxlength="20" />
-        <button id="contact-add-btn" class="icon-btn sm" title="افزودن مخاطب" data-icon="plus"></button>
-      </div>
-      <ul id="user-list"></ul>
-      <div id="saved-li" class="chat-li" style="margin-top:6px;cursor:pointer">
-        <span class="avatar sm" style="background:linear-gradient(135deg,#0ea5e9,var(--primary))" data-icon="bookmark"></span>
-        <span class="grow">پیام‌های ذخیره‌شده</span>
-      </div>
-      <button id="side-down-btn" title="رفتن به پایین">↓</button>
+      <div class="nav-sep"></div>
+      <div class="nav-scroll" id="nav-scroll"></div>
     </aside>
 
-    <main id="chat-area">
-      <header id="chat-header">
-        <button id="menu-btn" class="icon-btn sm" title="منو" data-icon="menu"></button>
-        <span id="chat-avatar" class="avatar sm hidden" style="cursor:pointer"></span>
-        <strong id="chat-title">یک گفتگو را انتخاب کنید</strong>
-        <span id="typing-indicator" class="hidden"></span>
-        <button id="group-settings-btn" class="icon-btn sm hidden" title="مدیریت اعضا" data-icon="gear"></button>
-        <button id="ai-summary-btn" class="icon-btn sm hidden" title="خلاصه با هوش مصنوعی" data-icon="spark"></button>
-        <button id="search-btn" class="icon-btn sm" title="جستجو در چت" data-icon="search"></button>
-        <button id="call-btn" class="icon-btn sm hidden" title="تماس صوتی" data-icon="phone"></button>
-      </header>
-      <div id="search-bar" class="search-bar hidden">
-        <span class="icon" data-icon="search"></span>
-        <input id="search-input" type="text" placeholder="جستجو در این چت..." />
-        <span id="search-count" class="hint"></span>
-        <button id="search-close" class="icon-btn sm" data-icon="close"></button>
+    <section id="chat-list-column">
+      <div class="cl-head">
+        <div class="cl-title">چت‌ها</div>
+        <button class="icon-btn" id="cl-new" title="چت جدید"><i data-lucide="square-pen" class="icon"></i></button>
+        <button class="icon-btn mobile-only" id="cl-menu" title="منو"><i data-lucide="menu" class="icon"></i></button>
       </div>
-      <div id="pin-bar" class="pin-bar hidden"></div>
+      <div class="cl-search"><i data-lucide="search" class="icon"></i><input id="cl-search-input" placeholder="جستجوی چت‌ها..." /></div>
+      <div class="cl-tabs" id="cl-tabs">
+        <div class="cl-tab active" data-tab="all">همه</div>
+        <div class="cl-tab" data-tab="unread">خوانده‌نشده</div>
+        <div class="cl-tab" data-tab="private">خصوصی</div>
+        <div class="cl-tab" data-tab="groups">گروه‌ها</div>
+        <div class="cl-tab" data-tab="channels">کانال‌ها</div>
+        <div class="cl-tab" data-tab="bots">ربات‌ها</div>
+      </div>
+      <div class="cl-items" id="cl-items"></div>
+    </section>
 
-      <div id="call-bar" class="call-bar hidden">
-        <span id="call-status">در حال تماس...</span>
-        <span class="spacer"></span>
-        <button id="mute-btn" class="mini-btn no"><span data-icon="mic"></span> قطع صدا</button>
-        <button id="screen-btn" class="mini-btn"><span data-icon="screen"></span> اشتراک صفحه</button>
-        <button id="end-call-btn" class="send-btn" style="padding:8px 14px">قطع</button>
+    <main id="conversation">
+      <div class="conv-empty" id="conv-empty">
+        <div class="big">⚡</div>
+        <h2>VORTEX Messenger</h2>
+        <p>یک چت انتخاب کن یا از داک فرمان پایین یا <b>Ctrl+K</b> استفاده کن تا چت جدیدی شروع کنی.</p>
       </div>
-      <div id="remote-media"></div>
-      <div id="upload-progress" class="upload-progress hidden">
-        <div class="up-info"><span id="up-name"></span><span id="up-percent">0%</span></div>
-        <div class="up-track"><div id="up-fill" class="up-fill"></div></div>
-      </div>
-      <div id="messages"></div>
-      <div id="rec-bar" class="hidden">
-        <span class="rec-dot"></span>
-        <span id="rec-time">0:00</span>
-        <span class="grow">در حال ضبط...</span>
-        <button id="rec-cancel" class="mini-btn no">لغو</button>
-        <button id="rec-stop" class="mini-btn ok">ارسال</button>
-      </div>
-      <div id="reply-bar" class="hidden">
-        <span id="reply-preview"></span>
-        <button id="reply-cancel" title="لغو نقل قول" data-icon="close"></button>
-      </div>
-      <div class="composer">
-        <button id="emoji-btn" class="icon-btn" title="ایموجی" data-icon="smiley"></button>
-        <button id="sticker-btn" class="icon-btn" title="استیکر" data-icon="sticker"></button>
-        <button id="attach-btn" class="icon-btn" title="ارسال فایل" data-icon="attach"></button>
-        <button id="mic-btn" class="icon-btn" title="پیام صوتی" data-icon="mic"></button>
-        <button id="silent-btn" class="icon-btn" title="ارسال بی‌صدا" data-icon="mute"></button>
-        <button id="schedule-btn" class="icon-btn" title="زمان‌بندی پیام" data-icon="clock"></button>
-        <button id="poll-btn" class="icon-btn" title="نظرسنجی" data-icon="bar"></button>
-        <button id="checklist-btn" class="icon-btn" title="چک‌لیست" data-icon="list"></button>
-        <button id="ai-reply-btn" class="icon-btn" title="پیشنهاد پاسخ با هوش مصنوعی" data-icon="spark"></button>
-        <input id="file-input" type="file" hidden multiple />
-        <input id="msg-input" type="text" placeholder="پیام خود را مخابره کن..." maxlength="4000" autocomplete="off" />
-        <button id="send-btn" class="send-btn" data-icon="send"></button>
-      </div>
-      <div id="emoji-picker" class="picker hidden"></div>
-      <div id="sticker-picker" class="picker hidden"></div>
-    </main>
-  </div>
-
-  <div id="sb-backdrop" class="hidden"></div>
-
-  <!-- ===== INCOMING CALL ===== -->
-  <div id="incoming-modal" class="modal hidden">
-    <div class="modal-box" style="text-align:center">
-      <h3><span data-icon="phone"></span> تماس ورودی</h3>
-      <p id="incoming-name" style="margin:14px 0;font-size:16px;font-weight:700"></p>
-      <div class="row">
-        <button id="accept-call" class="mini-btn ok" style="flex:1;padding:12px">پذیرفتن</button>
-        <button id="reject-call" class="danger-btn" style="width:auto;flex:1">رد کردن</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== PROFILE / SETTINGS MODAL ===== -->
-  <div id="profile-modal" class="modal hidden">
-    <div class="modal-box">
-      <button class="modal-close" data-close="profile-modal" data-icon="close"></button>
-      <div class="profile-top">
-        <div id="avatar-wrap" class="avatar-edit">
-          <span id="profile-avatar" class="avatar lg"></span>
-          <button id="avatar-btn" class="icon-btn sm" title="تغییر عکس" data-icon="camera"></button>
-          <input id="avatar-input" type="file" accept="image/jpeg,image/png,image/webp" hidden />
-        </div>
-        <div class="profile-meta">
-          <div id="profile-displayname" class="pd-name"></div>
-          <div id="profile-username" class="pd-user"></div>
-          <div id="profile-premium" class="pd-premium"></div>
-        </div>
-      </div>
-
-      <div class="set-section">
-        <h4>بیوگرافی</h4>
-        <textarea id="bio-input" rows="3" maxlength="200" placeholder="درباره خودت بنویس..."></textarea>
-        <div class="row" style="margin-top:8px">
-          <span id="bio-count" class="hint" style="flex:1"></span>
-          <button id="bio-btn" class="mini-btn">ذخیره بیو</button>
-        </div>
-      </div>
-
-      <div class="set-section">
-        <h4>نام نمایشی <small style="color:var(--dim);font-weight:400">(نیاز به تایید ادمین)</small></h4>
-        <div class="row">
-          <input id="rename-input" type="text" maxlength="25" />
-          <button id="rename-btn" class="mini-btn">ثبت درخواست</button>
-        </div>
-        <p id="rename-status" class="hint"></p>
-      </div>
-
-      <div class="set-section">
-        <h4>پس‌زمینه و تم چت</h4>
-        <div class="set-row">
-          <span>مدل پس‌زمینه:</span>
-          <div class="tabs" style="background:var(--field-bg);border-radius:12px;padding:3px">
-            <button class="tab bgmode active" data-bg="none">خالی</button>
-            <button class="tab bgmode" data-bg="color">رنگ</button>
-            <button class="tab bgmode" data-bg="image">عکس</button>
+      <div id="conv-main" class="hidden" style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div class="conv-head">
+          <button class="icon-btn mobile-only back-btn" id="conv-back"><i data-lucide="chevron-right" class="icon"></i></button>
+          <div class="av md" id="conv-av"></div>
+          <div class="ti"><div class="nm" id="conv-name"></div><div class="sub" id="conv-sub"></div></div>
+          <div class="head-actions">
+            <button class="icon-btn" id="conv-search" title="جستجو"><i data-lucide="search" class="icon"></i></button>
+            <button class="icon-btn" id="conv-info" title="اطلاعات"><i data-lucide="info" class="icon"></i></button>
+            <button class="icon-btn" id="conv-ai" title="هوش مصنوعی"><i data-lucide="sparkles" class="icon"></i></button>
           </div>
         </div>
-        <div id="bg-color-wrap" class="hidden">
-          <div class="swatches" id="bg-swatches"></div>
-          <div class="set-row"><span>رنگ دلخواه:</span><input type="color" id="bg-color" class="color-input" value="#0b0b12" /><button id="bg-color-apply" class="mini-btn">اعمال</button></div>
+        <div id="conv-searchbox" class="hidden" style="padding:8px 14px;border-bottom:1px solid var(--border)"><input id="conv-search-input" class="input" placeholder="جستجو در این چت..." /></div>
+        <div id="messages"></div>
+        <div id="reply-bar" class="hidden"></div>
+        <div class="composer">
+          <div class="tools">
+            <button class="icon-btn" id="composer-attach" title="پیوست"><i data-lucide="paperclip" class="icon"></i></button>
+            <input type="file" id="file-input" class="hidden" />
+            <button class="icon-btn" id="composer-emoji" title="ایموجی"><i data-lucide="smile" class="icon"></i></button>
+            <button class="icon-btn" id="composer-sticker" title="استیکر"><i data-lucide="sticker" class="icon"></i></button>
+            <button class="icon-btn" id="composer-mic" title="ضبط صدا"><i data-lucide="mic" class="icon"></i></button>
+          </div>
+          <textarea id="composer-input" placeholder="پیام بنویس..." rows="1"></textarea>
+          <button class="send-btn" id="composer-send"><i data-lucide="send" class="icon"></i></button>
+          <div id="emoji-pop" class="hidden"></div>
         </div>
-        <div id="bg-image-wrap" class="hidden">
-          <input type="file" id="bg-image" accept="image/*" hidden />
-          <button id="bg-image-btn" class="mini-btn">انتخاب عکس</button>
-          <div class="set-row"><span>مات‌کردن:</span><input type="range" id="bg-blur" min="0" max="24" value="2" style="flex:1;min-width:120px" /></div>
-          <div class="set-row"><span>تاریکی لایه:</span><input type="range" id="bg-overlay" min="0" max="80" value="28" style="flex:1;min-width:120px" /></div>
-        </div>
-        <div class="bg-preview" id="bg-preview"></div>
-        <h4 style="margin-top:16px">رنگ پیام‌ها</h4>
-        <div class="set-row"><span>پیام‌های من:</span><input type="color" id="msg-out-color" class="color-input" value="#0A84FF" /><button id="msg-out-apply" class="mini-btn">اعمال</button></div>
-        <div class="set-row"><span>پیام‌های طرف:</span><input type="color" id="msg-in-color" class="color-input" value="#787878" /><button id="msg-in-apply" class="mini-btn">اعمال</button></div>
-        <label class="switch-row" style="margin-top:8px">
-          <span>جلوه هاور (شناور شدن)</span>
-          <span class="switch"><input id="hover-toggle" type="checkbox" /><span class="slider"></span></span>
-        </label>
-        <button id="theme-reset" class="mini-btn" style="margin-top:12px">بازنشانی به پیش‌فرض</button>
+        <div id="upload-bar" class="hidden" style="height:4px;background:var(--surface)"><div id="upload-fill" style="height:100%;width:0;background:var(--accent)"></div></div>
       </div>
+    </main>
 
-      <div class="set-section">
-        <h4>اعلان‌ها</h4>
-        <label class="switch-row">
-          <span>پخش صدای پیام جدید</span>
-          <span class="switch"><input id="sound-toggle" type="checkbox" /><span class="slider"></span></span>
-        </label>
-      </div>
+    <aside id="details-panel"></aside>
+    <div id="command-dock"></div>
+  </div>
 
-      <hr />
-      <button id="logout-btn" class="danger-btn">خروج از حساب</button>
+  <div id="command-palette" class="overlay hidden">
+    <div class="palette">
+      <div class="palette-input"><i data-lucide="command" class="icon"></i><input id="palette-input" placeholder="جستجو یا دستور بنویس..." autocomplete="off" /><span class="kbd">Esc</span></div>
+      <div class="palette-list" id="palette-list"></div>
+      <button class="palette-close" id="palette-close"><i data-lucide="x" class="icon"></i></button>
     </div>
   </div>
 
-  <!-- ===== ADMIN MODAL ===== -->
-  <div id="admin-modal" class="modal hidden">
-    <div class="modal-box wide">
-      <button class="modal-close" data-close="admin-modal" data-icon="close"></button>
-
-      <div id="admin-main">
-        <h3>پنل ادمین</h3>
-        <div class="admin-tabs">
-          <button class="atab active" data-atab="users">کاربران</button>
-          <button class="atab" data-atab="reqs">درخواست‌ها</button>
-        </div>
-        <div id="admin-users-wrap">
-          <ul id="admin-users" class="admin-list"></ul>
-        </div>
-        <div id="admin-reqs-wrap" class="hidden">
-          <h4>درخواست‌های ثبت‌نام</h4>
-          <ul id="admin-signups" class="admin-list"></ul>
-          <h4>درخواست‌های تغییر نام</h4>
-          <ul id="admin-requests" class="admin-list"></ul>
-        </div>
-      </div>
-
-      <div id="admin-chats" class="hidden">
-        <button id="ac-back" class="mini-btn">→ بازگشت به پنل</button>
-        <h3 id="ac-title" style="margin-top:10px">چت‌ها</h3>
-        <ul id="ac-rooms" class="admin-list"></ul>
-        <div id="ac-msgs" class="hidden"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== NEW GROUP/CHANNEL MODAL ===== -->
-  <div id="new-group-modal" class="modal hidden">
-    <div class="modal-box">
-      <button class="modal-close" data-close="new-group-modal" data-icon="close"></button>
-      <h3>ساخت گروه یا کانال</h3>
-      <label>نام</label>
-      <input id="ng-name" type="text" maxlength="30" placeholder="مثلاً Squad Alpha" />
-      <label style="margin-top:12px">نوع</label>
-      <div class="row" style="gap:8px">
-        <label class="type-opt"><input type="radio" name="ng-type" value="group" checked /> <span data-icon="people"></span> گروه (همه می‌نویسند)</label>
-        <label class="type-opt"><input type="radio" name="ng-type" value="channel" /> <span data-icon="channel"></span> کانال (فقط ادمین‌ها)</label>
-      </div>
-      <p id="ng-error" class="hint" style="color:var(--danger,#f43f5e)"></p>
-      <button id="ng-create" class="send-btn" style="width:100%;margin-top:10px">ساخت</button>
-    </div>
-  </div>
-
-  <!-- ===== GROUP SETTINGS MODAL ===== -->
-  <div id="gsettings-modal" class="modal hidden">
-    <div class="modal-box wide">
-      <button class="modal-close" data-close="gsettings-modal" data-icon="close"></button>
-      <h3 id="gs-title">مدیریت گروه</h3>
-      <div id="gs-add-row" class="row hidden" style="margin-bottom:10px">
-        <input id="gs-add-input" type="text" placeholder="نام کاربری برای افزودن..." maxlength="20" />
-        <button id="gs-add-btn" class="mini-btn ok">+ افزودن</button>
-      </div>
-      <ul id="gs-members" class="admin-list"></ul>
-      <hr />
-      <div class="row" style="gap:8px">
-        <button id="gs-leave" class="danger-btn" style="flex:1">خروج از گروه</button>
-        <button id="gs-delete" class="danger-btn hidden" style="flex:1;background:#7f1d1d">حذف گروه</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== AI MODAL ===== -->
-  <div id="ai-modal" class="modal hidden">
-    <div class="modal-box">
-      <button class="modal-close" data-close="ai-modal" data-icon="close"></button>
-      <h3><span data-icon="spark"></span> دستیار هوش مصنوعی</h3>
-      <div id="ai-result" class="ai-result"></div>
-      <div id="ai-reply-opts" class="ai-reply-opts hidden"></div>
-      <textarea id="ai-input" rows="3" placeholder="متن یا سوال را بنویس..." class="hidden"></textarea>
-      <div class="row" style="margin-top:8px">
-        <select id="ai-tone" class="hidden">
-          <option value="natural">لحن طبیعی</option>
-          <option value="formal">رسمی</option>
-          <option value="friendly">دوستانه</option>
-          <option value="funny">طنز</option>
-        </select>
-        <button id="ai-run" class="mini-btn ok hidden">اجرا</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== USER PROFILE MODAL ===== -->
-  <div id="user-profile-modal" class="modal hidden">
-    <div class="modal-box" style="text-align:center">
-      <button class="modal-close" data-close="user-profile-modal" data-icon="close" title="بستن"></button>
-      <span id="up-avatar" class="avatar lg"></span>
-      <h3 id="up-name" style="margin-top:10px"></h3>
-      <div id="up-username" class="hint"></div>
-      <div id="up-status" class="hint" style="margin:4px 0 6px"></div>
-      <div id="up-badges"></div>
-      <div id="up-bio" class="ai-result" style="margin:10px 0;display:none"></div>
-      <div id="up-media"></div>
-      <button id="up-chat" class="mini-btn ok" style="width:100%;margin-top:8px">شروع چت</button>
-      <button id="up-reset" class="mini-btn hidden" style="width:100%;margin-top:8px">ریست رمز عبور</button>
-    </div>
-  </div>
-
-   <script src="app.js?v=21"></script>
+  <div id="toast"></div>
+  <script src="app.js?v=31"></script>
 </body>
 </html>
