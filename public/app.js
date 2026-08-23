@@ -80,6 +80,7 @@ function enterApp() {
   renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
   if (state.me.isAdmin) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {}); }
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
+  $('app').classList.add('no-conv');
 }
 
 /* NAV */
@@ -128,6 +129,7 @@ function setMode(mode) {
   $('conv-empty').classList.toggle('hidden', chat ? !state.room : true);
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
+  $('app').classList.toggle('no-conv', chat ? !state.room : false);
   if (chat) { $('chat-list-column').classList.remove('hidden'); $('details-panel').classList.remove('hidden'); }
   else { $('chat-list-column').classList.add('hidden'); $('details-panel').classList.add('hidden'); }
 }
@@ -250,7 +252,7 @@ function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
 function renderRoomHeader() { $('conv-name').textContent = roomTitle(state.room); $('conv-sub').textContent = roomOnline(state.room); const av = avatarEl(state.room.startsWith('group:') ? { displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm'); av.id = 'conv-av'; const old = $('conv-av'); if (old) old.replaceWith(av); }
 $('conv-info').onclick = () => { if (isMobile()) { const open = !$('details-panel').classList.contains('open'); $('details-panel').classList.toggle('open', open); showScrim(open); renderDetails(); } else { $('details-panel').classList.toggle('hidden'); renderDetails(); } };
-$('conv-back').onclick = () => { state.room = null; $('conv-main').classList.add('hidden'); $('conv-empty').classList.remove('hidden'); buildChatList(); if (isMobile()) { $('conversation').classList.remove('chat-open'); } };
+$('conv-back').onclick = () => { state.room = null; buildChatList(); setMode('chats'); if (isMobile()) { $('conversation').classList.remove('chat-open'); } };
 $('scrim').onclick = () => closeDrawers();
 $('conv-search').onclick = () => { $('conv-searchbox').classList.toggle('hidden'); };
 

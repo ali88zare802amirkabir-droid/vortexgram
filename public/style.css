@@ -403,7 +403,12 @@ a{color:var(--accent);text-decoration:none;}
 }
 #scrim{position:fixed;inset:0;background:rgba(2,4,10,.45);z-index:34;}
 #scrim.hidden{display:none;}
-@media (min-width:761px){#scrim{display:none !important;}}
+@media (min-width:761px){
+  #scrim{display:none !important;}
+  #app.no-conv{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"nav list" "dock dock";}
+  #app.no-conv #conversation{display:none;}
+  #app.no-conv #details-panel{display:none;}
+}
 @media (max-width:520px){
   .cl-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;}
   #command-dock{overflow-x:auto;}
