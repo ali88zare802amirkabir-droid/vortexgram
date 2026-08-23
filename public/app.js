@@ -494,7 +494,10 @@ function closeAllOverlays() {
 }
 window.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); e.stopPropagation(); if ($('command-palette').classList.contains('hidden')) openPalette(); else $('command-palette').classList.add('hidden'); return; }
+  const k = (e.key || '').toLowerCase();
+  const inField = ['INPUT', 'TEXTAREA'].includes((document.activeElement && document.activeElement.tagName) || '');
+  if (mod && k === 'k') { e.preventDefault(); e.stopPropagation(); if ($('command-palette').classList.contains('hidden')) openPalette(); else $('command-palette').classList.add('hidden'); return; }
+  if (!mod && k === '/' && !inField) { e.preventDefault(); e.stopPropagation(); openPalette(); return; }
   if (e.key === 'Escape') { if (closeAllOverlays()) { e.preventDefault(); e.stopPropagation(); } }
 }, true);
 document.addEventListener('click', (e) => { const dp = document.querySelector('.ctx-menu'); });
