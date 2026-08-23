@@ -252,6 +252,9 @@ function connectWS() {
         if (!$('incoming-modal').classList.contains('hidden')) $('incoming-modal').classList.add('hidden');
         break;
       case 'history':
+        if (state.historyReqs && state.historyReqs[d.roomId]) {
+          const _res = state.historyReqs[d.roomId]; delete state.historyReqs[d.roomId]; _res(d.messages);
+        }
         if (d.roomId !== state.room) break;
         $('messages').innerHTML = '';
         state.lastDay = null;
@@ -1155,6 +1158,13 @@ function send(obj, roomIdOverride) {
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ ...obj, roomId }));
   else { state.outbox.push({ ...obj, roomId }); renderOutbox(); }
 }
+function fetchHistory(roomId) {
+  return new Promise((resolve) => {
+    state.historyReqs = state.historyReqs || {};
+    state.historyReqs[roomId] = resolve;
+    state.ws.send(JSON.stringify({ type: 'history', roomId }));
+  });
+}
 function renderOutbox() {
   let b = $('outbox-bar');
   if (!b) { b = document.createElement('div'); b.id = 'outbox-bar'; b.className = 'outbox-bar hidden'; $('chat-area').insertBefore(b, document.querySelector('.composer')); }
@@ -1466,12 +1476,46 @@ function openUserProfile(username) {
       toast(j.ok ? 'رمز ریست شد' : ('خطا: ' + (j.error || '')));
     };
   } else rb.classList.add('hidden');
+  renderSharedMedia(username);
   $('up-chat').onclick = () => {
     const room = 'dm:' + [state.me.username, username].sort().join('|');
     const nm = isBot ? BOT_NAME : (u ? u.displayName : username);
     $('user-profile-modal').classList.add('hidden');
     openRoom(room, nm);
   };
+}
+function renderSharedMedia(username) {
+  const box = $('up-media');
+  if (!box) return;
+  box.innerHTML = '<div class="hint">در حال بارگذاری رسانه‌های مشترک...</div>';
+  if (!(state.ws && state.ws.readyState === WebSocket.OPEN)) { box.innerHTML = ''; return; }
+  const dm = 'dm:' + [state.me.username, username].sort().join('|');
+  fetchHistory(dm).then((msgs) => {
+    const images = [], files = [], links = [];
+    (msgs || []).forEach((m) => {
+      if (m.kind === 'image' || m.kind === 'gif') images.push(m.url);
+      else if (m.kind === 'album') (m.album || []).forEach((x) => images.push(x));
+      else if (m.kind === 'file') files.push(m);
+      else if (m.kind === 'text') {
+        const found = (m.content || '').match(/https?:\/\/[^\s]+/g);
+        if (found) found.forEach((l) => links.push(l));
+      }
+    });
+    let html = '';
+    if (images.length) {
+      html += '<div style="margin-top:10px;text-align:right"><b style="font-size:12px;color:var(--dim)">تصاویر (' + images.length + ')</b><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px">' +
+        images.slice(0, 30).map((u) => '<a href="' + esc(u) + '" target="_blank"><img class="media" src="' + esc(u) + '" loading="lazy" style="width:100%;height:70px;object-fit:cover;border-radius:8px"></a>').join('') + '</div></div>';
+    }
+    if (files.length) {
+      html += '<div style="margin-top:10px;text-align:right"><b style="font-size:12px;color:var(--dim)">فایل‌ها (' + files.length + ')</b><div style="margin-top:6px">' +
+        files.slice(0, 30).map((f) => '<a class="file-chip" href="' + esc(f.url) + '" download="' + esc(f.name || 'file') + '" style="display:inline-flex;margin:4px 4px 0 0">' + svg('attach') + ' <span>' + esc(f.name || 'فایل') + '</span></a>').join('') + '</div></div>';
+    }
+    if (links.length) {
+      html += '<div style="margin-top:10px;text-align:right"><b style="font-size:12px;color:var(--dim)">لینک‌ها (' + links.length + ')</b><div style="margin-top:6px">' +
+        links.slice(0, 30).map((l) => '<a href="' + esc(l) + '" target="_blank" style="display:block;color:var(--cyan);font-size:12px;margin-top:4px;word-break:break-all">' + esc(l) + '</a>').join('') + '</div></div>';
+    }
+    box.innerHTML = html || '<div class="hint">رسانه‌ی مشترکی نیست</div>';
+  }).catch(() => { box.innerHTML = ''; });
 }
 function updateBioCount() {
   const max = state.me.isPremium ? 200 : 80;
