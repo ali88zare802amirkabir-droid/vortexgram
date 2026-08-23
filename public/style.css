@@ -114,6 +114,31 @@ a{color:var(--accent);text-decoration:none;}
 .av.sm{width:34px;height:34px;font-size:13px;}
 .av.md{width:42px;height:42px;font-size:15px;}
 .av.lg{width:64px;height:64px;font-size:22px;}
+.av.xl{width:96px;height:96px;font-size:34px;border-radius:28px;}
+
+/* Modal */
+.modal-ov{position:fixed;inset:0;background:rgba(2,4,10,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1200;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;width:min(360px,92vw);box-shadow:var(--shadow);}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:14px;}
+.inp{width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;outline:none;}
+.inp:focus{border-color:var(--accent);}
+.modal .inp{width:100%;}
+.modal-actions{display:flex;justify-content:end;gap:8px;margin-top:16px;}
+
+/* Profile view */
+.profile-view{padding:18px;}
+.profile-view .btn.sm.ghost{margin-bottom:14px;}
+.profile-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:10px 0 18px;}
+.profile-name{font-size:22px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;}
+.profile-uname{color:var(--text-muted);font-size:14px;}
+.profile-uname .onl{color:var(--success);font-size:12px;}
+.profile-bio{margin-top:10px;color:var(--text);font-size:14px;max-width:420px;}
+.profile-row{margin-top:8px;color:var(--text-muted);font-size:14px;}
+.profile-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px;}
+.badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;}
+.badge.prem{background:linear-gradient(135deg,var(--accent),#ffd479);color:#1a1400;}
+.badge.adm{background:rgba(80,160,255,.18);color:#8cc4ff;}
+.badge.ban{background:rgba(255,80,80,.18);color:#ff9a9a;}
 
 /* ===================== CONVERSATION ===================== */
 #conversation{display:flex;flex-direction:column;min-height:0;background:var(--bg-primary);position:relative;}

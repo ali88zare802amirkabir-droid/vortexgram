@@ -15,7 +15,9 @@ function fmt(t) {
   return d.toLocaleDateString('fa-IR') + ' ' + hh + ':' + mm;
 }
 function api(path, opts = {}) {
-  return fetch(path, { method: opts.method || 'GET', headers: Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {}), body: opts.body ? opts.body : undefined });
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+  return fetch(path, { method: opts.method || 'GET', headers, body: opts.body ? opts.body : undefined });
 }
 function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; $('toast').appendChild(t); setTimeout(() => t.remove(), 2600); }
 function avatarEl(u, size) {
@@ -443,13 +445,14 @@ function renderContacts(wrap) {
     let h = '<div class="contact-list">';
     list.forEach((u) => {
       const online = state.me.isAdmin ? !!u.online : false;
-      h += '<div class="contact-item" data-u="' + esc(u.username) + '">' + avatarEl(u, 'md').outerHTML + '<div class="ci-body"><div class="ci-name">' + esc(u.displayName || u.username) + (online ? ' <span style="font-size:10px;color:var(--success)">●</span>' : '') + '</div><div class="ci-sub">@' + esc(u.username) + '</div></div><button class="btn sm" data-act="chat">چت</button>' + (state.me.isAdmin ? '<button class="btn sm danger" data-act="ban">' + ((u.banned) ? 'رفع مسدودی' : 'مسدود') + '</button>' : '') + '</div>';
+      h += '<div class="contact-item" data-u="' + esc(u.username) + '">' + avatarEl(u, 'md').outerHTML + '<div class="ci-body"><div class="ci-name">' + esc(u.displayName || u.username) + (online ? ' <span style="font-size:10px;color:var(--success)">●</span>' : '') + '</div><div class="ci-sub">@' + esc(u.username) + '</div></div><button class="btn sm" data-act="chat">چت</button><button class="btn sm ghost" data-act="profile">پروفایل</button>' + (state.me.isAdmin ? '<button class="btn sm danger" data-act="ban">' + ((u.banned) ? 'رفع مسدودی' : 'مسدود') + '</button>' : '') + '</div>';
     });
     h += '</div>';
     wrap.innerHTML = h;
     wrap.querySelectorAll('.contact-item').forEach((it) => {
       const u = it.dataset.u; const cur = (state.users || []).find((x) => x.username === u) || { banned: false };
       it.querySelector('[data-act="chat"]').onclick = () => openDM(u);
+      it.querySelector('[data-act="profile"]').onclick = () => openProfile(u);
       const ban = it.querySelector('[data-act="ban"]'); if (ban) ban.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u, banned: !cur.banned }) }); toast('انجام شد'); renderView('contacts'); };
     });
     luc();
@@ -460,7 +463,63 @@ function renderContacts(wrap) {
   }
   draw(list);
 }
-function promptRename() { const n = prompt('نام نمایشی جدید', state.me.displayName); if (n) { api('/api/profile/rename', { method: 'POST', body: JSON.stringify({ displayName: n }) }).then(() => { state.me.displayName = n; renderNav(); renderView('settings'); }); } }
+function renameModal(current, onOk) {
+  const ov = document.createElement('div'); ov.className = 'modal-ov';
+  ov.innerHTML = '<div class="modal"><h3 class="modal-title">تغییر نام نمایشی</h3><input id="rm-input" class="inp" maxlength="25" value="' + esc(current || '') + '" /><div class="modal-actions"><button class="btn ghost" id="rm-cancel">انصراف</button><button class="btn primary" id="rm-ok">تأیید</button></div></div>';
+  document.body.appendChild(ov);
+  const input = ov.querySelector('#rm-input');
+  setTimeout(() => input.focus(), 40);
+  const close = () => ov.remove();
+  ov.querySelector('#rm-cancel').onclick = close;
+  ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+  const ok = async () => { const v = input.value.trim(); if (v.length < 2) { toast('نام باید حداقل ۲ کاراکتر باشد'); return; } await onOk(v); close(); };
+  ov.querySelector('#rm-ok').onclick = ok;
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); else if (e.key === 'Escape') close(); });
+}
+function promptRename() {
+  renameModal(state.me.displayName || '', async (v) => {
+    const r = await api('/api/rename', { method: 'POST', body: JSON.stringify({ displayName: v }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && (d.applied || d.ok)) { if (d.me) Object.assign(state.me, d.me); else state.me.displayName = v; renderNav(); renderDock(); buildChatList(); if (state.nav === 'settings') renderView('settings'); toast('نام نمایشی تغییر کرد'); }
+    else toast(d.error || 'خطا در تغییر نام');
+  });
+}
+function renameUser(username, current, cb) {
+  renameModal(current || '', async (v) => {
+    const r = await api('/api/admin/displayname', { method: 'POST', body: JSON.stringify({ username, displayName: v }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { toast('نام کاربر تغییر کرد'); const du = await (await api('/api/admin/users')).json().catch(() => ({})); if (du.users) state.users = du.users; if (cb) cb(v); } else toast(d.error || 'خطا');
+  });
+}
+function openProfile(username) { renderProfile(username); }
+function renderProfile(username) {
+  let u = (state.users || []).find((x) => x.username === username);
+  if (!u && state.me.username === username) u = state.me;
+  if (!u) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; renderProfile(username); } }); return; }
+  setMode('view');
+  const online = !!u.online;
+  const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
+  let h = '<div class="profile-view">';
+  h += '<button class="btn sm ghost" data-act="back">← بازگشت</button>';
+  h += '<div class="profile-hero">' + avatarEl(u, 'xl').outerHTML + '<div class="profile-name">' + esc(u.displayName || u.username) + badge + '</div><div class="profile-uname">@' + esc(u.username) + (online ? ' <span class="onl">● آنلاین</span>' : '') + '</div>';
+  if (u.bio) h += '<div class="profile-bio">' + esc(u.bio) + '</div>';
+  if (u.phone) h += '<div class="profile-row">📱 ' + esc(u.phone) + '</div>';
+  h += '</div><div class="profile-actions">';
+  h += '<button class="btn primary" data-act="chat">شروع چت</button>';
+  if (state.me.isAdmin && !u.isAdmin) {
+    h += '<button class="btn" data-act="rename">تغییر نام</button>';
+    h += '<button class="btn" data-act="premium">' + (u.isPremium ? 'حذف پرمیوم' : 'پرمیوم‌سازی') + '</button>';
+    h += '<button class="btn danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدودسازی') + '</button>';
+  }
+  h += '</div></div>';
+  viewHost.innerHTML = h;
+  viewHost.querySelector('[data-act="back"]').onclick = () => renderView('contacts');
+  viewHost.querySelector('[data-act="chat"]').onclick = () => openDM(username);
+  const rn = viewHost.querySelector('[data-act="rename"]'); if (rn) rn.onclick = () => renameUser(username, u.displayName, () => renderProfile(username));
+  const pr = viewHost.querySelector('[data-act="premium"]'); if (pr) pr.onclick = async () => { await api('/api/admin/premium', { method: 'POST', body: JSON.stringify({ username, isPremium: !u.isPremium }) }); toast('انجام شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
+  const bn = viewHost.querySelector('[data-act="ban"]'); if (bn) bn.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username, banned: !u.banned }) }); toast('انجام شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
+  luc();
+}
 async function startGroup(isChannel) { const name = prompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':'); if (!name) return; const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json(); state.groups.push(d.group); if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups })); openRoom('group:' + d.group.id); }
 
 /* THEME */

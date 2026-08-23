@@ -320,6 +320,19 @@ app.post('/api/admin/premium', auth, (req, res) => {
   res.json({ ok: true, user: publicUser(target) });
 });
 
+app.post('/api/admin/displayname', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const { username, displayName } = req.body || {};
+  const newName = String(displayName || '').trim();
+  if (newName.length < 2 || newName.length > 25) return res.status(400).json({ error: 'نام نمایشی باید ۲ تا ۲۵ کاراکتر باشد' });
+  const target = db.users.find((u) => u.username === username);
+  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  target.displayName = newName;
+  saveDB();
+  pushUsers();
+  res.json({ ok: true, user: publicUser(target) });
+});
+
 app.post('/api/rename', auth, (req, res) => {
   const newName = String((req.body || {}).displayName || '').trim();
   if (newName.length < 2 || newName.length > 25) return res.status(400).json({ error: 'نام نمایشی باید ۲ تا ۲۵ کاراکتر باشد' });
