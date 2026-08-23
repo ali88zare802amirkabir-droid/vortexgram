@@ -256,7 +256,7 @@ $('conv-search').onclick = () => { $('conv-searchbox').classList.toggle('hidden'
 
 function onNewMessage(m) {
   const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.messages.push(m); r.last = m;
-  if (rid === state.room) { addMessage(m); scrollBottom(); markRead(rid); }
+  if (rid === state.room) { addMessage(m); if (m.from === state.me.username || isNearBottom()) scrollBottom(); markRead(rid); }
   else { r.unread = computeUnread(rid, r); beep(); }
   buildChatList(); renderDetails();
 }
@@ -265,6 +265,7 @@ function pushNotification(m) {
   try { new Notification(roomTitle(m.roomId), { body: previewText(m) }); } catch (e) {}
 }
 function scrollBottom() { const c = $('messages'); c.scrollTop = c.scrollHeight; }
+function isNearBottom() { const c = $('messages'); return !!c && (c.scrollHeight - c.scrollTop - c.clientHeight) < 90; }
 function daySep(t) { const d = new Date(t); const s = d.toLocaleDateString('fa-IR'); return s; }
 function addMessage(m) {
   const msgs = $('messages'); const d = new Date(m.time); const ds = d.toLocaleDateString('fa-IR');

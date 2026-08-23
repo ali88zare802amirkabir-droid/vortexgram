@@ -141,7 +141,7 @@ a{color:var(--accent);text-decoration:none;}
 .badge.ban{background:rgba(255,80,80,.18);color:#ff9a9a;}
 
 /* ===================== CONVERSATION ===================== */
-#conversation{display:flex;flex-direction:column;min-height:0;background:var(--bg-primary);position:relative;}
+#conversation{display:flex;flex-direction:column;min-height:0;overflow:hidden;background:var(--bg-primary);position:relative;}
 .conv-empty{flex:1;display:grid;place-items:center;text-align:center;padding:30px;}
 .conv-empty .big{font-size:60px;margin-bottom:14px;filter:drop-shadow(0 0 22px var(--accent-glow));}
 .conv-empty h2{font-size:22px;font-weight:800;margin-bottom:8px;background:linear-gradient(90deg,var(--accent),var(--accent-cyan));-webkit-background-clip:text;background-clip:text;color:transparent;}
@@ -154,7 +154,7 @@ a{color:var(--accent);text-decoration:none;}
 .head-actions{display:flex;gap:4px;}
 .icon-btn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:var(--text-secondary);transition:all .15s var(--ease);}
 .icon-btn:hover{background:var(--surface-hover);color:var(--accent);}
-#messages{flex:1;overflow-y:auto;padding:18px 16px 8px;display:flex;flex-direction:column;gap:3px;}
+#messages{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:18px 16px 8px;display:flex;flex-direction:column;gap:3px;}
 .day-sep{align-self:center;margin:12px 0 6px;font-size:11px;color:var(--text-muted);background:var(--surface);padding:4px 12px;border-radius:20px;border:1px solid var(--border);}
 
 .msg{display:flex;flex-direction:column;max-width:74%;position:relative;animation:pop .18s var(--ease);}
