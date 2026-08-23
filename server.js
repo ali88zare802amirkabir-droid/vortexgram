@@ -97,12 +97,12 @@ function sendSMS(phone, text) {
   return new Promise((resolve) => {
     const key = process.env.KAVENEGAR_KEY;
     if (!key) { console.log('[DEV SMS]', phone, '->', text); return resolve({ ok: true, dev: true }); }
-    const body = JSON.stringify({ receptor: phone, message: text });
+    const body = require('querystring').stringify({ receptor: phone, message: text, sender: process.env.KAVENEGAR_SENDER || '2000660110' });
     const req = httpsMod.request({
       hostname: 'api.kavenegar.com',
       path: `/v1/${key}/sms/send.json`,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
     }, (r) => {
       let b = ''; r.on('data', (c) => (b += c)); r.on('end', () => {
         let ok = r.statusCode >= 200 && r.statusCode < 300;
