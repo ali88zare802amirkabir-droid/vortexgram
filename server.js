@@ -51,7 +51,7 @@ try {
 let saveTimer = null;
 function flushDB() {
   clearTimeout(saveTimer);
-  try { fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) { console.error('save failed', e.message); }
+  try { db.sessions = Object.fromEntries(sessions); fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) { console.error('save failed', e.message); }
 }
 function saveDB() {
   clearTimeout(saveTimer);
@@ -68,6 +68,8 @@ const sessions = new Map();
 const online = new Map();
 const msgTimestamps = new Map();
 const pendingCodes = new Map(); // phone -> { code, exp }
+// بارگذاری نشست‌های ذخیره‌شده تا لاگین پس از ری‌استارت سرور باقی بماند
+try { if (db.sessions) for (const [k, v] of Object.entries(db.sessions)) sessions.set(k, v); } catch (e) {}
 
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
@@ -75,6 +77,7 @@ function newToken() {
 function createSession(username) {
   const token = newToken();
   sessions.set(token, { username, exp: Date.now() + SESSION_TTL });
+  saveDB();
   return token;
 }
 function getSession(token) {
