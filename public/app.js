@@ -80,7 +80,6 @@ function enterApp() {
   renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
   if (state.me.isAdmin) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {}); }
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
-  $('app').classList.add('no-conv');
 }
 
 /* NAV */
@@ -129,7 +128,6 @@ function setMode(mode) {
   $('conv-empty').classList.toggle('hidden', chat ? !state.room : true);
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
-  $('app').classList.toggle('no-conv', chat ? !state.room : false);
   if (chat) { $('chat-list-column').classList.remove('hidden'); $('details-panel').classList.remove('hidden'); }
   else { $('chat-list-column').classList.add('hidden'); $('details-panel').classList.add('hidden'); }
 }
