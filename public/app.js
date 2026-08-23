@@ -125,7 +125,7 @@ let viewHost = null;
 function setMode(mode) {
   if (!viewHost) { viewHost = document.createElement('div'); viewHost.id = 'view-host'; viewHost.className = 'view hidden'; $('conversation').appendChild(viewHost); }
   const chat = mode === 'chats';
-  $('conv-empty').classList.toggle('hidden', chat ? !state.room : true);
+  $('conv-empty').classList.toggle('hidden', chat ? !!state.room : true);
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
   if (chat) { $('chat-list-column').classList.remove('hidden'); $('details-panel').classList.remove('hidden'); }
