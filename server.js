@@ -67,6 +67,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
 const sessions = new Map();
 const online = new Map();
 const msgTimestamps = new Map();
+const pendingCodes = new Map(); // phone -> { code, exp }
 
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
@@ -84,8 +85,38 @@ function getSession(token) {
 function hash(pw, salt) {
   return crypto.createHash('sha256').update(salt + ':' + pw).digest('hex');
 }
+function normalizePhone(p) {
+  p = String(p || '').replace(/[\s\-()]/g, '');
+  if (p.startsWith('+98')) p = '0' + p.slice(3);
+  else if (p.startsWith('98') && p.length === 12) p = '0' + p.slice(2);
+  if (!/^09\d{9}$/.test(p)) return null;
+  return p;
+}
+// ارسال پیامک: با کلید KAVENEGAR_KEY واقعی، وگرنه حالت توسعه (چاپ در کنسول + برگرداندن کد)
+function sendSMS(phone, text) {
+  return new Promise((resolve) => {
+    const key = process.env.KAVENEGAR_KEY;
+    if (!key) { console.log('[DEV SMS]', phone, '->', text); return resolve({ ok: true, dev: true }); }
+    const body = JSON.stringify({ receptor: phone, message: text });
+    const req = httpsMod.request({
+      hostname: 'api.kavenegar.com',
+      path: `/v1/${key}/sms/send.json`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (r) => {
+      let b = ''; r.on('data', (c) => (b += c)); r.on('end', () => {
+        let ok = r.statusCode >= 200 && r.statusCode < 300;
+        try { const j = JSON.parse(b); if (j && j.return && j.return.status !== 200) ok = false; } catch (e) {}
+        if (!ok) console.error('[Kavenegar] send failed', r.statusCode, b);
+        resolve({ ok, dev: !ok, smsError: !ok });
+      });
+    });
+    req.on('error', (e) => { console.error('[Kavenegar] error', e.message); resolve({ ok: false, dev: true, smsError: true }); });
+    req.write(body); req.end();
+  });
+}
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null };
 }
 const LIMITS = {
   normalUploadMB: 30,
@@ -167,6 +198,62 @@ app.post('/api/login', (req, res) => {
   if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
   const token = createSession(user.username);
   res.json({ token, me: publicUser(user) });
+});
+
+// ---------- phone + code (Telegram-style) ----------
+function genCode() { return String(crypto.randomInt(0, 1000000)).padStart(6, '0'); }
+
+app.post('/api/send-code', async (req, res) => {
+  const phone = normalizePhone((req.body || {}).phone);
+  if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
+  const code = genCode();
+  pendingCodes.set(phone, { code, exp: Date.now() + 2 * 60 * 1000 });
+  const sms = await sendSMS(phone, `کد ورود VORTEXGRAM: ${code}`);
+  const out = { ok: true };
+  if (sms.dev) out.devCode = code;
+  if (sms.smsError) out.note = 'ارسال پیامک با خطا مواجه شد — کد در کنسول سرور چاپ شد';
+  res.json(out);
+});
+
+app.post('/api/verify-code', (req, res) => {
+  const phone = normalizePhone((req.body || {}).phone);
+  const code = String((req.body || {}).code || '');
+  if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
+  const rec = pendingCodes.get(phone);
+  if (!rec || rec.exp < Date.now()) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
+  if (rec.code !== code) return res.status(401).json({ error: 'کد اشتباه است' });
+  const user = db.users.find((u) => u.phone === phone);
+  if (user) {
+    pendingCodes.delete(phone);
+    if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
+    const token = createSession(user.username);
+    return res.json({ token, me: publicUser(user) });
+  }
+  return res.json({ needsName: true });
+});
+
+app.post('/api/complete-register', (req, res) => {
+  const phone = normalizePhone((req.body || {}).phone);
+  const code = String((req.body || {}).code || '');
+  const displayName = String((req.body || {}).displayName || '').trim();
+  let username = String((req.body || {}).username || '').trim();
+  if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
+  const rec = pendingCodes.get(phone);
+  if (!rec || rec.exp < Date.now() || rec.code !== code) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
+  if (displayName.length < 2) return res.status(400).json({ error: 'نام نمایشی حداقل ۲ حرف' });
+  if (username) {
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'نام کاربری: ۳ تا ۲۰ حرف انگلیسی/عدد/_' });
+    if (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) return res.status(409).json({ error: 'این نام کاربری قبلاً گرفته شده' });
+  } else {
+    username = 'u' + phone.slice(1);
+    while (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) username += crypto.randomInt(0, 9);
+  }
+  const u = { username, displayName, phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '' };
+  db.users.push(u);
+  saveDB();
+  pendingCodes.delete(phone);
+  const token = createSession(username);
+  res.json({ token, me: publicUser(u) });
 });
 
 function auth(req, res, next) {

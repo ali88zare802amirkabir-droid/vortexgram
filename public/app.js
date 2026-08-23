@@ -122,46 +122,57 @@ const STICKERS = {
   'پک واکنشی': ['😱','😭','😡','🤯','🥶','🔥','💀','👻'],
 };
 
-/* ================= AUTH ================= */
-let authMode = 'login';
-$('tab-login').onclick = () => setAuthMode('login');
-$('tab-register').onclick = () => setAuthMode('register');
+/* ================= AUTH (phone + code, Telegram-style) ================= */
+const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-name'), authUser = $('auth-username');
+const stepPhone = $('auth-step-phone'), stepCode = $('auth-step-code'), stepName = $('auth-step-name');
+const authError = $('auth-error');
+let authPhoneVal = '';
 
-function setAuthMode(m) {
-  authMode = m;
-  $('tab-login').classList.toggle('active', m === 'login');
-  $('tab-register').classList.toggle('active', m === 'register');
-  $('auth-submit').textContent = m === 'login' ? 'ورود به آرنا' : 'ساخت حساب';
+function showAuthStep(s) {
+  stepPhone.classList.toggle('hidden', s !== 'phone');
+  stepCode.classList.toggle('hidden', s !== 'code');
+  stepName.classList.toggle('hidden', s !== 'name');
+  authError.textContent = '';
 }
+function authErr(m, ok) { authError.textContent = m; authError.style.color = ok ? '#34d399' : ''; }
+function finishLogin(d) { state.token = d.token; state.me = d.me; localStorage.setItem('ft_token', d.token); enterApp(); }
 
-$('auth-submit').onclick = async () => {
-  const username = $('auth-username').value.trim();
-  const password = $('auth-password').value;
-  $('auth-error').textContent = '';
+$('auth-send').onclick = async () => {
+  const phone = authPhone.value.trim();
   try {
-    const r = await fetch(`/api/${authMode}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'خطا');
-    if (authMode === 'register' && data.pending) {
-      $('auth-error').style.color = '#34d399';
-      $('auth-error').textContent = data.message;
-      setAuthMode('login');
-      return;
-    }
-    $('auth-error').style.color = '';
-    state.token = data.token;
-    state.me = data.me;
-    localStorage.setItem('ft_token', data.token);
-    enterApp();
-  } catch (e) {
-    $('auth-error').textContent = e.message;
-  }
+    const r = await fetch('/api/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) });
+    const d = await r.json();
+    if (!r.ok) return authErr(d.error || 'خطا');
+    authPhoneVal = phone;
+    $('auth-phone-label').textContent = 'کد به ' + phone + ' ارسال شد';
+    showAuthStep('code');
+    if (d.devCode) authErr('کد تست (حالت توسعه): ' + d.devCode, true);
+    else if (d.note) authErr(d.note, true);
+  } catch (e) { authErr(e.message); }
 };
-$('auth-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-submit').click(); });
+
+$('auth-verify').onclick = async () => {
+  try {
+    const r = await fetch('/api/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim() }) });
+    const d = await r.json();
+    if (!r.ok) return authErr(d.error || 'خطا');
+    if (d.token) return finishLogin(d);
+    if (d.needsName) return showAuthStep('name');
+  } catch (e) { authErr(e.message); }
+};
+
+$('auth-finish').onclick = async () => {
+  try {
+    const r = await fetch('/api/complete-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim(), displayName: authName.value.trim(), username: authUser.value.trim() }) });
+    const d = await r.json();
+    if (!r.ok) return authErr(d.error || 'خطا');
+    if (d.token) finishLogin(d);
+  } catch (e) { authErr(e.message); }
+};
+
+authPhone.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-send').click(); });
+authCode.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-verify').click(); });
+authName.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-finish').click(); });
 
 async function tryResume() {
   if (!state.token) return false;

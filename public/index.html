@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
   <title>VORTEXGRAM // 2126</title>
-   <link rel="stylesheet" href="style.css?v=20" />
+   <link rel="stylesheet" href="style.css?v=21" />
 </head>
 <body>
 
@@ -14,13 +14,24 @@
     <div class="auth-box">
       <h1 class="brand">VORTEX<span>GRAM</span></h1>
       <p class="tagline">// پروتکل گیمینگ ۲۱۲۶ — با هوش مصنوعی Vortex</p>
-      <div class="tabs">
-        <button id="tab-login" class="tab active">ورود</button>
-        <button id="tab-register" class="tab">ثبت‌نام</button>
+
+      <div id="auth-step-phone">
+        <input id="auth-phone" type="tel" inputmode="numeric" placeholder="شماره موبایل (۰۹۱۲۳۴۵۶۷۸۹)" maxlength="11" autocomplete="tel" />
+        <button id="auth-send">دریافت کد</button>
       </div>
-      <input id="auth-username" type="text" placeholder="نام کاربری (انگلیسی)" maxlength="20" autocomplete="username" />
-      <input id="auth-password" type="password" placeholder="رمز عبور" maxlength="60" autocomplete="current-password" />
-      <button id="auth-submit">ورود به آرنا</button>
+
+      <div id="auth-step-code" class="hidden">
+        <p id="auth-phone-label" class="hint" style="text-align:center;margin-bottom:6px"></p>
+        <input id="auth-code" type="text" inputmode="numeric" placeholder="کد ۶ رقمی" maxlength="6" autocomplete="one-time-code" />
+        <button id="auth-verify">تایید کد</button>
+      </div>
+
+      <div id="auth-step-name" class="hidden">
+        <input id="auth-name" type="text" placeholder="نام نمایشی" maxlength="25" />
+        <input id="auth-username" type="text" placeholder="نام کاربری (اختیاری)" maxlength="20" />
+        <button id="auth-finish">ساخت حساب</button>
+      </div>
+
       <p id="auth-error" class="auth-error"></p>
     </div>
   </div>
@@ -315,6 +326,6 @@
     </div>
   </div>
 
-   <script src="app.js?v=20"></script>
+   <script src="app.js?v=21"></script>
 </body>
 </html>
