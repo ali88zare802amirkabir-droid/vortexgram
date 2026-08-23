@@ -26,6 +26,9 @@ function avatarEl(u, size) {
   else a.textContent = initial(u && (u.displayName || u.displayName) ? u.displayName : (u && (u.username || u.displayName) ? (u.displayName || u.username) : '?'));
   return a;
 }
+function isMobile() { return window.innerWidth <= 760; }
+function showScrim(v) { const s = $('scrim'); if (s) s.classList.toggle('hidden', !v); }
+function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); $('details-panel').classList.remove('open'); showScrim(false); }
 const state = {
   token: localStorage.getItem('ft_token') || null, me: null, ws: null,
   groups: [], users: [], chatState: {}, readState: {}, pinned: {},
@@ -76,6 +79,7 @@ function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
   renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
   if (state.me.isAdmin) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {}); }
+  if (isMobile()) { $('chat-list-column').classList.add('m-open'); }
 }
 
 /* NAV */
@@ -109,10 +113,12 @@ function renderNav() {
   });
   luc();
 }
-$('nav-toggle').onclick = () => $('nav-sidebar').classList.toggle('expanded');
+$('nav-toggle').onclick = () => { if (isMobile()) { $('nav-sidebar').classList.remove('m-open'); showScrim(false); } else $('nav-sidebar').classList.toggle('expanded'); };
 function switchNav(id) {
   state.nav = id;
-  if (id === 'chats') setMode('chats'); else { setMode('view'); renderView(id); }
+  if (isMobile()) $('nav-sidebar').classList.remove('m-open');
+  if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('chat-list-column').classList.add('m-open'); } }
+  else { setMode('view'); renderView(id); closeDrawers(); }
   document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === id));
 }
 let viewHost = null;
@@ -228,21 +234,24 @@ function previewText(m) {
 $('cl-tabs').addEventListener('click', (e) => { const t = e.target.closest('.cl-tab'); if (!t) return; document.querySelectorAll('.cl-tab').forEach((x) => x.classList.remove('active')); t.classList.add('active'); state.chatFilter = t.dataset.tab; buildChatList(); });
 $('cl-search-input').addEventListener('input', (e) => { state.search = e.target.value; buildChatList(); });
 $('cl-new').onclick = openNewMenu;
-$('cl-menu').onclick = () => $('nav-sidebar').classList.toggle('m-open');
+$('cl-menu').onclick = () => { const open = !$('nav-sidebar').classList.contains('m-open'); $('nav-sidebar').classList.toggle('m-open', open); showScrim(open); };
 /* PART 2 — conversation, messages, composer, details */
 function openRoom(rid) {
   state.room = rid; state.replyTo = null;
   document.querySelectorAll('.chat-item').forEach((e) => e.classList.toggle('active', e.dataset.roomId === rid));
-  $('details-panel').classList.add('hidden'); renderRoomHeader(); buildChatList();
+  if (isMobile()) { $('details-panel').classList.remove('open'); } else { $('details-panel').classList.add('hidden'); }
+  renderRoomHeader(); buildChatList();
   setMode('chats');
+  if (isMobile()) { $('chat-list-column').classList.remove('m-open'); showScrim(false); }
   if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   else { $('messages').innerHTML = ''; state.lastDay = null; (state.rooms[rid] || {}).messages || []; }
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
 function renderRoomHeader() { $('conv-name').textContent = roomTitle(state.room); $('conv-sub').textContent = roomOnline(state.room); const av = avatarEl(state.room.startsWith('group:') ? { displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm'); av.id = 'conv-av'; const old = $('conv-av'); if (old) old.replaceWith(av); }
-$('conv-info').onclick = () => { $('details-panel').classList.toggle('hidden'); renderDetails(); };
-$('conv-back').onclick = () => { state.room = null; $('conv-main').classList.add('hidden'); $('conv-empty').classList.remove('hidden'); buildChatList(); };
+$('conv-info').onclick = () => { if (isMobile()) { const open = !$('details-panel').classList.contains('open'); $('details-panel').classList.toggle('open', open); showScrim(open); renderDetails(); } else { $('details-panel').classList.toggle('hidden'); renderDetails(); } };
+$('conv-back').onclick = () => { state.room = null; $('conv-main').classList.add('hidden'); $('conv-empty').classList.remove('hidden'); buildChatList(); if (isMobile()) { $('chat-list-column').classList.add('m-open'); } };
+$('scrim').onclick = () => closeDrawers();
 $('conv-search').onclick = () => { $('conv-searchbox').classList.toggle('hidden'); };
 
 function onNewMessage(m) {
@@ -493,6 +502,7 @@ function renameUser(username, current, cb) {
 }
 function openProfile(username) { renderProfile(username); }
 function renderProfile(username) {
+  if (isMobile()) closeDrawers();
   let u = (state.users || []).find((x) => x.username === username);
   if (!u && state.me.username === username) u = state.me;
   if (!u) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; renderProfile(username); } }); return; }

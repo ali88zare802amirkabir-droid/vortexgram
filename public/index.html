@@ -2,9 +2,9 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>VORTEX Messenger</title>
-  <link rel="stylesheet" href="style.css?v=31" />
+  <link rel="stylesheet" href="style.css?v=37" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -101,6 +101,7 @@
     <div id="command-dock"></div>
   </div>
 
+  <div id="scrim" class="hidden"></div>
   <div id="command-palette" class="overlay hidden">
     <div class="palette">
       <div class="palette-input"><i data-lucide="command" class="icon"></i><input id="palette-input" placeholder="جستجو یا دستور بنویس..." autocomplete="off" /><span class="kbd">Esc</span></div>
@@ -110,6 +111,6 @@
   </div>
 
   <div id="toast"></div>
-  <script src="app.js?v=36"></script>
+  <script src="app.js?v=37"></script>
 </body>
 </html>
