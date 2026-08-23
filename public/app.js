@@ -79,7 +79,7 @@ function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
   renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
   if (state.me.isAdmin) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {}); }
-  if (isMobile()) { $('chat-list-column').classList.add('m-open'); }
+  if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
 }
 
 /* NAV */
@@ -117,8 +117,8 @@ $('nav-toggle').onclick = () => { if (isMobile()) { $('nav-sidebar').classList.r
 function switchNav(id) {
   state.nav = id;
   if (isMobile()) $('nav-sidebar').classList.remove('m-open');
-  if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('chat-list-column').classList.add('m-open'); } }
-  else { setMode('view'); renderView(id); closeDrawers(); }
+  if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('conversation').classList.remove('chat-open'); } }
+  else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) $('conversation').classList.add('chat-open'); }
   document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === id));
 }
 let viewHost = null;
@@ -242,7 +242,7 @@ function openRoom(rid) {
   if (isMobile()) { $('details-panel').classList.remove('open'); } else { $('details-panel').classList.add('hidden'); }
   renderRoomHeader(); buildChatList();
   setMode('chats');
-  if (isMobile()) { $('chat-list-column').classList.remove('m-open'); showScrim(false); }
+  if (isMobile()) { $('details-panel').classList.remove('open'); $('conversation').classList.add('chat-open'); showScrim(false); }
   if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   else { $('messages').innerHTML = ''; state.lastDay = null; (state.rooms[rid] || {}).messages || []; }
 }
@@ -250,7 +250,7 @@ function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
 function renderRoomHeader() { $('conv-name').textContent = roomTitle(state.room); $('conv-sub').textContent = roomOnline(state.room); const av = avatarEl(state.room.startsWith('group:') ? { displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm'); av.id = 'conv-av'; const old = $('conv-av'); if (old) old.replaceWith(av); }
 $('conv-info').onclick = () => { if (isMobile()) { const open = !$('details-panel').classList.contains('open'); $('details-panel').classList.toggle('open', open); showScrim(open); renderDetails(); } else { $('details-panel').classList.toggle('hidden'); renderDetails(); } };
-$('conv-back').onclick = () => { state.room = null; $('conv-main').classList.add('hidden'); $('conv-empty').classList.remove('hidden'); buildChatList(); if (isMobile()) { $('chat-list-column').classList.add('m-open'); } };
+$('conv-back').onclick = () => { state.room = null; $('conv-main').classList.add('hidden'); $('conv-empty').classList.remove('hidden'); buildChatList(); if (isMobile()) { $('conversation').classList.remove('chat-open'); } };
 $('scrim').onclick = () => closeDrawers();
 $('conv-search').onclick = () => { $('conv-searchbox').classList.toggle('hidden'); };
 
@@ -546,7 +546,10 @@ function appendAIMsg(role, text) { const box = $('ai-conv'); const el = document
 /* VIEW ROUTER */
 function renderView(id) {
   setMode('view'); viewHost.classList.remove('hidden'); viewHost.innerHTML = '';
-  const title = NAV.find((n) => n.id === id); const h = document.createElement('div'); h.className = 'view-head'; h.innerHTML = ic((title && title.icon) || 'layout') + '<h2>' + (title ? title.label : id) + '</h2>'; viewHost.appendChild(h);
+  const title = NAV.find((n) => n.id === id); const h = document.createElement('div'); h.className = 'view-head';
+  h.innerHTML = '<button class="icon-btn view-back" id="view-back"><i data-lucide="chevron-right" class="icon"></i></button>' + ic((title && title.icon) || 'layout') + '<h2>' + (title ? title.label : id) + '</h2>';
+  viewHost.appendChild(h);
+  const back = h.querySelector('#view-back'); if (back) back.onclick = () => switchNav('chats');
   const wrap = document.createElement('div'); wrap.className = 'view-body'; viewHost.appendChild(wrap);
   if (id === 'ai') {
     wrap.innerHTML = '<div class="ai-card"><div class="ai-conv" id="ai-conv"></div><div class="ai-input-row"><input id="ai-input" placeholder="از دستیار بپرس…" /><button id="ai-send">' + ic('send') + '</button></div><div class="ai-actions"><button data-a="summarize">' + ic('file-text') + ' خلاصه چت</button><button data-a="reply">' + ic('corner-down-left') + ' پیشنهاد پاسخ</button><button data-a="translate">' + ic('languages') + ' ترجمه</button><button data-a="rewrite">' + ic('edit-3') + ' بازنویسی</button></div></div>';
