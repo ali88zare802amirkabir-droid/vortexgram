@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
   <title>VORTEXGRAM // 2126</title>
-   <link rel="stylesheet" href="style.css?v=17" />
+   <link rel="stylesheet" href="style.css?v=20" />
 </head>
 <body>
 
@@ -55,6 +55,7 @@
         <span class="avatar sm" style="background:linear-gradient(135deg,#0ea5e9,var(--primary))" data-icon="bookmark"></span>
         <span class="grow">پیام‌های ذخیره‌شده</span>
       </div>
+      <button id="side-down-btn" title="رفتن به پایین">↓</button>
     </aside>
 
     <main id="chat-area">
@@ -169,12 +170,34 @@
       </div>
 
       <div class="set-section">
-        <h4>ظاهر (تم)</h4>
-        <div class="theme-grid">
-          <button class="theme-opt" data-theme="midnight"><span class="sw sw-midnight"></span>میدنایت</button>
-          <button class="theme-opt" data-theme="aurora"><span class="sw sw-aurora"></span>آرورا</button>
-          <button class="theme-opt" data-theme="light"><span class="sw sw-light"></span>روشن</button>
+        <h4>پس‌زمینه و تم چت</h4>
+        <div class="set-row">
+          <span>مدل پس‌زمینه:</span>
+          <div class="tabs" style="background:var(--field-bg);border-radius:12px;padding:3px">
+            <button class="tab bgmode active" data-bg="none">خالی</button>
+            <button class="tab bgmode" data-bg="color">رنگ</button>
+            <button class="tab bgmode" data-bg="image">عکس</button>
+          </div>
         </div>
+        <div id="bg-color-wrap" class="hidden">
+          <div class="swatches" id="bg-swatches"></div>
+          <div class="set-row"><span>رنگ دلخواه:</span><input type="color" id="bg-color" class="color-input" value="#0b0b12" /><button id="bg-color-apply" class="mini-btn">اعمال</button></div>
+        </div>
+        <div id="bg-image-wrap" class="hidden">
+          <input type="file" id="bg-image" accept="image/*" hidden />
+          <button id="bg-image-btn" class="mini-btn">انتخاب عکس</button>
+          <div class="set-row"><span>مات‌کردن:</span><input type="range" id="bg-blur" min="0" max="24" value="2" style="flex:1;min-width:120px" /></div>
+          <div class="set-row"><span>تاریکی لایه:</span><input type="range" id="bg-overlay" min="0" max="80" value="28" style="flex:1;min-width:120px" /></div>
+        </div>
+        <div class="bg-preview" id="bg-preview"></div>
+        <h4 style="margin-top:16px">رنگ پیام‌ها</h4>
+        <div class="set-row"><span>پیام‌های من:</span><input type="color" id="msg-out-color" class="color-input" value="#0A84FF" /><button id="msg-out-apply" class="mini-btn">اعمال</button></div>
+        <div class="set-row"><span>پیام‌های طرف:</span><input type="color" id="msg-in-color" class="color-input" value="#787878" /><button id="msg-in-apply" class="mini-btn">اعمال</button></div>
+        <label class="switch-row" style="margin-top:8px">
+          <span>جلوه هاور (شناور شدن)</span>
+          <span class="switch"><input id="hover-toggle" type="checkbox" /><span class="slider"></span></span>
+        </label>
+        <button id="theme-reset" class="mini-btn" style="margin-top:12px">بازنشانی به پیش‌فرض</button>
       </div>
 
       <div class="set-section">
@@ -197,12 +220,19 @@
 
       <div id="admin-main">
         <h3>پنل ادمین</h3>
-        <h4>درخواست‌های ثبت‌نام</h4>
-        <ul id="admin-signups" class="admin-list"></ul>
-        <h4>درخواست‌های تغییر نام</h4>
-        <ul id="admin-requests" class="admin-list"></ul>
-        <h4>کاربران</h4>
-        <ul id="admin-users" class="admin-list"></ul>
+        <div class="admin-tabs">
+          <button class="atab active" data-atab="users">کاربران</button>
+          <button class="atab" data-atab="reqs">درخواست‌ها</button>
+        </div>
+        <div id="admin-users-wrap">
+          <ul id="admin-users" class="admin-list"></ul>
+        </div>
+        <div id="admin-reqs-wrap" class="hidden">
+          <h4>درخواست‌های ثبت‌نام</h4>
+          <ul id="admin-signups" class="admin-list"></ul>
+          <h4>درخواست‌های تغییر نام</h4>
+          <ul id="admin-requests" class="admin-list"></ul>
+        </div>
       </div>
 
       <div id="admin-chats" class="hidden">
@@ -285,6 +315,6 @@
     </div>
   </div>
 
-   <script src="app.js?v=19"></script>
+   <script src="app.js?v=20"></script>
 </body>
 </html>

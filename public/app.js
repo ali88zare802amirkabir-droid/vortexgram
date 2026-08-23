@@ -185,6 +185,7 @@ function enterApp() {
   $('admin-btn').classList.toggle('hidden', !state.me.isAdmin);
   applyTierLimits();
   renderMyAvatar();
+  applyVXTheme();
   connectWS();
 }
 
@@ -429,6 +430,74 @@ if (soundToggle) {
   soundToggle.checked = localStorage.getItem('vx_sound') === '1';
   soundToggle.onchange = (e) => localStorage.setItem('vx_sound', e.target.checked ? '1' : '0');
 }
+
+/* ============================================================
+   THEME / BACKGROUND CUSTOMIZATION (live, per device)
+   ============================================================ */
+const BG_PRESETS = [
+  'radial-gradient(120% 120% at 80% 0%, #1b1b2f 0%, #0b0b12 55%, #000 100%)',
+  'linear-gradient(135deg,#0f2027,#203a43,#2c5364)',
+  'linear-gradient(135deg,#3a1c71,#d76d77,#ffaf7b)',
+  'linear-gradient(135deg,#0f0c29,#302b63,#24243e)',
+  'linear-gradient(135deg,#1f4037,#99f2c0)',
+  'linear-gradient(135deg,#2193b0,#6dd5ed)',
+  'linear-gradient(160deg,#e9f0ff,#f6f1ff,#eafaf1)',
+  'linear-gradient(135deg,#ff9a9e,#fecfef)'
+];
+let themeState = { mode: 'none', bg: null, img: null, blur: 2, overlay: 28, out: null, in: null, hover: false };
+const THEME_KEY = 'vx_theme';
+function loadTheme() { try { const t = JSON.parse(localStorage.getItem(THEME_KEY)); if (t) themeState = Object.assign(themeState, t); } catch (e) {} }
+function saveTheme() { localStorage.setItem(THEME_KEY, JSON.stringify(themeState)); }
+function isLight() { return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches); }
+function lum(hex) { const c = (hex || '#000').replace('#', ''); const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
+function hexRgba(hex, a) { const c = (hex || '#000').replace('#', ''); const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16); return `rgba(${r},${g},${b},${a})`; }
+function applyVXTheme() {
+  const root = document.documentElement.style;
+  root.removeProperty('--chat-bg'); root.removeProperty('--chat-overlay'); root.removeProperty('--bg-blur'); root.removeProperty('--msg-out'); root.removeProperty('--msg-out-text'); root.removeProperty('--msg-in'); root.removeProperty('--msg-in-text');
+  if (themeState.mode === 'color' && themeState.bg) root.setProperty('--chat-bg', themeState.bg);
+  else if (themeState.mode === 'image' && themeState.img) root.setProperty('--chat-bg', `url(${themeState.img}) center/cover`);
+  if (themeState.mode === 'color' || themeState.mode === 'image') {
+    root.setProperty('--chat-overlay', isLight() ? `rgba(255,255,255,${themeState.overlay / 100})` : `rgba(0,0,0,${themeState.overlay / 100})`);
+    root.setProperty('--bg-blur', themeState.blur + 'px');
+  }
+  if (themeState.out) { root.setProperty('--msg-out', hexRgba(themeState.out, isLight() ? 0.92 : 0.62)); root.setProperty('--msg-out-text', lum(themeState.out) > 0.7 ? '#1c1c1e' : '#ffffff'); }
+  if (themeState.in) { root.setProperty('--msg-in', hexRgba(themeState.in, isLight() ? 0.82 : 0.32)); root.setProperty('--msg-in-text', lum(themeState.in) > 0.6 ? '#1c1c1e' : '#ffffff'); }
+  document.body.classList.toggle('vx-hover', !!themeState.hover);
+  syncThemeUI();
+}
+function syncThemeUI() {
+  const bgm = document.querySelectorAll('.bgmode');
+  bgm.forEach((b) => b.classList.toggle('active', b.dataset.bg === themeState.mode));
+  $('bg-color-wrap').classList.toggle('hidden', themeState.mode !== 'color');
+  $('bg-image-wrap').classList.toggle('hidden', themeState.mode !== 'image');
+  $('bg-blur').value = themeState.blur;
+  $('bg-overlay').value = themeState.overlay;
+  if (themeState.out) $('msg-out-color').value = themeState.out;
+  if (themeState.in) $('msg-in-color').value = themeState.in;
+  $('hover-toggle').checked = !!themeState.hover;
+  const prev = $('bg-preview');
+  if (themeState.mode === 'image' && themeState.img) prev.style.background = `url(${themeState.img}) center/cover`;
+  else if (themeState.mode === 'color' && themeState.bg) prev.style.background = themeState.bg;
+  else prev.style.background = isLight() ? 'linear-gradient(160deg,#e9f0ff,#f6f1ff)' : 'radial-gradient(120% 120% at 80% 0%, #1b1b2f, #0b0b12)';
+  document.querySelectorAll('#bg-swatches .swatch').forEach((s) => s.classList.toggle('active', themeState.mode === 'color' && themeState.bg === s.dataset.bg));
+}
+function setupThemeUI() {
+  const sw = $('bg-swatches');
+  BG_PRESETS.forEach((g) => { const d = document.createElement('div'); d.className = 'swatch'; d.dataset.bg = g; d.style.background = g; d.onclick = () => { themeState.mode = 'color'; themeState.bg = g; applyTheme(); saveTheme(); }; sw.appendChild(d); });
+  document.querySelectorAll('.bgmode').forEach((b) => { b.onclick = () => { themeState.mode = b.dataset.bg; if (themeState.mode === 'none') { themeState.bg = null; themeState.img = null; } applyTheme(); saveTheme(); }; });
+  $('bg-color-apply').onclick = () => { themeState.mode = 'color'; themeState.bg = $('bg-color').value; applyTheme(); saveTheme(); };
+  $('bg-image-btn').onclick = () => $('bg-image').click();
+  $('bg-image').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { themeState.mode = 'image'; themeState.img = rd.result; applyTheme(); saveTheme(); }; rd.readAsDataURL(f); };
+  $('bg-blur').oninput = (e) => { themeState.blur = +e.target.value; if (themeState.mode !== 'none') { applyTheme(); saveTheme(); } };
+  $('bg-overlay').oninput = (e) => { themeState.overlay = +e.target.value; if (themeState.mode !== 'none') { applyTheme(); saveTheme(); } };
+  $('msg-out-apply').onclick = () => { themeState.out = $('msg-out-color').value; applyTheme(); saveTheme(); };
+  $('msg-in-apply').onclick = () => { themeState.in = $('msg-in-color').value; applyTheme(); saveTheme(); };
+  $('hover-toggle').onchange = (e) => { themeState.hover = e.target.checked; applyTheme(); saveTheme(); };
+  $('theme-reset').onclick = () => { themeState = { mode: 'none', bg: null, img: null, blur: 2, overlay: 28, out: null, in: null, hover: false }; localStorage.removeItem(THEME_KEY); applyTheme(); };
+}
+loadTheme();
+setupThemeUI();
+applyVXTheme();
 
 /* ---- in-chat search ---- */
 function doSearch(q) {
@@ -1593,6 +1662,28 @@ $('admin-btn').onclick = async () => {
   loadAdmin();
 };
 
+/* ---- admin panel tabs ---- */
+document.querySelectorAll('.atab').forEach((t) => {
+  t.onclick = () => {
+    document.querySelectorAll('.atab').forEach((x) => x.classList.toggle('active', x === t));
+    const which = t.dataset.atab;
+    $('admin-users-wrap').classList.toggle('hidden', which !== 'users');
+    $('admin-reqs-wrap').classList.toggle('hidden', which !== 'reqs');
+  };
+});
+document.addEventListener('click', () => { document.querySelectorAll('.row-menu.open').forEach((m) => m.classList.remove('open')); });
+
+/* ---- sidebar scroll-to-bottom floating button ---- */
+const sideDown = $('side-down-btn');
+const sidebar = $('sidebar');
+if (sidebar) {
+  sidebar.addEventListener('scroll', () => {
+    const atBottom = sidebar.scrollHeight - sidebar.scrollTop - sidebar.clientHeight < 60;
+    sideDown.classList.toggle('show', !atBottom);
+  });
+  sideDown.onclick = () => sidebar.scrollTo({ top: sidebar.scrollHeight, behavior: 'smooth' });
+}
+
 async function loadAdmin() {
   const rq = $('admin-requests'), us = $('admin-users'), su = $('admin-signups');
   rq.innerHTML = '<li class="empty">...</li>'; us.innerHTML = '<li class="empty">...</li>'; su.innerHTML = '<li class="empty">...</li>';
@@ -1636,23 +1727,38 @@ async function loadAdmin() {
       <span class="grow">${esc(u.displayName)} <small>@${esc(u.username)}</small></span>
       ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}
       ${u.banned ? '<small>مسدود</small>' : ''}`;
-    if (u.username !== state.me.username) {
-      li.appendChild(mkBtn(svg('chat') + ' چت‌ها', 'mini-btn', async () => openAdminChats(u.username, u.displayName), true));
-    }
+    const menu = document.createElement('div');
+    menu.className = 'row-menu';
+    const kebab = document.createElement('button');
+    kebab.className = 'kebab'; kebab.textContent = '⋯'; kebab.title = 'عملیات';
+    const pop = document.createElement('div');
+    pop.className = 'menu-pop';
+    const acts = [];
+    if (u.username !== state.me.username) acts.push(['چت‌ها', async () => openAdminChats(u.username, u.displayName)]);
     if (!u.isAdmin) {
-      const banBtn = mkBtn(u.banned ? 'رفع مسدودی' : 'مسدودسازی', u.banned ? 'mini-btn ok' : 'mini-btn no',
-        async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u.username, banned: !u.banned }) }); loadAdmin(); });
-      li.appendChild(banBtn);
-      const premBtn = mkBtn(u.isPremium ? 'لغو پرمیوم' : 'پرمیوم کن', u.isPremium ? 'mini-btn no' : 'mini-btn prem',
-        async () => { await api('/api/admin/premium', { method: 'POST', body: JSON.stringify({ username: u.username, isPremium: !u.isPremium }) }); loadAdmin(); });
-      li.appendChild(premBtn);
-      const resetBtn = mkBtn(svg('lock') + ' ریست رمز', 'mini-btn', async () => {
+      acts.push([u.banned ? 'رفع مسدودی' : 'مسدودسازی', async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u.username, banned: !u.banned }) }); loadAdmin(); }]);
+      acts.push([u.isPremium ? 'لغو پرمیوم' : 'پرمیوم کن', async () => { await api('/api/admin/premium', { method: 'POST', body: JSON.stringify({ username: u.username, isPremium: !u.isPremium }) }); loadAdmin(); }]);
+      acts.push(['ریست رمز', async () => {
         const np = prompt('رمز عبور جدید برای @' + u.username + ' (حداقل ۴ کاراکتر):');
         if (!np || np.length < 4) { if (np !== null) alert('رمز باید حداقل ۴ کاراکتر باشد'); return; }
         await api('/api/admin/reset-password', { method: 'POST', body: JSON.stringify({ username: u.username, newPassword: np }) });
         alert('رمز جدید برای @' + u.username + ' ثبت شد. کاربر بعد از ورود با رمز جدید، از سیستم خارج می‌شود.');
-      }, true);
-      li.appendChild(resetBtn);
+      }]);
+    }
+    if (acts.length) {
+      acts.forEach(([label, fn]) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.onclick = (e) => { e.stopPropagation(); menu.classList.remove('open'); pop.classList.remove('open'); fn(); };
+        pop.appendChild(b);
+      });
+      kebab.onclick = (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.row-menu.open').forEach((m) => { if (m !== menu) m.classList.remove('open'); });
+        menu.classList.toggle('open');
+      };
+      menu.append(kebab, pop);
+      li.appendChild(menu);
     }
     us.appendChild(li);
   });
