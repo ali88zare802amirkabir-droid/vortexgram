@@ -22,12 +22,63 @@ const state = {
   call: null,
   chatState: {},
   readState: {},
+  pinned: {},
   showArchive: false,
   peerStatus: '',
   rec: null,
+  outbox: [],
 };
 
 function chatFlags(roomId) { return state.chatState[roomId] || {}; }
+
+// ===== SVG icon system (no emoji) =====
+const ICONS = {
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  archive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg>',
+  menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
+  phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
+  smiley: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>',
+  sticker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M9 2h6l-1 7 3 3v2H7v-2l3-3z"/></svg>',
+  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  outbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 8 12 10 15 14 15 16 12 22 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  checkDouble: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 7 9 16 5 12"/><polyline points="22 7 13 16 12.5 15.5"/></svg>',
+  crown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h20l-2-9-5 4-3-7-3 7-5-4z"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>',
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  channel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l15-7v16l-15-7z" transform="translate(3 0)"/><path d="M3 11l15-7v16l-15-7z"/></svg>',
+  video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+  screen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  arrowRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>',
+  forward: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>',
+  voice: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>',
+  mute: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  bar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>',
+};
+function svg(name) { return `<span class="icon">${ICONS[name] || ''}</span>`; }
+function applyIcons() {
+  document.querySelectorAll('[data-icon]').forEach((el) => {
+    const n = el.getAttribute('data-icon');
+    if (ICONS[n]) el.innerHTML = '<span class="icon">' + ICONS[n] + '</span>';
+  });
+}
+
 function peerReadTime(roomId) {
   const readers = state.readState[roomId] || {};
   let t = 0;
@@ -130,6 +181,7 @@ async function tryResume() {
 function enterApp() {
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
+  applyIcons();
   $('admin-btn').classList.toggle('hidden', !state.me.isAdmin);
   applyTierLimits();
   renderMyAvatar();
@@ -151,7 +203,7 @@ function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   state.ws = new WebSocket(`${proto}://${location.host}`);
 
-  state.ws.onopen = () => state.ws.send(JSON.stringify({ type: 'auth', token: state.token }));
+  state.ws.onopen = () => { state.ws.send(JSON.stringify({ type: 'auth', token: state.token })); flushOutbox(); };
 
   state.ws.onmessage = (ev) => {
     const d = JSON.parse(ev.data);
@@ -160,6 +212,7 @@ function connectWS() {
         if (d.groups) { state.groups = d.groups; renderGroups(); }
         if (d.chatState) state.chatState = d.chatState;
         if (d.readState) state.readState = d.readState;
+        if (d.pinned) state.pinned = d.pinned;
         updateArchiveCount();
         break;
       case 'users': state.users = d.users; renderUsers(); showEmptyHint(); break;
@@ -204,19 +257,31 @@ function connectWS() {
         state.lastDay = null;
         d.messages.forEach(addMessage);
         scrollBottom();
+        renderPinBar();
         break;
-      case 'message': addMessage(d.message); if (d.message && d.message.roomId === state.room) markRead(state.room); break;
+      case 'message':
+      addMessage(d.message);
+      if (d.message && d.message.roomId === state.room) markRead(state.room);
+      if (d.message && d.message.from !== state.me.username && localStorage.getItem('vx_sound') === '1') beep();
+      break;
+      case 'message-updated': updateMessage(d); break;
+      case 'pinned-updated':
+        state.pinned[d.roomId] = d.ids;
+        renderPinBar();
+        break;
       case 'typing': showTyping(d); break;
+      case 'ai-thinking': break;
+      case 'ai-suggestion': showAiSuggestion(d); break;
       case 'rename-result':
         if (d.approved && state.me) { state.me.displayName = d.displayName; renderMyAvatar(); }
-        alert(d.approved ? 'درخواست تغییر نام تایید شد ✅' : 'درخواست تغییر نام رد شد ❌');
+        alert(d.approved ? 'درخواست تغییر نام تایید شد' : 'درخواست تغییر نام رد شد');
         break;
       case 'premium-changed':
         if (state.me) {
           state.me.isPremium = d.isPremium;
           renderMyAvatar();
           applyTierLimits();
-          alert(d.isPremium ? '🌟 تبریک! حساب شما پرمیوم شد' : 'عضویت پرمیوم شما لغو شد');
+          alert(d.isPremium ? 'حساب شما پرمیوم شد' : 'عضویت پرمیوم شما لغو شد');
         }
         break;
       case 'kicked': alert('حساب شما توسط ادمین مسدود شد'); logout(); break;
@@ -245,10 +310,10 @@ function contactLi(username, displayName) {
   const roomId = dmRoom({ username });
   const li = document.createElement('li');
   li.dataset.roomId = roomId;
-  li.innerHTML = `${chatFlags(roomId).pinned ? '<span class="pin">📌</span>' : ''}<span class="presence"></span>
+   li.innerHTML = `${chatFlags(roomId).pinned ? '<span class="pin">' + svg('pin') + '</span>' : ''}<span class="presence"></span>
     <span class="avatar sm" data-av>${esc(initial(displayName))}</span>
     <span class="grow">${esc(displayName)} <small>@${esc(username)}</small></span>`;
-  li.onclick = () => openRoom(roomId, displayName);
+  li.onclick = () => openUserProfile(username);
   li.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, roomId); };
   return li;
 }
@@ -277,13 +342,13 @@ function renderUsers() {
     .forEach((it) => {
       const li = document.createElement('li');
       li.dataset.roomId = it.roomId;
-      li.innerHTML = `${chatFlags(it.roomId).pinned ? '<span class="pin">📌</span>' : ''}<span class="presence ${it.online ? 'on' : ''}"></span>
+      li.innerHTML = `${chatFlags(it.roomId).pinned ? '<span class="pin">' + svg('pin') + '</span>' : ''}<span class="presence ${it.online ? 'on' : ''}"></span>
         <span class="avatar sm" data-av>${esc(initial(it.displayName))}</span>
         <span class="grow">${esc(it.displayName)}${it.isPremium ? premiumBadge() : ''} <small>@${esc(it.username)}${it.online ? '' : ''}</small></span>
         ${it.username === BOT_USERNAME ? '<span class="badge-admin">AI</span>' : ''}
         ${it.username !== BOT_USERNAME && state.me.isAdmin && it.online === false ? '<small>آفلاین</small>' : ''}`;
       if (it.avatar) setAvatar(li.querySelector('[data-av]'), { avatar: it.avatar, isPremium: it.isPremium });
-      li.onclick = () => openRoom(it.roomId, it.displayName);
+      li.onclick = () => openUserProfile(it.username);
       li.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, it.roomId); };
       ul.appendChild(li);
     });
@@ -314,14 +379,80 @@ $('contact-add-btn').onclick = async () => {
 $('contact-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('contact-add-btn').click(); });
 
 /* ---- mobile sidebar toggle ---- */
-$('menu-btn').onclick = () => $('sidebar').classList.toggle('open');
+function closeSidebar() {
+  $('sidebar').classList.remove('open');
+  const bd = $('sb-backdrop'); if (bd) bd.classList.add('hidden');
+}
+$('menu-btn').onclick = () => {
+  const open = $('sidebar').classList.toggle('open');
+  const bd = $('sb-backdrop'); if (bd) bd.classList.toggle('hidden', !open);
+};
+$('sb-backdrop') && ($('sb-backdrop').onclick = closeSidebar);
 document.addEventListener('click', (e) => {
   const sb = $('sidebar');
   if (sb.classList.contains('open') && !sb.contains(e.target) && e.target.id !== 'menu-btn' && !$('menu-btn').contains(e.target)) {
-    sb.classList.remove('open');
+    closeSidebar();
   }
 });
 $('reply-cancel').onclick = clearReply;
+
+/* ---- theme (appearance) ---- */
+function applyTheme(t) {
+  if (t && t !== 'midnight') document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+  document.querySelectorAll('.theme-opt').forEach((b) => b.classList.toggle('active', b.dataset.theme === (t || 'midnight')));
+}
+applyTheme(localStorage.getItem('vx_theme') || 'midnight');
+document.querySelectorAll('.theme-opt').forEach((b) => {
+  b.onclick = () => { const t = b.dataset.theme; localStorage.setItem('vx_theme', t); applyTheme(t); };
+});
+
+/* ---- notification sound ---- */
+function beep() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = 680; g.gain.value = 0.05;
+    o.connect(g); g.connect(ctx.destination);
+    o.start();
+    setTimeout(() => { try { o.stop(); ctx.close(); } catch (e) {} }, 130);
+  } catch (e) {}
+}
+const soundToggle = $('sound-toggle');
+if (soundToggle) {
+  soundToggle.checked = localStorage.getItem('vx_sound') === '1';
+  soundToggle.onchange = (e) => localStorage.setItem('vx_sound', e.target.checked ? '1' : '0');
+}
+
+/* ---- in-chat search ---- */
+function doSearch(q) {
+  q = (q || '').trim().toLowerCase();
+  const msgs = document.querySelectorAll('#messages .msg');
+  let hits = 0;
+  msgs.forEach((el) => {
+    const text = (el.textContent || '').toLowerCase();
+    if (!q) { el.classList.remove('hit', 'dim-search'); return; }
+    if (text.includes(q)) { el.classList.add('hit'); el.classList.remove('dim-search'); hits++; }
+    else { el.classList.add('dim-search'); el.classList.remove('hit'); }
+  });
+  const sc = $('search-count');
+  if (sc) sc.textContent = q ? (hits + ' مورد') : '';
+}
+const searchBtn = $('search-btn');
+if (searchBtn) {
+  searchBtn.onclick = () => {
+    const bar = $('search-bar');
+    bar.classList.toggle('hidden');
+    if (!bar.classList.contains('hidden')) $('search-input').focus();
+  };
+}
+const searchClose = $('search-close');
+if (searchClose) searchClose.onclick = () => { $('search-bar').classList.add('hidden'); $('search-input').value = ''; doSearch(''); };
+const searchInput = $('search-input');
+if (searchInput) searchInput.oninput = (e) => doSearch(e.target.value);
 
 function initial(name) { return (name || '?').trim().charAt(0).toUpperCase(); }
 
@@ -339,7 +470,7 @@ function setAvatar(el, user, size) {
     : esc(initial(user?.displayName || user?.username || '?'));
 }
 
-function premiumBadge() { return ' <span class="badge-premium">⭐</span>'; }
+function premiumBadge() { return ' <span class="badge-premium">PREMIUM</span>'; }
 
 function msgPreview(m) {
   if (m.kind === 'text') return m.content;
@@ -363,21 +494,44 @@ function clearReply() {
 }
 
 function openRoom(roomId, title) {
+  if (state.room && state.room !== roomId) saveDraft();
   state.room = roomId;
+  if (window.matchMedia('(max-width: 760px)').matches) closeSidebar();
   state.roomTitle = title;
   $('chat-title').textContent = title;
   $('messages').innerHTML = '';
   $('empty-hint')?.remove();
   state.lastDay = null;
   clearReply();
-  const isDmHuman = roomId.startsWith('dm:') && !roomId.includes(BOT_USERNAME);
-  $('call-btn').classList.toggle('hidden', !isDmHuman);
+  const isSaved = roomId.startsWith('saved:');
+  document.querySelector('.composer').style.display = '';
+  $('call-btn').classList.toggle('hidden', !(roomId.startsWith('dm:') && !roomId.includes(BOT_USERNAME)));
   const g = currentGroup();
   $('group-settings-btn').classList.toggle('hidden', !(g && g.joined));
+  $('ai-summary-btn').classList.toggle('hidden', isSaved);
+  const ca = $('chat-avatar');
+  if (!isSaved && roomId.startsWith('dm:') && !roomId.includes(BOT_USERNAME)) {
+    const peer = roomId.slice(3).split('|').find((p) => p !== state.me.username);
+    const pu = state.users.find((x) => x.username === peer);
+    setAvatar(ca, { avatar: pu && pu.avatar, isPremium: pu && pu.isPremium });
+    ca.classList.remove('hidden');
+    ca.onclick = () => openUserProfile(peer);
+    const ct = $('chat-title');
+    if (ct) ct.style.cursor = 'pointer', ct.onclick = () => openUserProfile(peer);
+  } else {
+    ca.classList.add('hidden');
+  }
   updateComposerLock();
+  if (isSaved) {
+    renderSaved();
+    state.peerStatus = '';
+    refreshTitle();
+    return;
+  }
   state.ws.send(JSON.stringify({ type: 'history', roomId }));
   // علامت‌گذاری به‌عنوان خوانده‌شده + وضعیت طرف مقابل
   markRead(roomId);
+  const isDmHuman = roomId.startsWith('dm:') && !roomId.includes(BOT_USERNAME);
   if (isDmHuman) {
     const peer = roomId.slice(3).split('|').find((p) => p !== state.me.username);
     fetchPeerStatus(peer);
@@ -385,6 +539,8 @@ function openRoom(roomId, title) {
     state.peerStatus = '';
     refreshTitle();
   }
+  loadDraft(roomId);
+  renderPinBar();
 }
 
 function markRead(roomId) {
@@ -407,7 +563,7 @@ function refreshTitle() {
   $('chat-title').textContent = t;
 }
 
-function groupIcon(g) { return g.type === 'channel' ? '📢' : '👥'; }
+function groupIcon(g) { return g.type === 'channel' ? svg('channel') : svg('people'); }
 
 function currentGroup() {
   if (!state.room || !state.room.startsWith('group:')) return null;
@@ -425,7 +581,7 @@ function updateComposerLock() {
   const ok = canPostHere();
   $('msg-input').disabled = !ok;
   $('send-btn').disabled = !ok;
-  $('msg-input').placeholder = ok ? 'پیام خود را مخابره کن...' : '📢 در کانال فقط مدیران می‌توانند پیام بفرستند';
+  $('msg-input').placeholder = ok ? 'پیام خود را مخابره کن...' : 'در کانال فقط مدیران می‌توانند پیام بفرستند';
 }
 
 function renderGroups() {
@@ -438,7 +594,7 @@ function renderGroups() {
   items.forEach(({ g, roomId }) => {
     const li = document.createElement('li');
     li.dataset.roomId = roomId;
-    li.innerHTML = `${chatFlags(roomId).pinned ? '<span class="pin">📌</span>' : ''}<span class="avatar sm" style="border-radius:10px;background:linear-gradient(135deg,#0ea5e9,var(--primary))">${g.type === 'channel' ? '📢' : '👥'}</span>
+    li.innerHTML = `${chatFlags(roomId).pinned ? '<span class="pin">' + svg('pin') + '</span>' : ''}<span class="avatar sm" style="border-radius:10px;background:linear-gradient(135deg,#0ea5e9,var(--primary))">${g.type === 'channel' ? svg('channel') : svg('people')}</span>
       <span class="grow">${esc(g.name)} <small>${g.members} عضو</small></span>
       ${g.myRole === 'owner' ? '<span class="badge-admin">OWNER</span>' : ''}
       ${g.myRole === 'admin' ? '<span class="badge-admin" style="background:#0ea5e9">ADMIN</span>' : ''}`;
@@ -477,8 +633,8 @@ function openChatMenu(e, roomId) {
   const pinned = chatFlags(roomId).pinned;
   const archived = chatFlags(roomId).archived;
   popup.innerHTML = `
-    <button data-act="pin">${pinned ? '🔽 برداشتن سنجاق' : '📌 سنجاق کردن'}</button>
-    <button data-act="archive">${archived ? '📤 خارج از بایگانی' : '📥 بایگانی کردن'}</button>
+    <button data-act="pin">${pinned ? svg('outbox') + ' برداشتن سنجاق' : svg('pin') + ' سنجاق کردن'}</button>
+    <button data-act="archive">${archived ? svg('outbox') + ' خارج از بایگانی' : svg('inbox') + ' بایگانی کردن'}</button>
     <button data-act="cancel">لغو</button>`;
   popup.style.left = Math.min(e.clientX, window.innerWidth - 180) + 'px';
   popup.style.top = Math.min(e.clientY, window.innerHeight - 130) + 'px';
@@ -537,7 +693,7 @@ function renderGroupSettings() {
   const g = currentGroup();
   const amOwner = g ? g.myRole === 'owner' : false;
 
-  $('gs-title').textContent = `${group.type === 'channel' ? '📢 کانال' : '👥 گروه'} «${group.name}»`;
+  $('gs-title').textContent = `${group.type === 'channel' ? 'کانال' : 'گروه'} «${group.name}»`;
   $('gs-add-row').classList.toggle('hidden', !amOwner);
   $('gs-delete').classList.toggle('hidden', !amOwner);
 
@@ -551,7 +707,7 @@ function renderGroupSettings() {
       ${m.role === 'admin' ? '<span class="badge-admin" style="background:#0ea5e9">ADMIN</span>' : ''}`;
     if (m.role !== 'owner') {
       if (amOwner) {
-        const roleBtn = mkBtn(m.role === 'member' ? '⬆ ادمین کن' : '⬇ عزل از ادمینی', m.role === 'member' ? 'mini-btn ok' : 'mini-btn no',
+        const roleBtn = mkBtn(m.role === 'member' ? 'ارتقا به ادمین' : 'عزل از ادمینی', m.role === 'member' ? 'mini-btn ok' : 'mini-btn no',
           async () => {
             await api(`/api/groups/${group.id}/role`, { method: 'POST', body: JSON.stringify({ username: m.username, role: m.role === 'member' ? 'admin' : 'member' }) });
             loadGroupSettings();
@@ -625,6 +781,161 @@ $('gs-delete').onclick = async () => {
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function fmtTime(t) { return new Date(t).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); }
 
+// ---------- قالب‌بندی متن (Markdown + Mention + Hashtag + Link + Spoiler) ----------
+function formatText(text) {
+  let s = esc(text);
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, t, u) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`);
+  s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (m, p, u) => `${p}<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+  s = s.replace(/\*([^*]+)\*/g, '<b>$1</b>');
+  s = s.replace(/_([^_]+)_/g, '<i>$1</i>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\|\|([^|]+)\|\|/g, '<span class="spoiler">$1</span>');
+  s = s.replace(/(^|[\s])(@[a-zA-Z0-9_]{3,20})/g, (m, p, u) => `${p}<span class="mention">${u}</span>`);
+  s = s.replace(/(^|[\s])(#[^\s#]{2,30})/g, (m, p, t) => `${p}<span class="hashtag">${t}</span>`);
+  return s;
+}
+
+function loadLinkPreview(m, div) {
+  const urls = (m.content || '').match(/https?:\/\/[^\s<)]+/g);
+  if (!urls || !urls.length) return;
+  const url = urls[0];
+  fetch('/api/link-preview?url=' + encodeURIComponent(url), { headers: { Authorization: 'Bearer ' + state.token } })
+    .then((r) => r.json())
+    .then((d) => {
+      if (!d || d.error) return;
+      const card = document.createElement('a');
+      card.className = 'link-preview'; card.href = url; card.target = '_blank'; card.rel = 'noopener';
+      card.innerHTML = (d.image ? `<img src="${esc(d.image)}" class="lp-img" onerror="this.remove()"/>` : `<span class="lp-ico">${svg('attach')}</span>`)
+        + `<span class="lp-body"><small>${esc(d.domain || '')}</small><b>${esc(d.title || d.domain || url)}</b>${d.description ? `<span>${esc(d.description.slice(0, 140))}</span>` : ''}</span>`;
+      div.appendChild(card);
+    })
+    .catch(() => {});
+}
+
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎮', '🔥', '👏', '✅', '🚀'];
+
+function renderBody(m) {
+  if (m.kind === 'text') return `<span class="msg-body">${formatText(m.content)}</span>`;
+  if (m.kind === 'sticker') return `<span class="sticker-emoji">${esc(m.content)}</span>`;
+  if (m.kind === 'image' || m.kind === 'gif') return `<img class="media" src="${esc(m.url)}" alt="${esc(m.name || '')}" loading="lazy" />`;
+  if (m.kind === 'video') return `<video class="media" src="${esc(m.url)}" controls preload="metadata"></video>`;
+  if (m.kind === 'audio') return `<audio src="${esc(m.url)}" controls preload="metadata"></audio><a class="file-chip" href="${esc(m.url)}" download="${esc(m.name || 'voice')}">${svg('voice')} دانلود صدا</a>`;
+  if (m.kind === 'file') return `<a class="file-chip" href="${esc(m.url)}" download="${esc(m.name || '')}">${svg('attach')} <span>${esc(m.name || 'فایل')}</span> <small>دانلود</small></a>`;
+  if (m.kind === 'album') return `<div class="album">${m.album.map((u) => `<img class="media" src="${esc(u)}" loading="lazy" onclick="window.open('${esc(u)}','_blank')" />`).join('')}</div>`;
+  if (m.kind === 'poll') return renderPoll(m);
+  if (m.kind === 'checklist') return renderChecklist(m);
+  return '';
+}
+
+function renderPoll(m) {
+  const p = m.poll; if (!p) return '';
+  const total = Object.keys(p.votes || {}).length;
+  const myVote = p.votes ? p.votes[state.me.username] : undefined;
+  const items = p.options.map((opt, i) => {
+    const cnt = Object.values(p.votes || {}).filter((v) => v === i).length;
+    const pct = total ? Math.round((cnt / total) * 100) : 0;
+    const voted = myVote === i;
+    const correctMark = p.quiz && p.correct === i && myVote !== undefined ? ' ✓' : '';
+    return `<button class="poll-opt ${voted ? 'voted' : ''}" data-opt="${i}">
+      <span class="poll-bar" style="width:${pct}%"></span>
+      <span class="poll-label">${esc(opt)}${correctMark}</span>
+      <span class="poll-cnt">${cnt}</span>
+    </button>`;
+  }).join('');
+  return `<div class="poll" data-poll="${m.id}"><div class="poll-q">${svg('chat')} ${esc(p.question)}</div>${items}<div class="poll-foot">${total} رأی${p.quiz ? ' • مسابقه' : ''}</div></div>`;
+}
+
+function renderChecklist(m) {
+  const c = m.checklist; if (!c) return '';
+  const items = c.items.map((it, i) => `<label class="chk-item ${it.done ? 'done' : ''}"><input type="checkbox" data-chk="${i}" ${it.done ? 'checked' : ''}/> <span>${esc(it.text)}</span></label>`).join('');
+  const done = c.items.filter((i) => i.done).length;
+  return `<div class="checklist" data-chk-msg="${m.id}"><div class="chk-title">${svg('check')} ${esc(c.title)} (${done}/${c.items.length})</div>${items}</div>`;
+}
+
+function renderReactions(m) {
+  if (!m.reactions || !Object.keys(m.reactions).length) return '';
+  const chips = Object.entries(m.reactions).map(([e, users]) => `<button class="react-chip ${users.includes(state.me.username) ? 'mine' : ''}" data-emoji="${e}">${e}<small>${users.length}</small></button>`).join('');
+  return `<div class="reactions">${chips}</div>`;
+}
+
+function openReactionPicker(m, btn) {
+  closeReactionPicker();
+  const pop = document.createElement('div');
+  pop.id = 'react-pop';
+  pop.className = 'react-pop';
+  pop.innerHTML = REACTION_EMOJIS.map((e) => `<button data-emoji="${e}">${e}</button>`).join('');
+  const r = btn.getBoundingClientRect();
+  pop.style.left = Math.min(r.left, window.innerWidth - 260) + 'px';
+  pop.style.top = (r.bottom + 6) + 'px';
+  document.body.appendChild(pop);
+  pop.querySelectorAll('button').forEach((b) => {
+    b.onclick = async () => {
+      closeReactionPicker();
+      await api('/api/reactions', { method: 'POST', body: JSON.stringify({ roomId: m.roomId, msgId: m.id, emoji: b.dataset.emoji }) });
+    };
+  });
+}
+function closeReactionPicker() { const p = $('react-pop'); if (p) p.remove(); }
+
+function updateMessage(d) {
+  if (d.roomId !== state.room) return;
+  const el = document.querySelector(`#messages .msg[data-id="${d.id}"]`);
+  if (!el) return;
+  if (d.reactions !== undefined) {
+    let r = el.querySelector('.reactions');
+    if (!r) { r = document.createElement('div'); r.className = 'reactions'; el.appendChild(r); }
+    r.outerHTML = renderReactions({ reactions: d.reactions });
+  }
+  if (d.poll !== undefined) { const p = el.querySelector('.poll'); if (p) p.outerHTML = renderPoll({ id: d.id, poll: d.poll }); }
+  if (d.checklist !== undefined) { const c = el.querySelector('.checklist'); if (c) c.outerHTML = renderChecklist({ id: d.id, checklist: d.checklist }); }
+}
+
+function renderPinBar() {
+  const bar = $('pin-bar');
+  if (!bar) return;
+  const ids = state.pinned[state.room] || [];
+  if (!ids.length || !state.room) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+  bar.classList.remove('hidden');
+  bar.innerHTML = `<span class="pin-ico">${svg('pin')}</span>` + ids.map((id) => {
+    const el = document.querySelector(`#messages .msg[data-id="${id}"]`);
+    let label = 'پیام سنجاق‌شده';
+    if (el) {
+      const b = el.querySelector('.msg-body');
+      label = b ? b.textContent : (el.querySelector('.poll-q') ? 'نظرسنجی' : el.querySelector('.chk-title') ? 'چک‌لیست' : el.querySelector('.media') ? 'رسانه' : 'پیام');
+    }
+    return `<button class="pin-item" data-id="${id}">${esc(label.slice(0, 50))}</button>`;
+  }).join('');
+  bar.querySelectorAll('.pin-item').forEach((b) => b.onclick = () => {
+    const el = document.querySelector(`#messages .msg[data-id="${b.dataset.id}"]`);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500); }
+  });
+}
+
+// ---------- پیش‌نویس (Draft) ----------
+function draftKey(room) { return 'vx_draft_' + state.me.username + '_' + room; }
+function saveDraft() { if (state.room) localStorage.setItem(draftKey(state.room), $('msg-input').value); }
+function loadDraft(room) { const v = localStorage.getItem(draftKey(room)); $('msg-input').value = v || ''; applyTierLimits(); }
+
+// ---------- پیام‌های ذخیره‌شده (Saved) ----------
+function savedKey() { return 'vx_saved_' + state.me.username; }
+function getSaved() { try { return JSON.parse(localStorage.getItem(savedKey()) || '[]'); } catch { return []; } }
+function addSaved(m) {
+  const arr = getSaved();
+  if (arr.some((x) => x.id === m.id)) return;
+  arr.push({ id: m.id, kind: m.kind, content: m.content, url: m.url, name: m.name, from: m.from, fromName: m.fromName, fromPremium: m.fromPremium, time: m.time, poll: m.poll, checklist: m.checklist, album: m.album, reactions: m.reactions });
+  localStorage.setItem(savedKey(), JSON.stringify(arr.slice(-200)));
+  toast('در پیام‌های ذخیره‌شده ذخیره شد');
+}
+function savedRoomId() { return 'saved:' + state.me.username; }
+function openSaved() { openRoom(savedRoomId(), 'پیام‌های ذخیره‌شده'); }
+function renderSaved() {
+  const arr = getSaved();
+  state.lastDay = null;
+  arr.forEach((m) => addMessage({ ...m, roomId: savedRoomId() }));
+  scrollBottom();
+}
+
+
 function addMessage(m) {
   if (!m || !m.roomId) return;
   if (m.roomId !== state.room) return;
@@ -642,19 +953,15 @@ function addMessage(m) {
   const div = document.createElement('div');
   div.className = `msg ${mine ? 'out' : 'in'}${m.kind === 'sticker' ? ' sticker' : ''}`;
   div.dataset.id = m.id;
+  div.dataset.room = m.roomId;
 
-  let body = '';
-  if (m.kind === 'text') body = `<span class="msg-body">${esc(m.content)}</span>`;
-  else if (m.kind === 'sticker') body = esc(m.content);
-  else if (m.kind === 'image' || m.kind === 'gif') body = `<img class="media" src="${esc(m.url)}" alt="${esc(m.name || '')}" loading="lazy" />`;
-  else if (m.kind === 'video') body = `<video class="media" src="${esc(m.url)}" controls preload="metadata"></video>`;
-  else if (m.kind === 'audio') body = `<audio src="${esc(m.url)}" controls></audio>`;
-  else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}" download="${esc(m.name || '')}">📄 <span>${esc(m.name || 'فایل')}</span> <small>دانلود</small></a>`;
+  let body = renderBody(m);
 
-  const fwd = m.fwdFrom ? `<div class="fwd">↪ بازنشر از ${esc(m.fwdFrom)}</div>` : '';
-  const ticks = mine ? `<span class="ticks" data-room="${m.roomId}" data-time="${m.time}">${peerReadTime(m.roomId) >= m.time ? '✓✓' : '✓'}</span>` : '';
+  const fwd = m.fwdFrom ? `<div class="fwd">${svg('forward')} بازنشر از ${esc(m.fwdFrom)}</div>` : '';
+  const ticks = mine ? `<span class="ticks" data-room="${m.roomId}" data-time="${m.time}">${peerReadTime(m.roomId) >= m.time ? svg('checkDouble') : svg('check')}</span>` : '';
   const head = mine ? '' : `<span class="from">${esc(m.fromName)}${m.fromPremium ? premiumBadge() : ''}</span>`;
-  div.innerHTML = `${fwd}${head}${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}${ticks}</span>`;
+  const silentIco = m.silent ? ` <span class="silent-ico" title="بی‌صدا">${svg('mute')}</span>` : '';
+  div.innerHTML = `${fwd}${head}${body}<span class="meta">${fmtTime(m.time)}${m.edited ? ' <span class="edited-tag">(ویرایش شد)</span>' : ''}${silentIco}${ticks}</span>${renderReactions(m)}`;
 
   // نقل قول پیام
   if (m.replyTo && m.replyTo.id) {
@@ -685,35 +992,61 @@ function addMessage(m) {
   // دکمه‌های پیام: ریپلای برای همه، ویرایش/حذف فقط برای خودم
   const acts = document.createElement('span');
   acts.className = 'msg-actions';
+  const reactBtn = document.createElement('button');
+  reactBtn.innerHTML = svg('smiley'); reactBtn.title = 'واکنش';
+  reactBtn.onclick = (e) => { e.stopPropagation(); openReactionPicker(m, reactBtn); };
+  acts.appendChild(reactBtn);
   const replyBtn = document.createElement('button');
-  replyBtn.textContent = '↩'; replyBtn.title = 'پاسخ';
+  replyBtn.innerHTML = svg('reply'); replyBtn.title = 'پاسخ';
   replyBtn.onclick = () => setReplyTo(m);
   acts.appendChild(replyBtn);
   const fwdBtn = document.createElement('button');
-  fwdBtn.textContent = '⏩'; fwdBtn.title = 'فوروارد';
+  fwdBtn.innerHTML = svg('forward'); fwdBtn.title = 'فوروارد';
   fwdBtn.onclick = () => forwardMessage(m);
   acts.appendChild(fwdBtn);
+  const pinBtn = document.createElement('button');
+  pinBtn.innerHTML = svg('pin'); pinBtn.title = 'سنجاق';
+  pinBtn.onclick = async () => { await api('/api/pin', { method: 'POST', body: JSON.stringify({ roomId: m.roomId, msgId: m.id }) }); };
+  acts.appendChild(pinBtn);
+  const saveBtn = document.createElement('button');
+  saveBtn.innerHTML = svg('bookmark'); saveBtn.title = 'ذخیره';
+  saveBtn.onclick = () => addSaved(m);
+  acts.appendChild(saveBtn);
   if (mine && m.kind === 'text') {
     const editBtn = document.createElement('button');
     editBtn.textContent = '✎'; editBtn.title = 'ویرایش';
-    editBtn.onclick = () => {
-      const nv = prompt('ویرایش پیام:', m.content);
-      if (nv && nv.trim() && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({ type: 'edit-message', roomId: m.roomId, id: m.id, content: nv.trim() }));
-      }
-    };
-    const delBtn = document.createElement('button');
-    delBtn.textContent = '🗑'; delBtn.title = 'حذف';
-    delBtn.onclick = () => {
-      if (confirm('این پیام حذف شود؟') && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({ type: 'delete-message', roomId: m.roomId, id: m.id }));
-      }
-    };
+      editBtn.onclick = () => {
+        const nv = prompt('ویرایش پیام:', m.content);
+        if (!nv || !nv.trim()) return;
+        if (m.roomId.startsWith('saved:')) {
+          const arr = getSaved().map((x) => x.id === m.id ? { ...x, content: nv.trim() } : x);
+          localStorage.setItem(savedKey(), JSON.stringify(arr));
+          const mb = div.querySelector('.msg-body'); if (mb) mb.innerHTML = formatText(nv.trim());
+          return;
+        }
+        if (state.ws.readyState === WebSocket.OPEN) {
+          state.ws.send(JSON.stringify({ type: 'edit-message', roomId: m.roomId, id: m.id, content: nv.trim() }));
+        }
+      };
+      const delBtn = document.createElement('button');
+      delBtn.textContent = '🗑'; delBtn.title = 'حذف';
+      delBtn.onclick = () => {
+        if (!confirm('این پیام حذف شود؟')) return;
+        if (m.roomId.startsWith('saved:')) {
+          localStorage.setItem(savedKey(), JSON.stringify(getSaved().filter((x) => x.id !== m.id)));
+          div.remove();
+          return;
+        }
+        if (state.ws.readyState === WebSocket.OPEN) {
+          state.ws.send(JSON.stringify({ type: 'delete-message', roomId: m.roomId, id: m.id }));
+        }
+      };
     acts.append(editBtn, delBtn);
   }
   div.appendChild(acts);
 
   $('messages').appendChild(div);
+  if (m.kind === 'text' && /https?:\/\//.test(m.content || '')) loadLinkPreview(m, div);
   scrollBottom();
 }
 
@@ -723,13 +1056,13 @@ function updateTicks() {
   if (!state.room) return;
   const t = peerReadTime(state.room);
   document.querySelectorAll('.ticks').forEach((sp) => {
-    if (sp.dataset.room === state.room) sp.textContent = (parseInt(sp.dataset.time, 10) <= t) ? '✓✓' : '✓';
+    if (sp.dataset.room === state.room) sp.innerHTML = (parseInt(sp.dataset.time, 10) <= t) ? svg('checkDouble') : svg('check');
   });
 }
 
 function forwardMessage(m) {
   const targets = [];
-  state.groups.forEach((g) => targets.push(['👥 ' + g.name, 'group:' + g.id]));
+  state.groups.forEach((g) => targets.push(['گروه: ' + g.name, 'group:' + g.id]));
   const c = getContacts();
   Object.entries(c).forEach(([u, d]) => targets.push(['@' + u, dmRoom({ username: u })]));
   if (!targets.length) { alert('چتی برای فوروارد نداری'); return; }
@@ -751,13 +1084,19 @@ async function startRec() {
   if (state.rec) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mr = new MediaRecorder(stream);
+    let mrType = '';
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mrType = 'audio/webm;codecs=opus';
+    else if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) mrType = 'audio/webm';
+    else if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mrType = 'audio/mp4';
+    const mr = mrType ? new MediaRecorder(stream, { mimeType: mrType }) : new MediaRecorder(stream);
     recChunks = [];
     mr.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
     mr.onstop = () => {
       stream.getTracks().forEach((tr) => tr.stop());
-      const blob = new Blob(recChunks, { type: 'audio/webm' });
-      const file = new File([blob], 'voice_' + Date.now() + '.webm', { type: 'audio/webm' });
+      const blobType = mr.mimeType || 'audio/webm';
+      const ext = blobType.includes('mp4') ? '.m4a' : '.webm';
+      const blob = new Blob(recChunks, { type: blobType });
+      const file = new File([blob], 'voice_' + Date.now() + ext, { type: blobType });
       $('rec-bar').classList.add('hidden');
       clearInterval(recTimer);
       uploadWithProgress(file);
@@ -786,7 +1125,7 @@ function showEmptyHint() {
   const div = document.createElement('div');
   div.id = 'empty-hint';
   div.className = 'system-note';
-  div.textContent = 'برای شروع، از لیست کنار یک نفر (یا Vortex AI) را انتخاب کن 👋';
+  div.textContent = 'برای شروع، از لیست کنار یک نفر (یا Vortex AI) را انتخاب کن';
   $('messages').appendChild(div);
 }
 
@@ -794,15 +1133,108 @@ function showEmptyHint() {
 function send(obj, roomIdOverride) {
   const roomId = roomIdOverride || state.room;
   if (!roomId) return;
+  if (roomId.startsWith('saved:')) {
+    if (obj.type === 'message') {
+      const m = {
+        id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        kind: obj.kind || 'text',
+        content: obj.content || '',
+        url: obj.url, name: obj.name, mime: obj.mime,
+        from: state.me.username,
+        fromName: state.me.displayName || state.me.username,
+        fromPremium: state.me.isPremium,
+        time: Date.now(),
+        replyTo: obj.replyTo,
+        album: obj.album,
+      };
+      addSaved(m);
+      if (state.room === roomId) { addMessage({ ...m, roomId }); scrollBottom(); }
+    }
+    return;
+  }
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ ...obj, roomId }));
+  else { state.outbox.push({ ...obj, roomId }); renderOutbox(); }
+}
+function renderOutbox() {
+  let b = $('outbox-bar');
+  if (!b) { b = document.createElement('div'); b.id = 'outbox-bar'; b.className = 'outbox-bar hidden'; $('chat-area').insertBefore(b, document.querySelector('.composer')); }
+  if (!state.outbox.length) { b.classList.add('hidden'); b.innerHTML = ''; return; }
+  b.classList.remove('hidden');
+  b.innerHTML = `<span>${state.outbox.length} پیام در صف ارسال</span><button id="outbox-retry" class="mini-btn ok">${svg('forward')} ارسال مجدد</button>`;
+  $('outbox-retry').onclick = flushOutbox;
+}
+function flushOutbox() {
+  if (!state.outbox.length) return;
+  if (!(state.ws && state.ws.readyState === WebSocket.OPEN)) { alert('هنوز متصل نیستید'); return; }
+  const items = state.outbox.slice(); state.outbox = [];
+  items.forEach((o) => state.ws.send(JSON.stringify(o)));
+  renderOutbox();
+}
+function toast(msg, actionBtn) {
+  let t = $('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.innerHTML = '';
+  const span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
+  if (actionBtn) { actionBtn.classList.add('toast-btn'); t.appendChild(actionBtn); }
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), actionBtn ? 6000 : 2200);
+}
+
+const clientBotDm = (u) => 'dm:' + [u, BOT_USERNAME].sort().join('|');
+
+async function openAiSummary() {
+  if (!state.room || state.room.startsWith('saved:')) return;
+  $('ai-modal').classList.remove('hidden');
+  $('ai-result').textContent = 'در حال تولید خلاصه...';
+  $('ai-reply-opts').classList.add('hidden');
+  $('ai-input').classList.add('hidden'); $('ai-tone').classList.add('hidden'); $('ai-run').classList.add('hidden');
+  try {
+    const r = await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: 'summarize', roomId: state.room }) });
+    const d = await r.json();
+    $('ai-result').textContent = d.result || 'خطا در دریافت خلاصه';
+  } catch (e) { $('ai-result').textContent = 'خطا: ' + e.message; }
+}
+
+async function openAiReply() {
+  if (!state.room || state.room.startsWith('saved:')) return;
+  $('ai-modal').classList.remove('hidden');
+  $('ai-result').textContent = 'در حال تولید پیشنهاد پاسخ...';
+  $('ai-reply-opts').classList.add('hidden');
+  $('ai-input').classList.add('hidden'); $('ai-tone').classList.add('hidden'); $('ai-run').classList.add('hidden');
+  try {
+    const r = await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: 'reply', roomId: state.room }) });
+    const d = await r.json();
+    const lines = (d.result || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    $('ai-result').textContent = '';
+    const box = $('ai-reply-opts'); box.classList.remove('hidden'); box.innerHTML = '';
+    if (!lines.length) box.textContent = 'پیشنهادی یافت نشد';
+    lines.slice(0, 4).forEach((t) => {
+      const b = document.createElement('button'); b.className = 'mini-btn'; b.style.width = '100%'; b.style.margin = '6px 0'; b.textContent = t;
+      b.onclick = () => { $('msg-input').value = t; $('ai-modal').classList.add('hidden'); $('msg-input').focus(); };
+      box.appendChild(b);
+    });
+  } catch (e) { $('ai-result').textContent = 'خطا: ' + e.message; }
+}
+
+function showAiSuggestion(d) {
+  const btn = document.createElement('button'); btn.className = 'mini-btn ok'; btn.textContent = 'ایجاد یادآوری';
+  btn.onclick = async () => {
+    try {
+      await api('/api/schedule', { method: 'POST', body: JSON.stringify({ roomId: clientBotDm(state.me.username), kind: 'text', content: 'یادآوری: ' + d.text, at: d.at }) });
+      toast('یادآوری ثبت شد: ' + d.when);
+    } catch (e) { toast('خطا: ' + e.message); }
+  };
+  toast(`تاریخ شناسایی شد — ${d.when}: ${d.text}`, btn);
 }
 
 function sendText() {
   const text = $('msg-input').value.trim();
   if (!text) return;
-  send({ type: 'message', kind: 'text', content: text, replyTo: state.replyTo || undefined });
+  send({ type: 'message', kind: 'text', content: text, replyTo: state.replyTo || undefined, silent: state.composeSilent });
   $('msg-input').value = '';
   clearReply();
+  if (state.room) localStorage.removeItem(draftKey(state.room));
 }
 $('send-btn').onclick = sendText;
 $('msg-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendText(); });
@@ -853,48 +1285,120 @@ $('sticker-btn').onclick = () => togglePicker($('sticker-picker'));
 
 /* ================= UPLOAD ================= */
 $('attach-btn').onclick = () => $('file-input').click();
-$('file-input').onchange = () => {
-  const f = $('file-input').files[0];
-  if (!f) return;
-  const maxMB = state.me.isPremium ? 100 : 30;
-  if (f.size > maxMB * 1024 * 1024) {
-    alert(`حداکثر ${maxMB} مگابایت` + (state.me.isPremium ? '' : ' — با پرمیوم تا ۱۰۰ مگ'));
-    $('file-input').value = '';
-    return;
+$('file-input').onchange = async () => {
+  const files = Array.from($('file-input').files || []);
+  $('file-input').value = '';
+  if (!files.length) return;
+  const imgs = files.filter((f) => f.type.startsWith('image/'));
+  if (imgs.length > 1 && imgs.length === files.length) {
+    try {
+      const datas = await Promise.all(imgs.map(uploadOne));
+      send({ type: 'message', kind: 'album', album: datas.map((d) => d.url), replyTo: state.replyTo || undefined });
+      clearReply();
+    } catch (e) { alert(e.message); }
+  } else {
+    uploadWithProgress(files[0]);
   }
-  uploadWithProgress(f);
 };
 
-function uploadWithProgress(file) {
-  const fd = new FormData();
-  fd.append('file', file);
-  const xhr = new XMLHttpRequest();
-  $('upload-progress').classList.remove('hidden');
-  $('up-name').textContent = '⬆ ' + file.name;
-  $('up-fill').style.width = '0%';
-  $('up-percent').textContent = '0%';
-
-  xhr.upload.onprogress = (e) => {
-    if (!e.lengthComputable) return;
-    const pct = Math.round((e.loaded / e.total) * 100);
-    $('up-fill').style.width = pct + '%';
-    $('up-percent').textContent = pct + '%';
-  };
-  xhr.onload = () => {
-    $('upload-progress').classList.add('hidden');
-    try {
-      const data = JSON.parse(xhr.responseText);
-      if (xhr.status !== 200) throw new Error(data.error || 'خطا در آپلود');
-      send({ type: 'message', kind: data.kind, url: data.url, mime: data.mime, name: data.name, content: '', replyTo: state.replyTo || undefined });
-      clearReply();
-    } catch (err) { alert(err.message); }
-  };
-  xhr.onerror = () => { $('upload-progress').classList.add('hidden'); alert('آپلود قطع شد'); };
-  xhr.open('POST', '/api/upload');
-  xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
-  xhr.send(fd);
-  $('file-input').value = '';
+function uploadOne(file) {
+  return new Promise((resolve, reject) => {
+    const maxMB = state.me.isPremium ? 100 : 30;
+    if (file.size > maxMB * 1024 * 1024) { reject(new Error(`حداکثر ${maxMB} مگابایت` + (state.me.isPremium ? '' : ' — با پرمیوم تا ۱۰۰ مگ'))); return; }
+    const fd = new FormData(); fd.append('file', file);
+    const xhr = new XMLHttpRequest();
+    $('upload-progress').classList.remove('hidden');
+    $('up-name').textContent = file.name;
+    $('up-fill').style.width = '0%';
+    $('up-percent').textContent = '0%';
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = Math.round((e.loaded / e.total) * 100);
+      $('up-fill').style.width = pct + '%';
+      $('up-percent').textContent = pct + '%';
+    };
+    xhr.onload = () => {
+      $('upload-progress').classList.add('hidden');
+      try { const data = JSON.parse(xhr.responseText); if (xhr.status !== 200) throw new Error(data.error || 'خطا در آپلود'); resolve(data); } catch (err) { reject(err instanceof Error ? err : new Error('خطا در آپلود')); }
+    };
+    xhr.onerror = () => { $('upload-progress').classList.add('hidden'); reject(new Error('آپلود قطع شد')); };
+    xhr.open('POST', '/api/upload');
+    xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+    xhr.send(fd);
+  });
 }
+function uploadWithProgress(file) {
+  uploadOne(file).then((data) => {
+    send({ type: 'message', kind: data.kind, url: data.url, mime: data.mime, name: data.name, content: '', replyTo: state.replyTo || undefined });
+    clearReply();
+  }).catch((err) => alert(err.message));
+}
+
+// ---------- دکمه‌های کامپوزر: بی‌صدا / زمان‌بندی / نظرسنجی / چک‌لیست ----------
+state.composeSilent = false;
+$('silent-btn').onclick = () => {
+  state.composeSilent = !state.composeSilent;
+  $('silent-btn').classList.toggle('active', state.composeSilent);
+  toast(state.composeSilent ? 'حالت بی‌صدا روشن شد' : 'حالت بی‌صدا خاموش شد');
+};
+$('schedule-btn').onclick = async () => {
+  const when = prompt('زمان ارسال (فرمت YYYY-MM-DD HH:MM):', '');
+  if (!when) return;
+  const ts = new Date(when.trim().replace(' ', 'T')).getTime();
+  if (isNaN(ts) || ts < Date.now()) { alert('زمان نامعتبر'); return; }
+  const text = prompt('متن پیام زمان‌بندی‌شده:');
+  if (!text || !text.trim()) return;
+  await api('/api/schedule', { method: 'POST', body: JSON.stringify({ roomId: state.room, kind: 'text', content: text.trim(), at: ts, replyTo: state.replyTo || undefined }) }).catch(() => {});
+  alert('پیام زمان‌بندی شد');
+  clearReply();
+};
+$('poll-btn').onclick = () => {
+  const q = prompt('سوال نظرسنجی:'); if (!q || !q.trim()) return;
+  const opts = prompt('گزینه‌ها را با خط تیره جدا کنید (مثال: بله-خیر-شاید):'); if (!opts) return;
+  const options = opts.split('-').map((s) => s.trim()).filter(Boolean);
+  if (options.length < 2) { alert('حداقل ۲ گزینه لازم است'); return; }
+  const quiz = confirm('این یک مسابقه (Quiz) است؟ گزینه صحیح بعد از رأی نمایش داده می‌شود.');
+  let correct = null;
+  if (quiz) { const ci = prompt('شماره گزینه صحیح (۱ تا ' + options.length + '):'); correct = parseInt(ci, 10) - 1; }
+  send({ type: 'message', kind: 'poll', poll: { question: q.trim(), options, quiz, correct: quiz ? correct : null } });
+};
+$('checklist-btn').onclick = () => {
+  const t = prompt('عنوان چک‌لیست:'); if (!t || !t.trim()) return;
+  const its = prompt('آیتم‌ها را با خط تیره جدا کنید:'); if (!its) return;
+  const items = its.split('-').map((s) => s.trim()).filter(Boolean);
+  if (!items.length) return;
+  send({ type: 'message', kind: 'checklist', checklist: { title: t.trim(), items } });
+};
+$('ai-summary-btn').onclick = () => openAiSummary();
+$('ai-reply-btn').onclick = () => openAiReply();
+$('saved-li').onclick = () => openSaved();
+
+// ---------- تعامل با پیام‌ها (نظرسنجی / چک‌لیست / واکنش / اسپویلر) ----------
+$('messages').addEventListener('click', (e) => {
+  const opt = e.target.closest('.poll-opt');
+  if (opt) {
+    const mid = opt.closest('.poll').dataset.poll;
+    api('/api/poll/vote', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: mid, option: parseInt(opt.dataset.opt, 10) }) }).catch(() => {});
+    return;
+  }
+  const chk = e.target.closest('.chk-item input');
+  if (chk) {
+    const mid = chk.closest('.checklist').dataset.chkMsg;
+    api('/api/checklist/toggle', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: mid, index: parseInt(chk.dataset.chk, 10) }) }).catch(() => {});
+    return;
+  }
+  const chip = e.target.closest('.react-chip');
+  if (chip) {
+    api('/api/reactions', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: chip.closest('.msg').dataset.id, emoji: chip.dataset.emoji }) }).catch(() => {});
+    return;
+  }
+  const sp = e.target.closest('.spoiler');
+  if (sp) { sp.classList.toggle('revealed'); }
+});
+
+// بستن پاپ‌آور واکنش با کلیک بیرون
+document.addEventListener('click', (e) => { if (!e.target.closest('#react-pop') && !e.target.closest('[title="واکنش"]')) closeReactionPicker(); });
+
 
 document.addEventListener('click', (e) => {
   if (e.target.classList?.contains('media')) {
@@ -922,9 +1426,52 @@ function refreshProfileUI() {
   $('profile-username').textContent = '@' + state.me.username;
   applyTierLimits();
   const p = $('profile-premium');
-  if (state.me.isAdmin) p.textContent = '👑 ادمین سیستم — همه امکانات';
-  else if (state.me.isPremium) p.textContent = '⭐ پرمیوم: آپلود ۱۰۰مگ + پیام ۴۰۰۰ نویسه + بیو بلند + ساخت ۱۰ گروه/کانال + نشان طلایی';
-  else p.textContent = 'رایگان: آپلود ۳۰مگ + پیام ۷۰۰ نویسه + ۲ گروه — پرمیوم از ادمین بگیر ⭐';
+  if (state.me.isAdmin) p.innerHTML = svg('crown') + ' ادمین سیستم — همه امکانات';
+  else if (state.me.isPremium) p.innerHTML = svg('crown') + ' پرمیوم: آپلود ۱۰۰مگ + پیام ۴۰۰۰ نویسه + بیو بلند + ساخت ۱۰ گروه/کانال + نشان طلایی';
+  else p.textContent = 'رایگان: آپلود ۳۰مگ + پیام ۷۰۰ نویسه + ۲ گروه — پرمیوم از ادمین بگیر';
+}
+function openUserProfile(username) {
+  if (!username) return;
+  const isBot = username === BOT_USERNAME;
+  const u = state.users.find((x) => x.username === username);
+  const isAdmin = !!(u && u.isAdmin);
+  $('user-profile-modal').classList.remove('hidden');
+  setAvatar($('up-avatar'), { avatar: u && u.avatar, isPremium: u && u.isPremium });
+  $('up-name').textContent = isBot ? BOT_NAME : (u ? u.displayName : username);
+  $('up-username').textContent = '@' + username;
+  $('up-badges').innerHTML = (u && u.isPremium ? svg('crown') + ' پرمیوم' : '') + (isAdmin ? ' ' + svg('crown') + ' ادمین' : '') + (isBot ? ' AI' : '');
+  $('up-status').textContent = '';
+  $('up-bio').style.display = 'none';
+  if (isBot) {
+    $('up-status').textContent = 'ربات هوش مصنوعی (آنلاین)';
+  } else {
+    try {
+      const r = api('/api/users/exists/' + encodeURIComponent(username));
+      r.then(async (res) => {
+        const d = await res.json();
+        $('up-status').textContent = d.online ? 'آنلاین' : (d.lastSeen ? 'آخرین بازدید ' + timeAgo(d.lastSeen) : '');
+        if (d.avatar) setAvatar($('up-avatar'), { avatar: d.avatar, isPremium: d.isPremium });
+        if (d.bio) { $('up-bio').style.display = ''; $('up-bio').textContent = d.bio; }
+      }).catch(() => {});
+    } catch (e) {}
+  }
+  const rb = $('up-reset');
+  if (state.me.isAdmin && !isAdmin && !isBot) {
+    rb.classList.remove('hidden');
+    rb.onclick = async () => {
+      const pw = prompt('رمز جدید برای @' + username + ' (حداقل ۴ کاراکتر):');
+      if (!pw || pw.length < 4) return;
+      const res = await api('/api/admin/reset-password', { method: 'POST', body: JSON.stringify({ username, password: pw }) });
+      const j = await res.json();
+      toast(j.ok ? 'رمز ریست شد' : ('خطا: ' + (j.error || '')));
+    };
+  } else rb.classList.add('hidden');
+  $('up-chat').onclick = () => {
+    const room = 'dm:' + [state.me.username, username].sort().join('|');
+    const nm = isBot ? BOT_NAME : (u ? u.displayName : username);
+    $('user-profile-modal').classList.add('hidden');
+    openRoom(room, nm);
+  };
 }
 function updateBioCount() {
   const max = state.me.isPremium ? 200 : 80;
@@ -953,7 +1500,7 @@ $('bio-btn').onclick = async () => {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error);
     state.me.bio = data.me.bio;
-    $('rename-status').textContent = 'بیو ذخیره شد ✅';
+    $('rename-status').innerHTML = svg('check') + ' بیو ذخیره شد';
   } catch (e) { $('rename-status').textContent = e.message; }
 };
 $('logout-btn').onclick = logout;
@@ -970,7 +1517,7 @@ $('rename-btn').onclick = async () => {
     if (data.applied) {
       state.me.displayName = displayName;
       renderMyAvatar();
-      $('rename-status').textContent = 'به‌عنوان ادمین مستقیم اعمال شد ✅';
+      $('rename-status').innerHTML = svg('check') + ' به‌عنوان ادمین مستقیم اعمال شد';
     } else {
       $('rename-status').textContent = 'درخواست ثبت شد؛ بعد از تایید ادمین اعمال می‌شود ⏳';
     }
@@ -1000,14 +1547,14 @@ async function loadAdmin() {
   signups.forEach((s) => {
     const li = document.createElement('li');
     li.innerHTML = `<span class="grow"><b>@${esc(s.username)}</b> <small>می‌خواهد عضو شود</small></span>`;
-    const ok = mkBtn('✔ تایید', 'mini-btn ok', async () => {
+    const ok = mkBtn(svg('check') + ' تایید', 'mini-btn ok', async () => {
       await api(`/api/admin/signups/${s.id}`, { method: 'POST', body: JSON.stringify({ approve: true }) });
       loadAdmin();
-    });
-    const no = mkBtn('✖ رد', 'mini-btn no', async () => {
+    }, true);
+    const no = mkBtn(svg('close') + ' رد', 'mini-btn no', async () => {
       await api(`/api/admin/signups/${s.id}`, { method: 'POST', body: JSON.stringify({ approve: false }) });
       loadAdmin();
-    });
+    }, true);
     li.append(ok, no);
     su.appendChild(li);
   });
@@ -1017,8 +1564,8 @@ async function loadAdmin() {
   reqs.forEach((r) => {
     const li = document.createElement('li');
     li.innerHTML = `<span class="grow">${esc(r.username)}: <b>${esc(r.oldName)}</b> ← <b style="color:var(--secondary)">${esc(r.newName)}</b></span>`;
-    const ok = mkBtn('✔', 'mini-btn ok', async () => { await api(`/api/admin/requests/${r.id}`, { method: 'POST', body: JSON.stringify({ approve: true }) }); loadAdmin(); });
-    const no = mkBtn('✖', 'mini-btn no', async () => { await api(`/api/admin/requests/${r.id}`, { method: 'POST', body: JSON.stringify({ approve: false }) }); loadAdmin(); });
+    const ok = mkBtn(svg('check'), 'mini-btn ok', async () => { await api(`/api/admin/requests/${r.id}`, { method: 'POST', body: JSON.stringify({ approve: true }) }); loadAdmin(); }, true);
+    const no = mkBtn(svg('close'), 'mini-btn no', async () => { await api(`/api/admin/requests/${r.id}`, { method: 'POST', body: JSON.stringify({ approve: false }) }); loadAdmin(); }, true);
     li.append(ok, no);
     rq.appendChild(li);
   });
@@ -1031,22 +1578,30 @@ async function loadAdmin() {
       ${u.isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}
       ${u.banned ? '<small>مسدود</small>' : ''}`;
     if (u.username !== state.me.username) {
-      li.appendChild(mkBtn('💬 چت‌ها', 'mini-btn', async () => openAdminChats(u.username, u.displayName)));
+      li.appendChild(mkBtn(svg('chat') + ' چت‌ها', 'mini-btn', async () => openAdminChats(u.username, u.displayName), true));
     }
     if (!u.isAdmin) {
       const banBtn = mkBtn(u.banned ? 'رفع مسدودی' : 'مسدودسازی', u.banned ? 'mini-btn ok' : 'mini-btn no',
         async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u.username, banned: !u.banned }) }); loadAdmin(); });
       li.appendChild(banBtn);
-      const premBtn = mkBtn(u.isPremium ? 'لغو پرمیوم' : '⭐ پرمیوم کن', u.isPremium ? 'mini-btn no' : 'mini-btn prem',
+      const premBtn = mkBtn(u.isPremium ? 'لغو پرمیوم' : 'پرمیوم کن', u.isPremium ? 'mini-btn no' : 'mini-btn prem',
         async () => { await api('/api/admin/premium', { method: 'POST', body: JSON.stringify({ username: u.username, isPremium: !u.isPremium }) }); loadAdmin(); });
       li.appendChild(premBtn);
+      const resetBtn = mkBtn(svg('lock') + ' ریست رمز', 'mini-btn', async () => {
+        const np = prompt('رمز عبور جدید برای @' + u.username + ' (حداقل ۴ کاراکتر):');
+        if (!np || np.length < 4) { if (np !== null) alert('رمز باید حداقل ۴ کاراکتر باشد'); return; }
+        await api('/api/admin/reset-password', { method: 'POST', body: JSON.stringify({ username: u.username, newPassword: np }) });
+        alert('رمز جدید برای @' + u.username + ' ثبت شد. کاربر بعد از ورود با رمز جدید، از سیستم خارج می‌شود.');
+      }, true);
+      li.appendChild(resetBtn);
     }
     us.appendChild(li);
   });
 }
-function mkBtn(text, cls, fn) {
+function mkBtn(text, cls, fn, html) {
   const b = document.createElement('button');
-  b.textContent = text; b.className = cls; b.style.fontSize = '11px'; b.style.padding = '6px 10px';
+  if (html) b.innerHTML = text; else b.textContent = text;
+  b.className = cls; b.style.fontSize = '11px'; b.style.padding = '6px 10px';
   b.onclick = fn;
   return b;
 }
@@ -1057,7 +1612,7 @@ async function openAdminChats(username, displayName) {
   $('admin-chats').classList.remove('hidden');
   $('ac-msgs').classList.add('hidden');
   $('ac-msgs').innerHTML = '';
-  $('ac-title').textContent = `💬 چت‌های ${displayName}`;
+  $('ac-title').innerHTML = svg('chat') + ` چت‌های ${esc(displayName)}`;
   const ul = $('ac-rooms');
   ul.innerHTML = '<li class="empty">...</li>';
   try {
@@ -1104,8 +1659,8 @@ function renderAdminMessages(msgs, title) {
     else if (m.kind === 'sticker') body = esc(m.content);
     else if (m.kind === 'image' || m.kind === 'gif') body = `<img class="media" src="${esc(m.url)}" loading="lazy" />`;
     else if (m.kind === 'video') body = `<video class="media" src="${esc(m.url)}" controls preload="metadata"></video>`;
-    else if (m.kind === 'audio') body = `<audio src="${esc(m.url)}" controls></audio>`;
-    else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}">📄 ${esc(m.name || 'فایل')}</a>`;
+  else if (m.kind === 'audio') body = `<audio src="${esc(m.url)}" controls preload="metadata"></audio><a class="file-chip" href="${esc(m.url)}" download="${esc(m.name || 'voice')}"><span>${svg('attach')}</span> دانلود صدا</a>`;
+    else if (m.kind === 'file') body = `<a class="file-chip" href="${esc(m.url)}">${svg('attach')} ${esc(m.name || 'فایل')}</a>`;
     const botTag = m.from === BOT_USERNAME ? ' <span class="badge-admin">AI</span>' : '';
     div.innerHTML = `
       <span class="from">${esc(m.fromName)}${botTag}${m.fromPremium ? premiumBadge() : ''} <small class="ac-un">@${esc(m.from)}</small></span>
@@ -1141,7 +1696,15 @@ document.querySelectorAll('.modal').forEach((m) => {
 });
 
 /* ================= CALLS (WebRTC) ================= */
-const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const RTC_CFG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.nextcloud.com:443' },
+  ],
+  iceCandidatePoolSize: 2,
+};
 
 function peerOfRoom() {
   if (!state.room || !state.room.startsWith('dm:')) return null;
@@ -1160,7 +1723,10 @@ async function createPC(peer) {
   };
   pc.ontrack = (e) => onRemoteTrack(e);
   pc.onconnectionstatechange = () => {
-    if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) endCall(true);
+    if (pc.connectionState === 'failed') {
+      showCallBar('تماس برقرار نشد — احتمالاً هر دو طرف پشت شبکه‌های مختلف (NAT) هستید و سرور TURN نداریم');
+      setTimeout(() => endCall(true), 2500);
+    } else if (['disconnected', 'closed'].includes(pc.connectionState)) endCall(true);
   };
   return pc;
 }
@@ -1223,7 +1789,7 @@ function cleanupCall() {
   state.call = null;
   $('call-bar').classList.add('hidden');
   $('remote-media').innerHTML = '';
-  $('screen-btn').textContent = '🖥 اشتراک صفحه';
+  $('screen-btn').innerHTML = svg('screen') + ' اشتراک صفحه';
 }
 
 function showCallBar(status) {
@@ -1236,7 +1802,7 @@ $('mute-btn').onclick = () => {
   const track = state.call.localStream.getAudioTracks()[0];
   track.enabled = !track.enabled;
   state.call.muted = !track.enabled;
-  $('mute-btn').textContent = state.call.muted ? '🎤 وصل صدا' : '🎤 قطع صدا';
+  $('mute-btn').innerHTML = svg('mic') + ` ${state.call.muted ? 'وصل صدا' : 'قطع صدا'}`;
 };
 
 $('screen-btn').onclick = async () => {
@@ -1247,7 +1813,7 @@ $('screen-btn').onclick = async () => {
       state.call.screenStream = null;
       const sender = state.call.pc.getSenders().find((s) => s.track?.kind === 'video');
       if (sender) await sender.replaceTrack(null);
-      $('screen-btn').textContent = '🖥 اشتراک صفحه';
+      $('screen-btn').innerHTML = svg('screen') + ' اشتراک صفحه';
       return;
     }
     const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -1256,7 +1822,7 @@ $('screen-btn').onclick = async () => {
     if (!sender) sender = state.call.pc.addTrack(screen.getVideoTracks()[0], screen);
     else await sender.replaceTrack(screen.getVideoTracks()[0]);
     screen.getVideoTracks()[0].onended = () => { $('screen-btn').click(); };
-    $('screen-btn').textContent = '⏹ قطع اشتراک';
+    $('screen-btn').innerHTML = svg('screen') + ' قطع اشتراک';
   } catch (e) { /* کاربر لغو کرد */ }
 };
 

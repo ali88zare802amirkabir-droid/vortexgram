@@ -32,12 +32,14 @@ const BOT_NAME = 'Vortex AI';
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-let db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [] };
+let db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [], pinned: {}, scheduled: [] };
 try {
   const raw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [], ...raw };
+  db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [], pinned: {}, scheduled: [], ...raw };
   if (!Array.isArray(db.groups)) db.groups = [];
   if (!Array.isArray(db.signupRequests)) db.signupRequests = [];
+  if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
+  if (!Array.isArray(db.scheduled)) db.scheduled = [];
   // مهاجرت اعضای قدیمی (رشته) به ساختار نقش‌دار
   for (const g of db.groups) {
     if (!g.type) g.type = 'group';
@@ -65,7 +67,6 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
 const sessions = new Map();
 const online = new Map();
 const msgTimestamps = new Map();
-const loginFails = new Map();
 
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
@@ -156,23 +157,14 @@ app.post('/api/register', (req, res) => {
 });
 
 app.post('/api/login', (req, res) => {
-  const ip = req.socket.remoteAddress || '?';
-  const rec = loginFails.get(ip) || { count: 0, resetAt: 0 };
-  if (rec.count >= 5 && Date.now() < rec.resetAt) {
-    return res.status(429).json({ error: 'تلاش‌های زیاد؛ ۱۰ دقیقه دیگر امتحان کن' });
-  }
   const { username, password } = req.body || {};
   const pending = db.signupRequests.find((r) => r.username.toLowerCase() === String(username || '').toLowerCase());
   if (pending) return res.status(403).json({ error: 'ثبت‌نامت هنوز توسط ادمین تایید نشده ⏳' });
   const user = db.users.find((u) => u.username.toLowerCase() === String(username || '').toLowerCase());
   if (!user || user.passHash !== hash(String(password || ''), user.salt)) {
-    rec.count++;
-    rec.resetAt = Date.now() + 10 * 60 * 1000;
-    loginFails.set(ip, rec);
     return res.status(401).json({ error: 'نام کاربری یا رمز اشتباه است' });
   }
   if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
-  loginFails.delete(ip);
   const token = createSession(user.username);
   res.json({ token, me: publicUser(user) });
 });
@@ -321,6 +313,171 @@ app.post('/api/admin/ban', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ریست رمز عبور توسط ادمین (رمزها هش شده‌اند و قابل بازیابی نیستند، پس ادمین باید رمز جدید بسازد)
+app.post('/api/admin/reset-password', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const { username, newPassword } = req.body || {};
+  const target = db.users.find((u) => u.username === username);
+  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  if (target.isAdmin) return res.status(400).json({ error: 'رمز ادمین دیگر قابل تغییر نیست' });
+  if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'رمز جدید حداقل ۴ کاراکتر باشد' });
+  target.salt = crypto.randomBytes(16).toString('hex');
+  target.passHash = hash(String(newPassword), target.salt);
+  saveDB();
+  kickUser(target.username);
+  notifyUser(target.username, { type: 'password-reset' });
+  res.json({ ok: true });
+});
+
+// ===== واکنش به پیام (reactions) =====
+function findMsg(roomId, id) {
+  const arr = db.messages[roomId] || [];
+  return arr.find((m) => m.id === id);
+}
+app.post('/api/reactions', auth, (req, res) => {
+  const { roomId, msgId, emoji } = req.body || {};
+  if (!canAccess(String(roomId || ''), req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(String(roomId), String(msgId));
+  if (!m) return res.status(404).json({ error: 'پیام یافت نشد' });
+  if (!m.reactions) m.reactions = {};
+  const u = req.user.username;
+  const list = m.reactions[emoji] || [];
+  if (list.includes(u)) m.reactions[emoji] = list.filter((x) => x !== u);
+  else m.reactions[emoji] = [...list, u];
+  if (!m.reactions[emoji].length) delete m.reactions[emoji];
+  saveDB();
+  broadcast({ type: 'message-updated', roomId, id: msgId, reactions: m.reactions });
+  res.json({ ok: true, reactions: m.reactions });
+});
+
+// ===== سنجاق چندگانه =====
+app.post('/api/pin', auth, (req, res) => {
+  const { roomId, msgId } = req.body || {};
+  const rid = String(roomId || '');
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  if (!db.pinned[rid]) db.pinned[rid] = [];
+  const i = db.pinned[rid].indexOf(String(msgId));
+  if (i >= 0) db.pinned[rid].splice(i, 1);
+  else db.pinned[rid].push(String(msgId));
+  saveDB();
+  broadcast({ type: 'pinned-updated', roomId: rid, ids: db.pinned[rid] });
+  res.json({ ok: true, ids: db.pinned[rid] });
+});
+
+// ===== رای دادن به نظرسنجی =====
+app.post('/api/poll/vote', auth, (req, res) => {
+  const { roomId, msgId, option } = req.body || {};
+  const rid = String(roomId || '');
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(rid, String(msgId));
+  if (!m || m.kind !== 'poll' || !m.poll) return res.status(404).json({ error: 'نظرسنجی یافت نشد' });
+  m.poll.votes[req.user.username] = Number(option);
+  saveDB();
+  broadcast({ type: 'message-updated', roomId: rid, id: msgId, poll: m.poll });
+  res.json({ ok: true, poll: m.poll });
+});
+
+// ===== تیک زدن آیتم چک‌لیست =====
+app.post('/api/checklist/toggle', auth, (req, res) => {
+  const { roomId, msgId, index } = req.body || {};
+  const rid = String(roomId || '');
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(rid, String(msgId));
+  if (!m || m.kind !== 'checklist' || !m.checklist) return res.status(404).json({ error: 'چک‌لیست یافت نشد' });
+  const idx = Number(index);
+  if (!m.checklist.items[idx]) return res.status(404).json({ error: 'آیتم یافت نشد' });
+  m.checklist.items[idx].done = !m.checklist.items[idx].done;
+  saveDB();
+  broadcast({ type: 'message-updated', roomId: rid, id: msgId, checklist: m.checklist });
+  res.json({ ok: true, checklist: m.checklist });
+});
+
+// ===== پیام زمان‌بندی‌شده =====
+app.post('/api/schedule', auth, (req, res) => {
+  const { roomId, kind, content, url, name, mime, at, replyTo } = req.body || {};
+  const rid = String(roomId || '').slice(0, 100);
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const atTs = Number(at);
+  if (!atTs || atTs < Date.now()) return res.status(400).json({ error: 'زمان نامعتبر' });
+  const id = crypto.randomUUID();
+  db.scheduled.push({ id, roomId: rid, from: req.user.username, kind: kind || 'text', content: String(content || '').slice(0, 4000), url: url || undefined, name: name || undefined, mime: mime || undefined, replyTo: replyTo || undefined, at: atTs });
+  saveDB();
+  res.json({ ok: true, id });
+});
+
+// ===== پیش‌نمایش لینک =====
+const httpsMod = require('https');
+const httpMod = require('http');
+const urlMod = require('url');
+app.get('/api/link-preview', auth, (req, res) => {
+  const raw = String(req.query.url || '');
+  let u;
+  try { u = new urlMod.URL(raw); } catch { return res.status(400).json({ error: 'لینک نامعتبر' }); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return res.status(400).json({ error: 'فقط http(s)' });
+  const mod = u.protocol === 'https:' ? httpsMod : httpMod;
+  const reqO = mod.get(raw, { timeout: 3500, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'text/html' } }, (r) => {
+    const ct = r.headers['content-type'] || '';
+    if (!ct.includes('text/html')) { r.resume(); return res.json({ url: raw, domain: u.hostname }); }
+    let buf = ''; let n = 0;
+    r.on('data', (c) => { buf += c; n += c.length; if (n > 200000) r.destroy(); });
+    r.on('end', () => {
+      const title = (buf.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
+      const desc = (buf.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) || [])[1]
+        || (buf.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i) || [])[1] || '';
+      const og = (buf.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']*)["']/i) || [])[1] || '';
+      res.json({ url: raw, domain: u.hostname, title: title.slice(0, 200).trim(), description: desc.slice(0, 300).trim(), image: og.slice(0, 300).trim() });
+    });
+  });
+  reqO.on('timeout', () => { reqO.destroy(); res.json({ url: raw, domain: u.hostname }); });
+  reqO.on('error', () => res.json({ url: raw, domain: u.hostname }));
+});
+
+// ===== AI داخلی (دستورات و پنل) =====
+app.post('/api/ai', auth, async (req, res) => {
+  if (!process.env.GROQ_API_KEYS_STR) return res.status(503).json({ error: 'AI تنظیم نشده' });
+  const { action, roomId, text, tone } = req.body || {};
+  const a = String(action || '');
+  try {
+    let out = null;
+    if (a === 'summarize') {
+      out = await chatCompletion([{ role: 'system', content: 'Summarize the following chat in Persian in 3-5 short bullet points. Concise, no preamble.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(String(roomId || ''), 40) }]);
+    } else if (a === 'reply') {
+      out = await chatCompletion([{ role: 'system', content: 'Based on the recent chat, suggest 3 short reply options in Persian, one per line, no numbering, no labels.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(String(roomId || ''), 40) }]);
+    } else if (a === 'translate') {
+      out = await chatCompletion([{ role: 'system', content: 'Translate the text. If Persian translate to English, else to Persian. Return only the translation.' }, { role: 'user', content: String(text || '') }]);
+    } else if (a === 'rewrite') {
+      const t = String(tone || 'natural');
+      out = await chatCompletion([{ role: 'system', content: `Rewrite the text in Persian with a ${t} tone. Return only the rewritten text.` }, { role: 'user', content: String(text || '') }]);
+    } else if (a === 'ask') {
+      out = await chatCompletion([{ role: 'system', content: 'Answer briefly in Persian using chat context if relevant.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(String(roomId || ''), 30) + '\n\nQ: ' + String(text || '') }]);
+    } else return res.status(400).json({ error: 'action نامعتبر' });
+    if (!out) return res.status(502).json({ error: 'پاسخی دریافت نشد' });
+    res.json({ result: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// پردازش پیام‌های زمان‌بندی‌شده
+function processScheduled() {
+  if (!db.scheduled.length) return;
+  const now = Date.now();
+  const due = db.scheduled.filter((s) => s.at <= now);
+  if (!due.length) return;
+  db.scheduled = db.scheduled.filter((s) => s.at > now);
+  for (const s of due) {
+    const user = db.users.find((u) => u.username === s.from);
+    const msg = {
+      id: crypto.randomUUID(), roomId: s.roomId, from: s.from, fromName: user ? user.displayName : s.from, kind: s.kind,
+      content: s.content || '', url: s.url, mime: s.mime, name: s.name, time: now,
+      fromAvatar: user?.avatar || undefined, fromPremium: !!user?.isPremium, replyTo: s.replyTo, reactions: {}, silent: false,
+    };
+    if (!db.messages[s.roomId]) db.messages[s.roomId] = [];
+    db.messages[s.roomId].push(msg);
+    broadcast({ type: 'message', message: msg });
+  }
+  saveDB();
+}
+setInterval(processScheduled, 5000);
+
 // بررسی وجود کاربر برای افزودن مخاطب با آیدی
 app.get('/api/users/exists/:username', auth, (req, res) => {
   const uname = String(req.params.username || '').trim().replace(/^@/, '');
@@ -379,6 +536,7 @@ const EXT_BY_MIME = {
   'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
   'video/mp4': '.mp4', 'video/webm': '.webm',
   'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg', 'audio/webm': '.weba',
+  'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.aac', 'audio/x-matroska': '.mka',
   'application/pdf': '.pdf', 'application/zip': '.zip', 'text/plain': '.txt',
 };
 const upload = multer({
@@ -400,7 +558,15 @@ app.post('/api/upload', auth, upload.single('file'), (req, res) => {
   const kind = m.startsWith('image/') ? (m === 'image/gif' ? 'gif' : 'image') : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : 'file';
   res.json({ url: '/uploads/' + req.file.filename, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
 });
-app.use('/uploads', express.static(UPLOAD_DIR));
+const MIME_BY_EXT = {};
+for (const [k, v] of Object.entries(EXT_BY_MIME)) MIME_BY_EXT[v] = k;
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  setHeaders: (res, p) => {
+    const ext = p.slice(p.lastIndexOf('.'));
+    if (MIME_BY_EXT[ext]) res.setHeader('Content-Type', MIME_BY_EXT[ext]);
+    res.setHeader('Cache-Control', 'no-store');
+  },
+}));
 
 // ---------- groups & channels ----------
 function publicGroups(username) {
@@ -622,7 +788,7 @@ wss.on('connection', (ws) => {
       }
       wsSend(ws, {
         type: 'ready', me: publicUser(user), groups: publicGroups(username),
-        chatState: chatStateOf(username), readState: myReadState,
+        chatState: chatStateOf(username), readState: myReadState, pinned: db.pinned,
       });
       pushUsers();
       broadcastGroups();
@@ -650,13 +816,34 @@ wss.on('connection', (ws) => {
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
       if (!canPost(roomId, username)) return wsSend(ws, { type: 'error', text: 'در کانال فقط مدیران می‌توانند پیام بفرستند' });
-      const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file'].includes(data.kind) ? data.kind : 'text';
+      const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file', 'poll', 'checklist', 'album'].includes(data.kind) ? data.kind : 'text';
       const maxLen = (user.isPremium || user.isAdmin) ? MAX_MSG_LEN : 700;
-      let content = String(data.content ?? '').slice(0, maxLen);
-      if (kind !== 'text' && kind !== 'sticker') {
+
+      // اعتبارسنجی بار پیام بر اساس نوع
+      let content = '';
+      let album = undefined, poll = undefined, checklist = undefined;
+      if (kind === 'text' || kind === 'sticker') {
+        content = String(data.content ?? '').slice(0, maxLen);
+        if (!content.trim()) return;
+      } else if (kind === 'album') {
+        if (!Array.isArray(data.album) || data.album.length < 1) return;
+        album = data.album.filter((u) => typeof u === 'string' && /^\/uploads\/[\w.-]+$/.test(u)).slice(0, 10);
+        if (!album.length) return;
+      } else if (kind === 'poll' || kind === 'checklist') {
+        if (kind === 'poll') {
+          const q = String(data.poll?.question || '').slice(0, 200).trim();
+          const opts = (data.poll?.options || []).map((o) => String(o || '').slice(0, 80).trim()).filter(Boolean).slice(0, 10);
+          if (!q || opts.length < 2) return;
+          poll = { question: q, options: opts, quiz: !!data.poll?.quiz, correct: typeof data.poll?.correct === 'number' ? data.poll.correct : null, votes: {} };
+        } else {
+          const t = String(data.checklist?.title || '').slice(0, 200).trim();
+          const items = (data.checklist?.items || []).map((i) => String(i || '').slice(0, 120).trim()).filter(Boolean).slice(0, 30);
+          if (!t || !items.length) return;
+          checklist = { title: t, items: items.map((x) => ({ text: x, done: false })) };
+        }
+      } else {
         if (typeof data.url !== 'string' || !/^\/uploads\/[\w.-]+$/.test(data.url)) return;
       }
-      if ((kind === 'text' || kind === 'sticker') && !content.trim()) return;
 
       // نقل قول (ریپلای)
       let replyTo;
@@ -673,7 +860,8 @@ wss.on('connection', (ws) => {
         content, url: data.url || undefined, mime: typeof data.mime === 'string' ? data.mime.slice(0, 60) : undefined,
         name: typeof data.name === 'string' ? data.name.slice(0, 80) : undefined, time: now,
         fromAvatar: user.avatar || undefined, fromPremium: !!user.isPremium,
-        replyTo,
+        replyTo, album, poll, checklist,
+        reactions: {}, silent: !!data.silent,
         fwdFrom: typeof data.fwdFrom === 'string' ? data.fwdFrom.slice(0, 40) : undefined,
       };
       if (!db.messages[roomId]) db.messages[roomId] = [];
@@ -681,7 +869,8 @@ wss.on('connection', (ws) => {
       if (db.messages[roomId].length > HISTORY_LIMIT) db.messages[roomId] = db.messages[roomId].slice(-HISTORY_LIMIT);
       saveDB();
       broadcast({ type: 'message', message: msg });
-      const aiText = kind === 'text' ? content : kind === 'sticker' ? `[استیکر فرستاد: ${content}]` : '[فایل فرستاد]';
+      if (kind === 'text') maybeReminder(roomId, user, content);
+      const aiText = kind === 'text' ? content : kind === 'sticker' ? `[استیکر فرستاد: ${content}]` : kind === 'poll' ? `[نظرسنجی: ${poll.question}]` : kind === 'checklist' ? `[چک‌لیست: ${checklist.title}]` : '[فایل فرستاد]';
       maybeAiReply(roomId, user, aiText);
       return;
     }
@@ -767,9 +956,155 @@ function storeHistory(roomId, senderName, text) {
   arr.push(`${senderName}: ${text.slice(0, 100)}`);
   if (arr.length > AI_MAX_HISTORY) aiState.history.set(roomId, arr.slice(-AI_MAX_HISTORY));
 }
+function botDmRoom(username) { return 'dm:' + [username, BOT_USERNAME].sort().join('|'); }
+
+function sendBotToRoom(roomId, content) {
+  const msg = { id: crypto.randomUUID(), roomId, from: BOT_USERNAME, fromName: BOT_NAME, kind: 'text', content: String(content).slice(0, 4000), time: Date.now(), reactions: {}, silent: false };
+  if (!db.messages[roomId]) db.messages[roomId] = [];
+  db.messages[roomId].push(msg);
+  saveDB();
+  broadcast({ type: 'message', message: msg });
+  return msg;
+}
+
+function roomHistoryText(roomId, n = 40) {
+  return (db.messages[roomId] || []).slice(-n).map((m) => {
+    let c = m.kind === 'text' ? m.content : m.kind === 'poll' ? '[نظرسنجی] ' + (m.poll?.question || '') : m.kind === 'checklist' ? '[چک‌لیست] ' + (m.checklist?.title || '') : '[' + m.kind + ']';
+    return `${m.fromName || m.from}: ${c}`;
+  }).join('\n');
+}
+
+function toEnDigits(s) {
+  return String(s)
+    .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+}
+
+function detectDateTime(text) {
+  const t = toEnDigits(text);
+  let dayOffset = null;
+  if (/پس\s*فردا|پس‌فردا/.test(t)) dayOffset = 2;
+  else if (/فردا/.test(t)) dayOffset = 1;
+  else if (/امروز/.test(t)) dayOffset = 0;
+  if (dayOffset === null) return null;
+  let h = 9, mi = 0;
+  const tm = t.match(/ساعت\s*(\d{1,2})(?::(\d{2}))?/);
+  if (tm) { h = Math.min(23, parseInt(tm[1], 10) || 9); mi = tm[2] ? Math.min(59, parseInt(tm[2], 10)) : 0; }
+  else {
+    const tm2 = t.match(/(\d{1,2})(?::(\d{2}))?\s*(صبح|ظهر|عصر|شب)/);
+    if (tm2) {
+      h = parseInt(tm2[1], 10) || 9; mi = tm2[2] ? parseInt(tm2[2], 10) : 0;
+      const p = tm2[3];
+      if ((p === 'عصر' || p === 'شب') && h < 12) h += 12;
+      if (p === 'ظهر') { h = 12; mi = 0; }
+    }
+  }
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(h, mi, 0, 0);
+  if (d.getTime() <= Date.now()) return null;
+  return d;
+}
+
+function formatWhen(date) {
+  const dayDiff = Math.round((new Date(date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000);
+  const label = dayDiff === 0 ? 'امروز' : dayDiff === 1 ? 'فردا' : dayDiff === 2 ? 'پس‌فردا' : date.toLocaleDateString('fa-IR');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${label} ساعت ${hh}:${mm}`;
+}
+
+function scheduleReminder(username, date, body) {
+  const clean = body
+    .replace(/یادآوری|یاداوری|ریميند|remind|یاد بده|یاداور|فراموش نکن|یادم باشه|یادم باشد|یادم باش/gi, '')
+    .replace(/فردا|پس‌فردا|پس فردا|امروز/g, '')
+    .replace(/ساعت\s*\d{1,2}(?::\d{2})?/g, '')
+    .replace(/\s+/g, ' ').trim() || body;
+  db.scheduled.push({ id: crypto.randomUUID(), roomId: botDmRoom(username), from: BOT_USERNAME, kind: 'text', content: 'یادآوری: ' + clean.slice(0, 4000), at: date.getTime() });
+  saveDB();
+}
+
+function maybeReminder(roomId, user, text) {
+  const dt = detectDateTime(text);
+  if (!dt) return;
+  const wants = /یادآوری|یاداوری|ریميند|remind|یاد بده|یاداور|فراموش نکن|یادم باشه|یادم باشد|یادم باش/.test(text);
+  if (wants) {
+    scheduleReminder(user.username, dt, text);
+    sendBotToRoom(botDmRoom(user.username), `یادآوری ثبت شد برای ${formatWhen(dt)}: ${text.slice(0, 200)}`);
+  } else {
+    notifyUser(user.username, { type: 'ai-suggestion', at: dt.getTime(), when: formatWhen(dt), text: text.slice(0, 200) });
+  }
+}
+
+function safeJson(s) {
+  if (!s) return null;
+  try { return JSON.parse(s); } catch {
+    try { const i = s.indexOf('{'); const j = s.lastIndexOf('}'); return i >= 0 && j > i ? JSON.parse(s.slice(i, j + 1)) : null; } catch { return null; }
+  }
+}
+
+async function handleAiCommand(roomId, user, rawText) {
+  try {
+    if (!process.env.GROQ_API_KEYS_STR) return;
+    const m = rawText.match(/^@(?:ai|vortex_bot)\s*[:]?\s*([\s\S]+)$/i);
+    if (!m) { sendBotToRoom(roomId, 'دستور نامشخص. مثلاً: @ai خلاصه / @ai ترجمه سلام / @ai بازنویسی متن'); return; }
+    const cmd = m[1].trim();
+    const hist = roomHistoryText(roomId, 40);
+    notifyUser(user.username, { type: 'ai-thinking', roomId });
+    let out = null;
+    if (/^(خلاصه|summary)/i.test(cmd)) {
+      out = await chatCompletion([{ role: 'system', content: 'You are VORTEXGRAM AI. Summarize the following chat in Persian in 3-5 short bullet points. Be concise, no preamble.' }, { role: 'user', content: 'Chat:\n' + hist }]);
+      out = out ? ('خلاصه گفتگو:\n' + out) : null;
+    } else if (/^(ترجمه|translate)/i.test(cmd)) {
+      const rest = cmd.replace(/^(ترجمه|translate)\s*[:]?/i, '').trim();
+      out = await chatCompletion([{ role: 'system', content: 'Translate the text. If Persian translate to English, else to Persian. Return only the translation.' }, { role: 'user', content: rest }]);
+    } else if (/^(بازنویسی|rewrite)/i.test(cmd)) {
+      const rest = cmd.replace(/^(بازنویسی|rewrite)\s*[:]?/i, '').trim();
+      let tone = 'natural'; if (/رسمی/.test(rest)) tone = 'formal'; else if (/طنز|خنده‌دار/.test(rest)) tone = 'funny'; else if (/دوستانه/.test(rest)) tone = 'friendly';
+      out = await chatCompletion([{ role: 'system', content: `Rewrite the text in Persian with a ${tone} tone. Return only the rewritten text.` }, { role: 'user', content: rest }]);
+    } else if (/^(پاسخ|reply)/i.test(cmd)) {
+      out = await chatCompletion([{ role: 'system', content: 'Based on the recent chat, suggest 3 short reply options in Persian, one per line, no numbering, no labels.' }, { role: 'user', content: 'Chat:\n' + hist }]);
+    } else if (/^(چک‌لیست|checklist)/i.test(cmd)) {
+      const rest = cmd.replace(/^(چک‌لیست|checklist)\s*[:]?/i, '').trim();
+      const j = await chatCompletion([{ role: 'system', content: 'Convert the request into JSON: {"title":"...","items":["...","..."]}. Return only valid JSON.' }, { role: 'user', content: rest }]);
+      const parsed = safeJson(j);
+      if (parsed && parsed.title && Array.isArray(parsed.items) && parsed.items.length) {
+        const checklist = { title: String(parsed.title).slice(0, 200), items: parsed.items.slice(0, 30).map((x) => ({ text: String(x).slice(0, 120), done: false })) };
+        sendBotToRoom(roomId, 'چک‌لیست پیشنهادی:');
+        const msg = { id: crypto.randomUUID(), roomId, from: BOT_USERNAME, fromName: BOT_NAME, kind: 'checklist', checklist, time: Date.now(), reactions: {}, silent: false };
+        if (!db.messages[roomId]) db.messages[roomId] = [];
+        db.messages[roomId].push(msg); saveDB(); broadcast({ type: 'message', message: msg });
+        return;
+      }
+      out = 'ساخت چک‌لیست ممکن نشد.';
+    } else if (/^(نظرسنجی|poll)/i.test(cmd)) {
+      const rest = cmd.replace(/^(نظرسنجی|poll)\s*[:]?/i, '').trim();
+      const j = await chatCompletion([{ role: 'system', content: 'Convert the request into JSON: {"question":"...","options":["...","..."]}. Return only valid JSON.' }, { role: 'user', content: rest }]);
+      const parsed = safeJson(j);
+      if (parsed && parsed.question && Array.isArray(parsed.options) && parsed.options.length >= 2) {
+        const poll = { question: String(parsed.question).slice(0, 200), options: parsed.options.slice(0, 10).map((o) => String(o).slice(0, 80)), quiz: false, correct: null, votes: {} };
+        sendBotToRoom(roomId, 'نظرسنجی پیشنهادی:');
+        const msg = { id: crypto.randomUUID(), roomId, from: BOT_USERNAME, fromName: BOT_NAME, kind: 'poll', poll, time: Date.now(), reactions: {}, silent: false };
+        if (!db.messages[roomId]) db.messages[roomId] = [];
+        db.messages[roomId].push(msg); saveDB(); broadcast({ type: 'message', message: msg });
+        return;
+      }
+      out = 'ساخت نظرسنجی ممکن نشد.';
+    } else if (/^(یادآوری|remind|ریميند)/i.test(cmd)) {
+      const dt = detectDateTime(cmd);
+      if (dt) { scheduleReminder(user.username, dt, cmd); out = 'یادآوری تنظیم شد برای ' + formatWhen(dt); }
+      else out = 'زمان را متوجه نشدم. مثلاً: @ai یادآوری فردا ساعت ۱۷ جلسه';
+    } else {
+      out = await chatCompletion([{ role: 'system', content: 'You are VORTEXGRAM AI assistant. Answer the request briefly in Persian, using the chat context if relevant.' }, { role: 'user', content: 'Recent chat:\n' + hist + '\n\nUser: ' + cmd }]);
+    }
+    if (out) sendBotToRoom(roomId, out);
+  } catch (e) { console.error('ai cmd failed:', e.message); }
+}
+
 async function maybeAiReply(roomId, user, rawText) {
   try {
     if (!process.env.GROQ_API_KEYS_STR) return;
+    if (/^@(?:ai|vortex_bot)\s/i.test(rawText || '')) { handleAiCommand(roomId, user, rawText); return; }
     // ربات فقط در چت خصوصیِ خودش پاسخ می‌دهد — نه در گروه‌ها و کانال‌ها
     if (roomId !== 'dm:' + [user.username, BOT_USERNAME].sort().join('|')) return;
     const text = (rawText || '').trim();
