@@ -366,3 +366,18 @@ a{color:var(--accent);text-decoration:none;}
   .back-btn{display:grid;}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important;}}
+
+/* ===================== CONTACTS ===================== */
+.contact-list{display:flex;flex-direction:column;gap:6px;}
+.contact-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--radius);background:var(--surface);border:1px solid var(--border);}
+.contact-item:hover{background:var(--surface-hover);}
+.contact-item .ci-body{flex:1;min-width:0;}
+.contact-item .ci-name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.contact-item .ci-sub{font-size:12px;color:var(--text-muted);}
+.contact-item .btn{margin-inline-start:6px;flex:none;}
+.contact-empty{padding:30px;text-align:center;color:var(--text-muted);}
+
+/* collapsed nav: show only the mark, hide text */
+#nav-sidebar:not(.expanded) .nav-logo{justify-content:center;padding:6px 0 14px;}
+#nav-sidebar:not(.expanded) .nav-logo b,
+#nav-sidebar:not(.expanded) .nav-logo small{display:none;}

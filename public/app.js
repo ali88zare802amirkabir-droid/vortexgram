@@ -73,11 +73,13 @@ applyAppearance();
 function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
   renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
+  if (state.me.isAdmin) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {}); }
 }
 
 /* NAV */
 const NAV = [
   { id: 'chats', label: 'چت‌ها', icon: 'message-square' },
+  { id: 'contacts', label: 'مخاطبین', icon: 'contact' },
   { id: 'communities', label: 'کامیونیتی‌ها', icon: 'users' },
   { id: 'channels', label: 'کانال‌ها', icon: 'megaphone' },
   { id: 'calls', label: 'تماس‌ها', icon: 'phone' },
@@ -396,6 +398,7 @@ function openPalette() {
   const actions = [
     { id: 'ai', label: 'دستیار هوشمند', icon: 'sparkles', run: () => switchNav('ai') },
     { id: 'newchat', label: 'چت جدید', icon: 'message-square', run: openNewMenu },
+    { id: 'contacts', label: 'مخاطبین', icon: 'contact', run: () => switchNav('contacts') },
     { id: 'newgroup', label: 'گروه جدید', icon: 'users', run: () => startGroup() },
     { id: 'settings', label: 'تنظیمات', icon: 'settings', run: () => switchNav('settings') },
     { id: 'theme', label: 'تغییر تم', icon: 'palette', run: cycleTheme },
@@ -427,6 +430,37 @@ function openNewMenu() {
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
 function startDM() { const who = prompt('نام کاربری مقابل (مثلاً ali):'); if (!who) return; const other = who.replace('@', ''); const rid = 'dm:' + [state.me.username, other].sort().join('|'); if (state.me.isAdmin || getContacts()[other] || other === BOT_USERNAME) { openRoom(rid); } else { const c = getContacts(); c[other] = other; saveContacts(c); openRoom(rid); } }
+function openDM(other) {
+  if (other === state.me.username) return;
+  const rid = 'dm:' + [state.me.username, other].sort().join('|');
+  if (!state.me.isAdmin && !getContacts()[other] && other !== BOT_USERNAME) { const c = getContacts(); c[other] = (state.users.find((u) => u.username === other) || {}).displayName || other; saveContacts(c); }
+  switchNav('chats'); openRoom(rid);
+}
+function renderContacts(wrap) {
+  const draw = (list) => {
+    list = (list || []).filter((u) => u.username !== state.me.username);
+    if (!list.length) { wrap.innerHTML = '<div class="contact-empty">هنوز مخاطبی ثبت نشده است. از دکمه + یک چت جدید شروع کن.</div>'; return; }
+    let h = '<div class="contact-list">';
+    list.forEach((u) => {
+      const online = state.me.isAdmin ? !!u.online : false;
+      h += '<div class="contact-item" data-u="' + esc(u.username) + '">' + avatarEl(u, 'md').outerHTML + '<div class="ci-body"><div class="ci-name">' + esc(u.displayName || u.username) + (online ? ' <span style="font-size:10px;color:var(--success)">●</span>' : '') + '</div><div class="ci-sub">@' + esc(u.username) + '</div></div><button class="btn sm" data-act="chat">چت</button>' + (state.me.isAdmin ? '<button class="btn sm danger" data-act="ban">' + ((u.banned) ? 'رفع مسدودی' : 'مسدود') + '</button>' : '') + '</div>';
+    });
+    h += '</div>';
+    wrap.innerHTML = h;
+    wrap.querySelectorAll('.contact-item').forEach((it) => {
+      const u = it.dataset.u; const cur = (state.users || []).find((x) => x.username === u) || { banned: false };
+      it.querySelector('[data-act="chat"]').onclick = () => openDM(u);
+      const ban = it.querySelector('[data-act="ban"]'); if (ban) ban.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u, banned: !cur.banned }) }); toast('انجام شد'); renderView('contacts'); };
+    });
+    luc();
+  };
+  let list = state.me.isAdmin ? (state.users || []) : Object.keys(getContacts()).map((u) => ({ username: u, displayName: getContacts()[u] || u }));
+  if (state.me.isAdmin && (!state.users || !state.users.length)) {
+    api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; draw(state.users); } }).catch(() => {});
+  }
+  draw(list);
+}
+function promptRename() { const n = prompt('نام نمایشی جدید', state.me.displayName); if (n) { api('/api/profile/rename', { method: 'POST', body: JSON.stringify({ displayName: n }) }).then(() => { state.me.displayName = n; renderNav(); renderView('settings'); }); } }
 async function startGroup(isChannel) { const name = prompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':'); if (!name) return; const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json(); state.groups.push(d.group); if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups })); openRoom('group:' + d.group.id); }
 
 /* THEME */
@@ -449,12 +483,14 @@ function renderView(id) {
     wrap.innerHTML = '<div class="ai-card"><div class="ai-conv" id="ai-conv"></div><div class="ai-input-row"><input id="ai-input" placeholder="از دستیار بپرس…" /><button id="ai-send">' + ic('send') + '</button></div><div class="ai-actions"><button data-a="summarize">' + ic('file-text') + ' خلاصه چت</button><button data-a="reply">' + ic('corner-down-left') + ' پیشنهاد پاسخ</button><button data-a="translate">' + ic('languages') + ' ترجمه</button><button data-a="rewrite">' + ic('edit-3') + ' بازنویسی</button></div></div>';
     $('ai-send').onclick = () => aiOnMessage(state.room); $('ai-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') aiOnMessage(state.room); });
     wrap.querySelectorAll('.ai-actions button').forEach((b) => b.onclick = async () => { const a = b.dataset.a; if (a === 'summarize' && !state.room) return toast('اول یک چت باز کن'); if (a === 'reply' && !state.room) return toast('اول یک چت باز کن'); const act = a === 'summarize' ? 'summarize' : a === 'reply' ? 'reply' : a === 'translate' ? 'translate' : 'rewrite'; const d = await (await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: act, roomId: state.room, text: $('ai-input').value }) })).json(); appendAIMsg('bot', d.reply || d.error || ''); });
-  } else if (id === 'settings') {
+  } else if (id === 'contacts') { renderContacts(wrap); }
+  else if (id === 'settings') {
     wrap.innerHTML = settingsHTML();
     wrap.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); });
     wrap.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); });
     $('set-font-dec').onclick = () => setFont(-1); $('set-font-inc').onclick = () => setFont(1);
     $('set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
+    const nb = $('set-notif'); if (nb) nb.onclick = async () => { if (!('Notification' in window)) { toast('مرورگر پشتیبانی نمی‌کند'); return; } const p = await Notification.requestPermission(); localStorage.setItem('vx_notify', p === 'granted' ? '1' : '0'); nb.textContent = p === 'granted' ? 'روشن' : 'خاموش'; toast(p === 'granted' ? 'اعلان روشن شد' : 'اعلان خاموش شد'); };
     if (state.me.isAdmin) { const adm = document.createElement('div'); adm.className = 'settings-sec'; adm.innerHTML = '<h3>' + ic('shield') + ' پنل ادمین</h3><div class="admin-tools"></div>'; wrap.appendChild(adm); const at = adm.querySelector('.admin-tools');
       const users = state.users; users.forEach((u) => { const r = document.createElement('div'); r.className = 'admin-user'; r.innerHTML = avatarEl(u, 'xs').outerHTML + '<span>' + esc(u.displayName || u.username) + ' @' + esc(u.username) + '</span>' + (u.banned ? '<span class="ban-tag">مسدود</span>' : ''); const ban = document.createElement('button'); ban.textContent = u.banned ? 'رفع مسدودی' : 'مسدود'; ban.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u.username, banned: !u.banned }) }); u.banned = !u.banned; renderView('settings'); toast('انجام شد'); }; r.appendChild(ban); at.appendChild(r); }); }
   } else if (id === 'communities') { wrap.innerHTML = groupsHTML('group'); }
@@ -481,7 +517,14 @@ function settingsHTML() {
   t += '<div class="settings-row"><span>رنگ</span><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
   t += '<div class="settings-row"><span>اندازه فونت</span><div class="stepper"><button id="set-font-dec">−</button><span>' + (state.fontScale) + '</span><button id="set-font-inc">+</button></div></div>';
   t += '<div class="settings-row"><span>گردی گوشه‌ها</span><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '"></div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('user') + ' حساب</h3><div class="settings-row"><span>نام</span><b>' + esc(state.me.displayName) + '</b></div><div class="settings-row"><span>کاربری</span><b>@' + esc(state.me.username) + '</b></div><div class="settings-row"><span>وضعیت</span><b>' + (state.me.isPremium ? 'پریمیوم' : 'رایگان') + (state.me.isAdmin ? ' • ادمین' : '') + '</b></div><button class="btn" onclick="logout()">' + ic('log-out') + ' خروج</button></div>';
+  t += '<div class="settings-sec"><h3>' + ic('user') + ' حساب</h3>';
+  t += '<div class="settings-row"><span>نام نمایشی</span><b>' + esc(state.me.displayName) + '</b><button class="btn sm" onclick="promptRename()">تغییر</button></div>';
+  t += '<div class="settings-row"><span>نام کاربری</span><b>@' + esc(state.me.username) + '</b></div>';
+  t += '<div class="settings-row"><span>شماره</span><b>' + esc(state.me.phone || '—') + '</b></div>';
+  t += '<div class="settings-row"><span>وضعیت</span><b>' + (state.me.isPremium ? 'پریمیوم' : 'رایگان') + (state.me.isAdmin ? ' • ادمین' : '') + '</b></div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان‌ها</h3><div class="settings-row"><span>اعلان مرورگر</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('lock') + ' حریم خصوصی</h3><div class="settings-row"><span>نمایش وضعیت آنلاین</span><b>' + ((localStorage.getItem('vx_online') !== '0') ? 'بله' : 'خیر') + '</b></div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('log-out') + ' خروج</h3><button class="btn danger" onclick="logout()">' + ic('log-out') + ' خروج از حساب</button></div>';
   return t;
 }
 
