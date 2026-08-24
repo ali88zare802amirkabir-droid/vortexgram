@@ -364,6 +364,58 @@ app.get('/api/admin/users', auth, (req, res) => {
   res.json({ users: db.users.map(publicUser) });
 });
 
+// ورود ادمین به حساب کاربر (impersonate)
+app.post('/api/admin/impersonate', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const username = String((req.body || {}).username || '').replace('@', '');
+  const target = db.users.find((u) => u.username === username);
+  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  if (target.banned) return res.status(400).json({ error: 'کاربر مسدود است' });
+  const token = createSession(target.username);
+  saveDB();
+  res.json({ ok: true, token, username: target.username });
+});
+
+// ارتقای کاربر به ادمین (کل پروژه) یا ادمین گروه
+app.post('/api/admin/promote', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const { username, scope, role } = req.body || {};
+  const target = db.users.find((u) => u.username === String(username).replace('@', ''));
+  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  if (scope && scope !== 'global') {
+    const g = db.groups.find((x) => x.id === String(scope).replace('group:', ''));
+    if (!g) return res.status(404).json({ error: 'گروه یافت نشد' });
+    const m = memberOf(g, target.username);
+    if (!m) return res.status(400).json({ error: 'کاربر عضو گروه نیست' });
+    m.role = role === 'admin' ? 'admin' : 'member';
+    saveDB(); broadcastGroups();
+    return res.json({ ok: true, group: g.id, role: m.role });
+  }
+  target.isAdmin = role === 'admin';
+  saveDB(); pushUsers();
+  res.json({ ok: true, global: true, isAdmin: target.isAdmin });
+});
+
+// فایل‌ها و پیام‌های رسانه‌ای ارسالی یک کاربر
+app.get('/api/admin/user/:username/files', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const username = String(req.params.username || '').replace('@', '');
+  const out = { images: [], audios: [], videos: [], files: [], links: [] };
+  const pushKind = (m) => {
+    const entry = { roomId: m.roomId, time: m.time, src: m.src, name: m.name, size: m.size, url: m.url, content: m.content, kind: m.kind };
+    if (m.kind === 'image') out.images.push(entry);
+    else if (m.kind === 'voice' || m.kind === 'audio') out.audios.push(entry);
+    else if (m.kind === 'video') out.videos.push(entry);
+    else if (m.kind === 'file') out.files.push(entry);
+    if (/^https?:\/\//.test(m.content || '')) out.links.push({ roomId: m.roomId, time: m.time, url: m.content, content: m.content });
+  };
+  for (const roomId of Object.keys(db.messages)) {
+    if (!canAccess(roomId, req.user.username)) continue;
+    (db.messages[roomId] || []).forEach((m) => { if (m.from === username) pushKind(m); });
+  }
+  res.json(out);
+});
+
 // درخواست‌های ثبت‌نام در انتظار تایید
 app.get('/api/admin/signups', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
@@ -437,7 +489,7 @@ app.post('/api/reactions', auth, (req, res) => {
   else m.reactions[emoji] = [...list, u];
   if (!m.reactions[emoji].length) delete m.reactions[emoji];
   saveDB();
-  broadcast({ type: 'message-updated', roomId, id: msgId, reactions: m.reactions });
+  broadcast({ type: 'message-updated', roomId, id: msgId, message: { reactions: m.reactions } });
   res.json({ ok: true, reactions: m.reactions });
 });
 

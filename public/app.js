@@ -81,6 +81,7 @@ applyAppearance();
 function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
   renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
+  showImpersonateBanner();
   if (state.me.isAdmin) {
     api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {});
     api('/api/admin/signups').then((r) => r.json()).then((d) => { const list = (d.signups || []).filter((s) => !s.status || s.status === 'pending'); state.signupCount = list.length; renderNav(); }).catch(() => {});
@@ -277,6 +278,19 @@ function pushNotification(m) {
 function scrollBottom() { const c = $('messages'); c.scrollTop = c.scrollHeight; }
 function isNearBottom() { const c = $('messages'); return !!c && (c.scrollHeight - c.scrollTop - c.clientHeight) < 90; }
 function daySep(t) { const d = new Date(t); const s = d.toLocaleDateString('fa-IR'); return s; }
+function emojiOnly(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (!t) return false;
+  const emojiRegex = /^[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]+$/u;
+  const segments = t.split(/\s+/);
+  return segments.every((s) => emojiRegex.test(s));
+}
+function emojiCount(text) {
+  if (!text || typeof text !== 'string') return 0;
+  const matches = text.match(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]+/gu);
+  return matches ? matches.length : 0;
+}
 function addMessage(m) {
   const msgs = $('messages'); const d = new Date(m.time); const ds = d.toLocaleDateString('fa-IR');
   if (ds !== state.lastDay) { state.lastDay = ds; const sep = document.createElement('div'); sep.className = 'day-sep'; sep.innerHTML = '<span>' + ds + '</span>'; msgs.appendChild(sep); }
@@ -296,6 +310,12 @@ function addMessage(m) {
   actions.querySelector('[data-a="forward"]').onclick = () => openForward(m.id);
   actions.querySelector('[data-a="more"]').onclick = (e) => openMsgMore(e, m);
   wrap.appendChild(actions);
+  if ((!m.kind || m.kind === 'text') && emojiOnly(m.content)) {
+    const cnt = emojiCount(m.content);
+    wrap.classList.add('msg-emoji-only');
+    const fs = Math.max(16, Math.min(64, 64 - cnt * 4));
+    bubble.style.fontSize = fs + 'px';
+  }
   msgs.appendChild(wrap); luc();
 }
 function replyRef(orig) { const r = document.createElement('div'); r.className = 'reply-ref'; const f = orig.from === state.me.username ? 'شما' : (roomTitle(orig.roomId || state.room)); r.innerHTML = '<span class="rr-from">' + esc(f) + '</span><span class="rr-text">' + esc(previewText(orig)) + '</span>'; return r; }
@@ -311,7 +331,37 @@ function bodyEl(m) {
   return b;
 }
 function mediaEl(m) { const d = document.createElement('div'); d.className = 'media'; const im = document.createElement('img'); im.src = m.src; im.loading = 'lazy'; im.onclick = () => openViewer(m.src, m.kind); d.appendChild(im); if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); } return d; }
-function fileEl(m) { const d = document.createElement('div'); d.className = 'file-row'; d.innerHTML = ic('file') + '<div class="file-info"><div class="file-name">' + esc(m.name || 'فایل') + '</div><div class="file-size">' + (m.size ? Math.round(m.size / 1024) + ' KB' : '') + '</div></div><a class="file-dl" href="' + m.src + '" download>' + ic('download') + '</a>'; return d; }
+function fileEl(m) {
+  const d = document.createElement('div'); d.className = 'file-row';
+  d.innerHTML = ic('file') + '<div class="file-info"><div class="file-name">' + esc(m.name || 'فایل') + '</div><div class="file-size">' + (m.size ? Math.round(m.size / 1024) + ' KB' : '') + '</div></div><button class="file-dl">' + ic('download') + '</button><div class="progress-bar hidden"><div class="progress-fill"></div></div>';
+  const btn = d.querySelector('.file-dl');
+  btn.onclick = async () => {
+    const bar = d.querySelector('.progress-bar'); const fill = d.querySelector('.progress-fill');
+    bar.classList.remove('hidden'); fill.style.width = '0%';
+    try {
+      const res = await fetch(m.src);
+      if (!res.ok) throw new Error('Download failed');
+      const total = Number(res.headers.get('Content-Length')) || 0;
+      const reader = res.body.getReader();
+      const chunks = []; let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); received += value.length;
+        if (total) fill.style.width = Math.round((received / total) * 100) + '%';
+      }
+      const blob = new Blob(chunks);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = m.name || 'file'; a.click();
+      URL.revokeObjectURL(url);
+      setTimeout(() => { bar.classList.add('hidden'); fill.style.width = '0%'; }, 1000);
+    } catch (e) {
+      toast('خطا در دانلود: ' + e.message);
+      bar.classList.add('hidden'); fill.style.width = '0%';
+    }
+  };
+  return d;
+}
 function voiceEl(m) { const d = document.createElement('div'); d.className = 'voice-row'; const dur = m.duration ? '<span class="voice-dur">' + Math.round(m.duration) + '″</span>' : ''; d.innerHTML = '<button class="voice-play" onclick="this.nextElementSibling.play()">' + ic('play') + '</button><audio src="' + m.src + '" preload="none"></audio>' + dur; return d; }
 function pollEl(m) {
   const d = document.createElement('div'); d.className = 'poll'; const opts = m.poll.options; const total = m.poll.votes ? Object.values(m.poll.votes).reduce((a, x) => a + x.length, 0) : 0;
@@ -339,33 +389,62 @@ $('composer-input').addEventListener('input', () => { if (state.ws && state.ws.r
 $('composer-emoji').onclick = () => { $('emoji-pop').classList.toggle('hidden'); if (!$('emoji-pop').dataset.filled) { EMOJI.slice(0, 64).forEach((e) => { const s = document.createElement('span'); s.textContent = e; s.onclick = () => { $('composer-input').value += e; $('emoji-pop').classList.add('hidden'); }; $('emoji-pop').appendChild(s); }); $('emoji-pop').dataset.filled = '1'; } };
 $('composer-attach').onclick = () => $('file-input').click();
 $('file-input').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FormData(); rd.append('file', f); const bar = $('upload-bar'); bar.classList.remove('hidden'); const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); xhr.onload = () => { bar.classList.add('hidden'); const d = JSON.parse(xhr.responseText); const isImg = f.type.startsWith('image/'); const isVid = f.type.startsWith('video/'); doSend({ kind: isImg ? 'image' : isVid ? 'video' : f.type.startsWith('audio/') ? 'voice' : 'file', src: d.url, name: f.name, size: f.size, content: '' }); }; xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.send(rd); };
-let recorder = null, recChunks = [], recStart = 0, recTimer = null;
-$('composer-mic').onclick = async () => {
-  if (recorder) { recorder.stop(); return; }
+let recorder = null, recChunks = [], recStart = 0, recStream = null, recAnalyser = null, recTimer = null, recBlob = null, recDur = 0;
+function recUI() { let el = $('rec-ui'); if (!el) { el = document.createElement('div'); el.id = 'rec-ui'; el.className = 'rec-ui hidden'; document.body.appendChild(el); } return el; }
+function recMeter(amp) { const f = $('rec-fill'); if (f) f.style.width = Math.max(4, Math.round(amp * 100)) + '%'; }
+function recTime() { const t = $('rec-time'); if (t) t.textContent = Math.floor((Date.now() - recStart) / 1000) + 's'; }
+function showRecRecording() {
+  const el = recUI(); el.className = 'rec-ui'; el.innerHTML = '<div class="rec-card rec-mode"><div class="rec-dot"></div><div class="rec-state">در حال ضبط — رها کنید تا ارسال شود</div><div class="rec-meter"><div class="rec-meter-fill" id="rec-fill"></div></div><div class="rec-time" id="rec-time">0s</div></div>';
+  recTime();
+}
+function showRecPreview(blob, dur) {
+  const url = URL.createObjectURL(blob); const el = recUI(); el.className = 'rec-ui';
+  el.innerHTML = '<div class="rec-card rec-prev"><div class="rec-prev-title">پیش‌نمایش ویس (' + Math.round(dur) + 's)</div><audio id="rec-audio" controls src="' + url + '"></audio><div class="rec-acts"><button class="btn ghost" id="rec-cancel">حذف</button><button class="btn primary" id="rec-send">' + ic('send') + ' ارسال</button></div></div>';
+  el.querySelector('#rec-cancel').onclick = () => { el.classList.add('hidden'); recBlob = null; };
+  el.querySelector('#rec-send').onclick = () => sendVoice(blob, dur);
+}
+async function sendVoice(blob, dur) {
+  const el = recUI(); el.classList.add('hidden');
+  if (!blob || !blob.size) { toast('ضبط خالی بود'); return; }
+  const fd = new FormData(); fd.append('file', blob, 'voice.' + (blob.type.includes('ogg') ? 'ogg' : 'webm'));
+  const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%';
+  const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
+  xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; };
+  xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); doSend({ kind: 'voice', src: d.url, duration: dur, content: '' }); toast('ویس ارسال شد'); } catch (e) { toast('خطا در ارسال پیام صوتی'); } };
+  xhr.send(fd);
+}
+function onRecStop() {
+  if (recTimer) { clearTimeout(recTimer); recTimer = null; }
+  if (recAnalyser) { try { recAnalyser.disconnect(); } catch (e) {} recAnalyser = null; }
+  if (recStream) recStream.getTracks().forEach((t) => t.stop());
+  const blob = new Blob(recChunks, { type: (recorder && recorder.mimeType) || 'audio/webm' });
+  const dur = (Date.now() - recStart) / 1000;
+  recorder = null; recStream = null; $('composer-mic').classList.remove('recording');
+  if (!blob.size) { recUI().classList.add('hidden'); return; }
+  recBlob = blob; recDur = dur; showRecPreview(blob, dur);
+}
+async function startRecording() {
+  if (recorder) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('مرورگر شما ضبط صدا را پشتیبانی نمی‌کند'); return; }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    recorder = new MediaRecorder(stream); recChunks = [];
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recChunks = []; recorder = new MediaRecorder(recStream);
     recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
-    recorder.onstop = async () => {
-      if (recTimer) { clearInterval(recTimer); recTimer = null; }
-      stream.getTracks().forEach((t) => t.stop());
-      const blob = new Blob(recChunks, { type: recorder.mimeType || 'audio/webm' });
-      const dur = (Date.now() - recStart) / 1000;
-      recorder = null; $('composer-mic').classList.remove('recording'); $('composer-mic').innerHTML = ic('mic');
-      if (!blob.size) { toast('ضبط خالی بود'); return; }
-      const fd = new FormData(); fd.append('file', blob, 'voice.' + (blob.type.includes('ogg') ? 'ogg' : 'webm'));
-      const bar = $('upload-bar'); bar.classList.remove('hidden');
-      const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
-      xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); doSend({ kind: 'voice', src: d.url, duration: dur, content: '' }); toast('ویس ارسال شد'); } catch (e) { toast('خطا در ارسال پیام صوتی'); } };
-      xhr.send(fd);
-    };
-    recorder.start(); recStart = Date.now(); $('composer-mic').classList.add('recording'); $('composer-mic').innerHTML = ic('square');
-    let sec = 0; const badge = $('rec-badge'); if (badge) badge.classList.remove('hidden');
-    recTimer = setInterval(() => { sec++; const b = $('rec-badge'); if (b) b.textContent = 'ضبط ' + sec + 's — برای ارسال دوباره بزنید'; }, 1000);
-    toast('در حال ضبط — برای ارسال دوباره بزنید');
+    recorder.onstop = onRecStop;
+    recorder.start(); recStart = Date.now(); $('composer-mic').classList.add('recording');
+    showRecRecording();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      const ac = new AC(); const srcNode = ac.createMediaStreamSource(recStream); recAnalyser = ac.createAnalyser(); recAnalyser.fftSize = 256;
+      srcNode.connect(recAnalyser); const data = new Uint8Array(recAnalyser.frequencyBinCount);
+      const tick = () => { if (!recAnalyser) return; recAnalyser.getByteTimeDomainData(data); let mn = 1, mx = -1; for (const v of data) { const x = v / 128 - 1; if (x < mn) mn = x; if (x > mx) mx = x; } const amp = Math.min(1, (mx - mn) / 2 * 3.2); recMeter(amp); recTime(); recTimer = setTimeout(tick, 200); };
+      tick();
+    }
   } catch (e) { toast('دسترسی به میکروفون داده نشد — در تنظیمات مرورگر مجوز بده'); }
-};
+}
+$('composer-mic').addEventListener('pointerdown', (e) => { if (e.button !== 0) return; e.preventDefault(); startRecording(); });
+window.addEventListener('pointerup', () => { if (recorder) recorder.stop(); });
+
 $('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png' }; doSend(m); };
 function setReply(m) { state.replyTo = m; if (m) $('reply-bar').innerHTML = '<div class="rb-text">پاسخ به: ' + esc(previewText(m)) + '</div><div class="rb-x" onclick="setReply(null)">' + ic('x') + '</div>'; $('reply-bar').classList.toggle('hidden', !m); luc(); }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
@@ -373,7 +452,7 @@ function openReactionPicker(bubble, id) { const pop = document.createElement('di
 async function toggleReaction(id, em, rid) { const d = await (await api('/api/reactions', { method: 'POST', body: JSON.stringify({ messageId: id, emoji: em, roomId: rid }) })).json(); if (state.ws) state.ws.send(JSON.stringify({ type: 'message-reacted', messageId: id, roomId: rid })); }
 function votePoll(id, opt, rid) { if (state.ws) state.ws.send(JSON.stringify({ type: 'vote', messageId: id, option: opt, roomId: rid })); }
 function toggleCheck(id, itemId, done, rid) { if (state.ws) state.ws.send(JSON.stringify({ type: 'checklist-toggle', messageId: id, itemId: itemId, done: done, roomId: rid })); }
-function updateMessage(d) { const el = document.querySelector('[data-id="' + d.id + '"]'); if (!el) return; if (d.message && d.message.reactions) { const old = el.querySelector('.reactions'); if (old) old.replaceWith(reactionsEl(d.message)); } if (d.message && d.message.poll) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(pollEl(d.message)); } if (d.message && d.message.checklist) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(checklistEl(d.message)); } luc(); }
+function updateMessage(d) { const el = document.querySelector('[data-id="' + d.id + '"]'); if (!el) return; if (d.message && d.message.reactions) { const old = el.querySelector('.reactions'); const r = reactionsEl(d.message); if (old) old.replaceWith(r); else { const body = el.querySelector('.msg-body'); if (body) body.appendChild(r); } } if (d.message && d.message.poll) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(pollEl(d.message)); } if (d.message && d.message.checklist) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(checklistEl(d.message)); } luc(); }
 function showTyping(d) { const sub = $('conv-sub'); if (d.roomId === state.room) sub.textContent = d.on ? (d.username === BOT_USERNAME ? 'در حال نوشتن…' : 'کاربر در حال نوشتن…') : roomOnline(state.room); }
 function markRead(rid) { if (!rid) return; if (!state.readState[rid]) state.readState[rid] = {}; state.readState[rid][state.me.username] = Date.now(); if (state.rooms[rid]) state.rooms[rid].unread = 0; if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'read', roomId: rid })); }
 
@@ -595,6 +674,8 @@ function renderProfile(username) {
   if (state.me.isAdmin && !u.isAdmin) {
     h += '<button class="btn" data-act="rename">تغییر نام</button>';
     h += '<button class="btn" data-act="premium">' + (u.isPremium ? 'حذف پرمیوم' : 'پرمیوم‌سازی') + '</button>';
+    h += '<button class="btn" data-act="impersonate">ورود به حساب کاربر</button>';
+    h += '<button class="btn" data-act="promote">ارتقا به ادمین</button>';
     h += '<button class="btn danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدودسازی') + '</button>';
   }
   h += '</div></div>';
@@ -604,7 +685,39 @@ function renderProfile(username) {
   const rn = viewHost.querySelector('[data-act="rename"]'); if (rn) rn.onclick = () => renameUser(username, u.displayName, () => renderProfile(username));
   const pr = viewHost.querySelector('[data-act="premium"]'); if (pr) pr.onclick = async () => { await api('/api/admin/premium', { method: 'POST', body: JSON.stringify({ username, isPremium: !u.isPremium }) }); toast('انجام شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
   const bn = viewHost.querySelector('[data-act="ban"]'); if (bn) bn.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username, banned: !u.banned }) }); toast('انجام شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
+  const imp = viewHost.querySelector('[data-act="impersonate"]'); if (imp) imp.onclick = () => enterAsUser(username);
+  const pm = viewHost.querySelector('[data-act="promote"]'); if (pm) pm.onclick = async () => { await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'admin' }) }); toast('کاربر به ادمین ارتقا یافت'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
+  if (state.me.isAdmin) {
+    const sec = document.createElement('div'); sec.className = 'profile-files';
+    sec.innerHTML = '<h3>' + ic('paperclip') + ' فایل‌های ارسالی</h3><div class="pf-body ph-loading">در حال بارگذاری…</div>';
+    viewHost.querySelector('.profile-view').appendChild(sec);
+    api('/api/admin/user/' + encodeURIComponent(username) + '/files').then((r) => r.json()).then((d) => {
+      const imgs = d.images || [], auds = d.audios || [], vids = d.videos || [], fils = d.files || [], links = d.links || [];
+      const total = imgs.length + auds.length + vids.length + fils.length + links.length;
+      if (!total) { sec.querySelector('.pf-body').innerHTML = '<div class="placeholder">فایلی ارسال نشده است.</div>'; return; }
+      let h = '';
+      if (imgs.length) { h += '<div class="pf-group"><b>تصاویر (' + imgs.length + ')</b><div class="pf-grid">' + imgs.map((m) => '<a class="pf-thumb" href="' + m.src + '" target="_blank"><img src="' + m.src + '" loading="lazy"></a>').join('') + '</div></div>'; }
+      if (vids.length) { h += '<div class="pf-group"><b>ویدیو (' + vids.length + ')</b><div class="pf-grid">' + vids.map((m) => '<a class="pf-thumb" href="' + m.src + '" target="_blank">' + ic('video') + '</a>').join('') + '</div></div>'; }
+      if (auds.length) { h += '<div class="pf-group"><b>صدا (' + auds.length + ')</b>' + auds.map((m) => '<div class="pf-audio"><button onclick="this.nextElementSibling.play()">' + ic('play') + '</button><audio src="' + m.src + '" preload="none"></audio><span>' + (m.name || 'ویس') + '</span></div>').join('') + '</div>'; }
+      if (fils.length) { h += '<div class="pf-group"><b>فایل‌ها (' + fils.length + ')</b>' + fils.map((m) => '<div class="pf-file"><a href="' + m.src + '" download>' + ic('file') + (m.name || 'فایل') + '</a></div>').join('') + '</div>'; }
+      if (links.length) { h += '<div class="pf-group"><b>لینک‌ها (' + links.length + ')</b>' + links.map((m) => '<div class="pf-link"><a href="' + m.url + '" target="_blank">' + ic('link') + esc(m.url.slice(0, 60)) + '</a></div>').join('') + '</div>'; }
+      sec.querySelector('.pf-body').innerHTML = h;
+    }).catch(() => { sec.querySelector('.pf-body').innerHTML = '<div class="placeholder">خطا در بارگذاری.</div>'; });
+  }
   luc();
+}
+function enterAsUser(username) {
+  if (!confirm('وارد حساب @' + username + ' می‌شوید؟ پس از ورود می‌توانید با دکمه بازگشت به پنل ادمین برگردید.')) return;
+  localStorage.setItem('ft_admin_token', state.token);
+  api('/api/admin/impersonate', { method: 'POST', body: JSON.stringify({ username }) }).then((r) => r.json()).then((d) => { if (d.token) { localStorage.setItem('ft_token', d.token); location.reload(); } else toast(d.error || 'خطا'); });
+}
+function showImpersonateBanner() {
+  if (!localStorage.getItem('ft_admin_token')) return;
+  const me = (state.me && state.me.username) || '';
+  let b = $('imp-banner');
+  if (!b) { b = document.createElement('div'); b.id = 'imp-banner'; b.className = 'imp-banner'; document.body.appendChild(b); }
+  b.innerHTML = 'شما به عنوان @' + esc(me) + ' وارد شده‌اید <button id="imp-back">بازگشت به پنل ادمین</button>';
+  b.querySelector('#imp-back').onclick = () => { const t = localStorage.getItem('ft_admin_token'); if (t) { localStorage.setItem('ft_token', t); localStorage.removeItem('ft_admin_token'); location.reload(); } };
 }
 async function startGroup(isChannel) { const name = prompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':'); if (!name) return; const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json(); state.groups.push(d.group); if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups })); openRoom('group:' + d.group.id); }
 
@@ -633,18 +746,21 @@ function renderView(id) {
     wrap.querySelectorAll('.ai-actions button').forEach((b) => b.onclick = async () => { const a = b.dataset.a; if (a === 'summarize' && !state.room) return toast('اول یک چت باز کن'); if (a === 'reply' && !state.room) return toast('اول یک چت باز کن'); const act = a === 'summarize' ? 'summarize' : a === 'reply' ? 'reply' : a === 'translate' ? 'translate' : 'rewrite'; const d = await (await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: act, roomId: state.room, text: $('ai-input').value }) })).json(); appendAIMsg('bot', d.reply || d.error || ''); });
   } else if (id === 'contacts') { renderContacts(wrap); }
   else if (id === 'settings') {
-    wrap.innerHTML = settingsHTML();
-    wrap.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); });
-    wrap.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); });
-    $('set-font-dec').onclick = () => setFont(-1); $('set-font-inc').onclick = () => setFont(1);
-    $('set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
-    const bg = $('set-bg'); if (bg) bg.oninput = (e) => { localStorage.setItem('vx_bg', e.target.value); applyBackground(); };
-    const bgi = $('set-bgimg'); if (bgi) bgi.onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { localStorage.setItem('vx_bgimg', rd.result); applyBackground(); toast('تصویر پس‌زمینه تنظیم شد'); }; rd.readAsDataURL(f); };
-    const bgr = $('set-bg-reset'); if (bgr) bgr.onclick = () => { localStorage.removeItem('vx_bgimg'); applyBackground(); toast('تصویر حذف شد'); };
-    ['vx_online', 'vx_lastseen', 'vx_showphone', 'vx_acceptall'].forEach((k) => { const el = $('priv-' + k); if (el) el.onchange = (e) => { localStorage.setItem(k, e.target.checked ? '1' : '0'); toast('تنظیمات حریم خصوصی ذخیره شد'); }; });
-    const nb = $('set-notif'); if (nb) nb.onclick = async () => { if (!('Notification' in window)) { toast('مرورگر پشتیبانی نمی‌کند'); return; } const p = await Notification.requestPermission(); localStorage.setItem('vx_notify', p === 'granted' ? '1' : '0'); nb.textContent = p === 'granted' ? 'روشن' : 'خاموش'; toast(p === 'granted' ? 'اعلان روشن شد' : 'اعلان خاموش شد'); };
-    if (state.me.isAdmin) { const adm = document.createElement('div'); adm.className = 'settings-sec'; adm.innerHTML = '<h3>' + ic('shield') + ' پنل ادمین</h3><div class="admin-tools"></div>'; wrap.appendChild(adm); const at = adm.querySelector('.admin-tools');
-      const users = state.users; users.forEach((u) => { const r = document.createElement('div'); r.className = 'admin-user'; r.innerHTML = avatarEl(u, 'xs').outerHTML + '<span>' + esc(u.displayName || u.username) + ' @' + esc(u.username) + '</span>' + (u.banned ? '<span class="ban-tag">مسدود</span>' : ''); const ban = document.createElement('button'); ban.textContent = u.banned ? 'رفع مسدودی' : 'مسدود'; ban.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u.username, banned: !u.banned }) }); u.banned = !u.banned; renderView('settings'); toast('انجام شد'); }; r.appendChild(ban); at.appendChild(r); }); }
+    const cat = state.settingsCat || 'main';
+    const backBtn = wrap.querySelector ? null : null;
+    const h = document.createElement('div'); h.className = 'view-head';
+    if (cat !== 'main') {
+      h.innerHTML = '<button class="icon-btn view-back" id="view-back">' + ic('chevron-right') + '</button>' + ic('settings') + '<h2>تنظیمات</h2>';
+      wrap.innerHTML = ''; wrap.appendChild(h);
+      renderSettingsSub(cat, wrap);
+      h.querySelector('#view-back').onclick = () => { state.settingsCat = 'main'; renderView('settings'); };
+    } else {
+      h.innerHTML = '<button class="icon-btn view-back" id="view-back">' + ic('chevron-right') + '</button>' + ic('settings') + '<h2>تنظیمات</h2>';
+      wrap.innerHTML = ''; wrap.appendChild(h);
+      renderSettingsMain(wrap);
+      h.querySelector('#view-back').onclick = () => switchNav('chats');
+    }
+    luc();
   } else if (id === 'communities') { wrap.innerHTML = groupsHTML('group'); }
   else if (id === 'channels') { wrap.innerHTML = groupsHTML('channel'); }
   else if (id === 'cloud') { wrap.innerHTML = '<div class="placeholder">☁️ حافظه ابری — فایل‌های شما اینجا نمایش داده می‌شوند. (نمونه)</div>'; }
@@ -693,30 +809,114 @@ function renderCalendar(wrap) {
   wrap.innerHTML = h; luc();
 }
 function applyBackground() { document.documentElement.style.setProperty('--chat-bg', localStorage.getItem('vx_bg') || ''); if (localStorage.getItem('vx_bgimg')) document.documentElement.style.setProperty('--chat-bg-img', "url('" + localStorage.getItem('vx_bgimg') + "')"); else document.documentElement.style.setProperty('--chat-bg-img', 'none'); }
-function settingsHTML() {
-  const accents = ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red']; const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light'];
-  let t = '<div class="settings-sec"><h3>' + ic('palette') + ' ظاهر</h3><div class="settings-row"><span>تم</span><div class="chip-row">' + themes.map((x) => '<button class="chip" data-theme-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
-  t += '<div class="settings-row"><span>رنگ</span><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
-  t += '<div class="settings-row"><span>اندازه فونت</span><div class="stepper"><button id="set-font-dec">−</button><span>' + (state.fontScale) + '</span><button id="set-font-inc">+</button></div></div>';
-  t += '<div class="settings-row"><span>گردی گوشه‌ها</span><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '"></div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('image') + ' پس‌زمینه چت</h3><div class="settings-row"><span>رنگ پس‌زمینه</span><input type="color" id="set-bg" value="' + (localStorage.getItem('vx_bg') || '#0a0a14') + '"></div>';
-  t += '<div class="settings-row"><span>تصویر پس‌زمینه</span><input type="file" id="set-bgimg" accept="image/*"></div>';
-  t += '<div class="settings-row"><button class="btn sm ghost" id="set-bg-reset">حذف تصویر</button></div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('user') + ' حساب</h3>';
+const SETCATS = {
+  appearance: { title: ic('palette') + ' ظاهر', icon: 'palette' },
+  background: { title: ic('image') + ' پس‌زمینه چت', icon: 'image' },
+  account: { title: ic('user') + ' حساب', icon: 'user' },
+  notifications: { title: ic('bell') + ' اعلان‌ها', icon: 'bell' },
+  privacy: { title: ic('lock') + ' حریم خصوصی', icon: 'lock' },
+  skins: { title: ic('paintbrush') + ' اسکین‌ها و تم‌ها', icon: 'paintbrush' },
+  logout: { title: ic('log-out') + ' خروج', icon: 'log-out' }
+};
+function renderSettingsMain(wrap) {
+  const body = document.createElement('div'); body.className = 'view-body settings-main';
+  body.innerHTML = Object.entries(SETCATS).map(([k,v]) => '<div class="set-cat" data-cat="'+k+'">'+ic(v.icon)+'<span>'+v.title+'</span></div>').join('');
+  wrap.appendChild(body);
+  body.querySelectorAll('.set-cat').forEach((c) => {
+    c.onclick = () => { state.settingsCat = c.dataset.cat; renderView('settings'); };
+  });
+}
+function renderSettingsSub(cat, wrap) {
+  const body = document.createElement('div'); body.className = 'view-body settings-sub';
+  if (cat === 'appearance') renderAppSub(body);
+  else if (cat === 'background') renderBgSub(body);
+  else if (cat === 'account') renderAccSub(body);
+  else if (cat === 'notifications') renderNotifSub(body);
+  else if (cat === 'privacy') renderPrivSub(body);
+  else if (cat === 'skins') renderSkinsSub(body);
+  else if (cat === 'logout') logout();
+  wrap.appendChild(body);
+}
+function renderAppSub(body) {
+  const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light'];
+  const accents = ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red'];
+  let t = '<div class="settings-sec"><h3>' + ic('palette') + ' تم</h3><div class="chip-row">' + themes.map((x) => '<button class="chip" data-theme-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ آکセント</h3><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('type') + ' اندازه فونت</h3><div class="stepper"><button id="set-font-dec">−</button><span id="fs-val">' + (state.fontScale) + '</span><button id="set-font-inc">+</button></div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '">';
+  body.innerHTML = t;
+  body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); });
+  body.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); });
+  body.querySelector('#set-font-dec').onclick = () => setFont(-1);
+  body.querySelector('#set-font-inc').onclick = () => setFont(1);
+  body.querySelector('#set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
+}
+function renderBgSub(body) {
+  let t = '<div class="settings-sec"><h3>' + ic('palette') + ' رنگ پس‌زمینه</h3><input type="color" id="set-bg" value="' + (localStorage.getItem('vx_bg') || '#0a0a14') + '"></div>';
+  t += '<div class="settings-sec"><h3>' + ic('image') + ' تصویر پس‌زمینه</h3><input type="file" id="set-bgimg" accept="image/*">';
+  t += '<button class="btn sm ghost" id="set-bg-reset">حذف تصویر</button></div>';
+  body.innerHTML = t;
+  const bg = body.querySelector('#set-bg'); if (bg) bg.oninput = (e) => { localStorage.setItem('vx_bg', e.target.value); applyBackground(); };
+  const bgi = body.querySelector('#set-bgimg'); if (bgi) bgi.onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { localStorage.setItem('vx_bgimg', rd.result); applyBackground(); toast('تصویر پس‌زمینه تنظیم شد'); }; rd.readAsDataURL(f); };
+  const bgr = body.querySelector('#set-bg-reset'); if (bgr) bgr.onclick = () => { localStorage.removeItem('vx_bgimg'); applyBackground(); toast('تصویر حذف شد'); };
+}
+function renderAccSub(body) {
+  let t = '<div class="settings-sec"><h3>' + ic('user') + ' اطلاعات حساب</h3>';
   t += '<div class="settings-row"><span>نام نمایشی</span><b>' + esc(state.me.displayName) + '</b><button class="btn sm" onclick="promptRename()">تغییر</button></div>';
   t += '<div class="settings-row"><span>نام کاربری</span><b>@' + esc(state.me.username) + '</b></div>';
   t += '<div class="settings-row"><span>شماره</span><b>' + esc(state.me.phone || '—') + '</b></div>';
   t += '<div class="settings-row"><span>وضعیت</span><b>' + (state.me.isPremium ? 'پریمیوم' : 'رایگان') + (state.me.isAdmin ? ' • ادمین' : '') + '</b></div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان‌ها</h3><div class="settings-row"><span>اعلان مرورگر</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('lock') + ' حریم خصوصی</h3>';
-  const ptoggle = (key, label) => '<div class="settings-row"><span>' + label + '</span><label class="switch"><input type="checkbox" id="priv-' + key + '" type="checkbox" ' + (localStorage.getItem(key) !== '0' ? 'checked' : '') + '><span class="slider"></span></label></div>';
+  body.innerHTML = t;
+}
+function renderNotifSub(body) {
+  let t = '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان‌ها</h3><div class="settings-row"><span>اعلان مرورگر</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
+  body.innerHTML = t;
+  const nb = body.querySelector('#set-notif'); if (nb) nb.onclick = async () => { if (!('Notification' in window)) { toast('مرورگر پشتیبانی نمی‌کند'); return; } const p = await Notification.requestPermission(); localStorage.setItem('vx_notify', p === 'granted' ? '1' : '0'); nb.textContent = p === 'granted' ? 'روشن' : 'خاموش'; toast(p === 'granted' ? 'اعلان روشن شد' : 'اعلان خاموش شد'); };
+}
+function renderPrivSub(body) {
+  const ptoggle = (key, label) => '<div class="settings-row"><span>' + label + '</span><label class="switch"><input type="checkbox" id="priv-' + key + '" ' + (localStorage.getItem(key) !== '0' ? 'checked' : '') + '><span class="slider"></span></label></div>';
+  let t = '<div class="settings-sec"><h3>' + ic('lock') + ' حریم خصوصی</h3>';
   t += ptoggle('vx_online', 'نمایش وضعیت آنلاین');
   t += ptoggle('vx_lastseen', 'نمایش آخرین بازدید');
   t += ptoggle('vx_showphone', 'نمایش شماره به دیگران');
   t += ptoggle('vx_acceptall', 'پذیرش پیام از همه');
   t += '</div>';
-  t += '<div class="settings-sec"><h3>' + ic('log-out') + ' خروج</h3><button class="btn danger" onclick="logout()">' + ic('log-out') + ' خروج از حساب</button></div>';
-  return t;
+  body.innerHTML = t;
+  ['vx_online', 'vx_lastseen', 'vx_showphone', 'vx_acceptall'].forEach((k) => { const el = body.querySelector('#priv-' + k); if (el) el.onchange = (e) => { localStorage.setItem(k, e.target.checked ? '1' : '0'); toast('تنظیمات حریم خصوصی ذخیره شد'); }; });
+}
+const SKINS = [
+  { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'cyber', accent: 'blue', desc: 'تم پیش‌فرض ورتیکس' },
+  { id: 'dark-rose', name: 'میدنايت رز', price: 50000, theme: 'midnight-rose', accent: 'pink', desc: 'تم تاریک با آکセント صورتی' },
+  { id: 'matrix', name: 'متریکس', price: 120000, theme: 'matrix', accent: 'green', desc: 'سبزهای کلاسیک متریکس' },
+  { id: 'synth', name: 'سنتویو', price: 250000, theme: 'synthwave', accent: 'purple', desc: 'نئونی رنگارنگ ۸۰‌ها' },
+  { id: 'sunset', name: 'سنست', price: 400000, theme: 'sunset', accent: 'orange', desc: 'گرماهای غروب آفتاب' },
+  { id: 'forest', name: 'جنگل', price: 600000, theme: 'forest', accent: 'green', desc: 'سبزهای طبیعی و آرام‌بخش' },
+  { id: 'light', name: 'نور', price: 800000, theme: 'light', accent: 'blue', desc: 'تم روشن و مینیمال' },
+  { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', desc: 'فاخرترین تم — طلایی و سیاهی' }
+];
+function renderSkinsSub(body) {
+  if (!state.me.isPremium) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }
+  const owned = JSON.parse(localStorage.getItem('vx_owned_skins') || '["default"]');
+  let t = '<div class="settings-sec"><h3>' + ic('paintbrush') + ' فروشگاه اسکین</h3><div class="skins-grid">';
+  SKINS.forEach((s) => {
+    const isOwned = owned.includes(s.id);
+    const isActive = localStorage.getItem('vx_theme') === s.theme && localStorage.getItem('vx_accent') === s.accent;
+    t += '<div class="skin-card' + (isActive ? ' active' : '') + (isOwned ? ' owned' : '') + '" data-id="'+s.id+'">';
+    t += '<div class="skin-preview" style="background:var(--'+s.theme+'-bg, #111);border:2px solid var(--'+s.accent+', #888)"></div>';
+    t += '<div class="skin-info"><b>'+esc(s.name)+'</b><span>'+esc(s.desc)+'</span>';
+    if (s.price > 0) t += '<span class="skin-price">' + s.price.toLocaleString('fa-IR') + ' تومان</span>';
+    else t += '<span class="skin-price free">رایگان</span>';
+    t += '</div>';
+    t += '<button class="btn sm skin-act" data-id="'+s.id+'">' + (isOwned ? (isActive ? 'فعال' : 'اعمال') : 'خرید') + '</button>';
+    t += '</div>';
+  });
+  t += '</div></div>';
+  body.innerHTML = t;
+  body.querySelectorAll('.skin-act').forEach((b) => {
+    b.onclick = () => { const s = SKINS.find((x) => x.id === b.dataset.id); if (!s) return; const owned = JSON.parse(localStorage.getItem('vx_owned_skins') || '["default"]');
+      if (!owned.includes(s.id)) { if (confirm(s.name + ' به قیمت ' + s.price.toLocaleString('fa-IR') + ' تومان خریداری شود؟')) { owned.push(s.id); localStorage.setItem('vx_owned_skins', JSON.stringify(owned)); toast(s.name + ' خریداری شد'); } else return; }
+      localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance(); toast(s.name + ' اعمال شد'); renderSettingsSub('skins', body.parentElement); };
+  });
 }
 
 /* INIT */
