@@ -70,7 +70,9 @@ function applyAppearance() {
   const th = localStorage.getItem('vx_theme') || 'cyber';
   if (th === 'cyber' || !th) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', th);
   document.documentElement.setAttribute('data-accent', localStorage.getItem('vx_accent') || 'blue');
-  document.documentElement.style.fontSize = (state.fontScale || 14) + 'px';
+  const fs = state.fontScale || 14;
+  document.documentElement.style.fontSize = fs + 'px';
+  document.documentElement.style.zoom = String(Math.max(0.8, Math.min(1.6, fs / 14)));
   applyBackground();
 }
 applyAppearance();
@@ -337,27 +339,32 @@ $('composer-input').addEventListener('input', () => { if (state.ws && state.ws.r
 $('composer-emoji').onclick = () => { $('emoji-pop').classList.toggle('hidden'); if (!$('emoji-pop').dataset.filled) { EMOJI.slice(0, 64).forEach((e) => { const s = document.createElement('span'); s.textContent = e; s.onclick = () => { $('composer-input').value += e; $('emoji-pop').classList.add('hidden'); }; $('emoji-pop').appendChild(s); }); $('emoji-pop').dataset.filled = '1'; } };
 $('composer-attach').onclick = () => $('file-input').click();
 $('file-input').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FormData(); rd.append('file', f); const bar = $('upload-bar'); bar.classList.remove('hidden'); const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); xhr.onload = () => { bar.classList.add('hidden'); const d = JSON.parse(xhr.responseText); const isImg = f.type.startsWith('image/'); const isVid = f.type.startsWith('video/'); doSend({ kind: isImg ? 'image' : isVid ? 'video' : f.type.startsWith('audio/') ? 'voice' : 'file', src: d.url, name: f.name, size: f.size, content: '' }); }; xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.send(rd); };
-let recorder = null, recChunks = [], recStart = 0;
+let recorder = null, recChunks = [], recStart = 0, recTimer = null;
 $('composer-mic').onclick = async () => {
   if (recorder) { recorder.stop(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('مرورگر شما ضبط صدا را پشتیبانی نمی‌کند'); return; }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recorder = new MediaRecorder(stream); recChunks = [];
     recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
     recorder.onstop = async () => {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
       stream.getTracks().forEach((t) => t.stop());
       const blob = new Blob(recChunks, { type: recorder.mimeType || 'audio/webm' });
       const dur = (Date.now() - recStart) / 1000;
+      recorder = null; $('composer-mic').classList.remove('recording'); $('composer-mic').innerHTML = ic('mic');
+      if (!blob.size) { toast('ضبط خالی بود'); return; }
       const fd = new FormData(); fd.append('file', blob, 'voice.' + (blob.type.includes('ogg') ? 'ogg' : 'webm'));
       const bar = $('upload-bar'); bar.classList.remove('hidden');
       const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
-      xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); doSend({ kind: 'voice', src: d.url, duration: dur, content: '' }); } catch (e) { toast('خطا در ارسال پیام صوتی'); } };
+      xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); doSend({ kind: 'voice', src: d.url, duration: dur, content: '' }); toast('ویس ارسال شد'); } catch (e) { toast('خطا در ارسال پیام صوتی'); } };
       xhr.send(fd);
-      recorder = null; $('composer-mic').classList.remove('recording');
     };
-    recorder.start(); recStart = Date.now(); $('composer-mic').classList.add('recording');
-    toast('در حال ضبط — برای توقف دوباره بزنید');
-  } catch (e) { toast('دسترسی به میکروفون ممکن نشد'); }
+    recorder.start(); recStart = Date.now(); $('composer-mic').classList.add('recording'); $('composer-mic').innerHTML = ic('square');
+    let sec = 0; const badge = $('rec-badge'); if (badge) badge.classList.remove('hidden');
+    recTimer = setInterval(() => { sec++; const b = $('rec-badge'); if (b) b.textContent = 'ضبط ' + sec + 's — برای ارسال دوباره بزنید'; }, 1000);
+    toast('در حال ضبط — برای ارسال دوباره بزنید');
+  } catch (e) { toast('دسترسی به میکروفون داده نشد — در تنظیمات مرورگر مجوز بده'); }
 };
 $('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png' }; doSend(m); };
 function setReply(m) { state.replyTo = m; if (m) $('reply-bar').innerHTML = '<div class="rb-text">پاسخ به: ' + esc(previewText(m)) + '</div><div class="rb-x" onclick="setReply(null)">' + ic('x') + '</div>'; $('reply-bar').classList.toggle('hidden', !m); luc(); }

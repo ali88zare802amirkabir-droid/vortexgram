@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>VORTEX Messenger</title>
-  <link rel="stylesheet" href="style.css?v=43" />
+  <link rel="stylesheet" href="style.css?v=48" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -87,6 +87,7 @@
           </div>
           <textarea id="composer-input" placeholder="پیام بنویس..." rows="1"></textarea>
           <button class="send-btn" id="composer-send"><i data-lucide="send" class="icon"></i></button>
+          <span id="rec-badge" class="rec-badge hidden"></span>
           <div id="emoji-pop" class="hidden"></div>
         </div>
         <div id="upload-bar" class="hidden" style="height:4px;background:var(--surface)"><div id="upload-fill" style="height:100%;width:0;background:var(--accent)"></div></div>
@@ -100,6 +101,6 @@
   <div id="scrim" class="hidden"></div>
 
   <div id="toast"></div>
-  <script src="app.js?v=47"></script>
+  <script src="app.js?v=48"></script>
 </body>
 </html>
