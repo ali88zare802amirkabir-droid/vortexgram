@@ -97,27 +97,11 @@ function normalizePhone(p) {
   if (!/^09\d{9}$/.test(p)) return null;
   return p;
 }
-// ارسال پیامک: با کلید KAVENEGAR_KEY واقعی، وگرنه حالت توسعه (چاپ در کنسول + برگرداندن کد)
+// ارسال پیامک: طبق درخواست کاربر غیرفعال شد — هیچ پیامکی ارسال نمی‌شود و کد فقط روی صفحه نمایش داده می‌شود
 function sendSMS(phone, text) {
   return new Promise((resolve) => {
-    const key = process.env.KAVENEGAR_KEY;
-    if (!key) { console.log('[DEV SMS]', phone, '->', text); return resolve({ ok: true, dev: true }); }
-    const body = require('querystring').stringify({ receptor: phone, message: text, sender: process.env.KAVENEGAR_SENDER || '2000660110' });
-    const req = httpsMod.request({
-      hostname: 'api.kavenegar.com',
-      path: `/v1/${key}/sms/send.json`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
-    }, (r) => {
-      let b = ''; r.on('data', (c) => (b += c)); r.on('end', () => {
-        let ok = r.statusCode >= 200 && r.statusCode < 300;
-        try { const j = JSON.parse(b); if (j && j.return && j.return.status !== 200) ok = false; } catch (e) {}
-        if (!ok) console.error('[Kavenegar] send failed', r.statusCode, b);
-        resolve({ ok, dev: !ok, smsError: !ok });
-      });
-    });
-    req.on('error', (e) => { console.error('[Kavenegar] error', e.message); resolve({ ok: false, dev: true, smsError: true }); });
-    req.write(body); req.end();
+    console.log('[SMS disabled] would send to', phone, '->', text);
+    resolve({ ok: true, dev: true });
   });
 }
 function publicUser(u) {

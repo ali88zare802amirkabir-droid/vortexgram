@@ -48,7 +48,7 @@ $('auth-send').onclick = async () => {
   const phone = authPhone.value.trim();
   try { const r = await fetch('/api/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) }); const d = await r.json();
     if (!r.ok) return authErr(d.error || 'خطا'); authPhoneVal = phone; $('auth-phone-label').textContent = 'کد به ' + phone + ' ارسال شد'; showAuthStep('code');
-    if (d.devCode) authErr('کد تست (حالت توسعه): ' + d.devCode, true); else if (d.note) authErr(d.note, true);
+    if (d.devCode) authErr('کد ورود (ارسال پیامک غیرفعال است): ' + d.devCode, true); else if (d.note) authErr(d.note, true);
   } catch (e) { authErr(e.message); }
 };
 $('auth-verify').onclick = async () => {
