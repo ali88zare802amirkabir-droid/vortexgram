@@ -28,10 +28,6 @@ function avatarEl(u, size) {
 }
 const IS_TOUCH = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 function isMobile() { return window.innerWidth <= 1024 || IS_TOUCH; }
-function applyMobileClass() { document.documentElement.classList.toggle('mobile', isMobile()); }
-applyMobileClass();
-window.addEventListener('resize', applyMobileClass);
-window.addEventListener('orientationchange', applyMobileClass);
 function showScrim(v) { const s = $('scrim'); if (s) s.classList.toggle('hidden', !v); }
 function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); $('details-panel').classList.remove('open'); showScrim(false); }
 const state = {
