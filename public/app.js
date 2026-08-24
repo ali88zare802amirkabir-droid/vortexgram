@@ -26,7 +26,7 @@ function avatarEl(u, size) {
   else a.textContent = initial(u && (u.displayName || u.displayName) ? u.displayName : (u && (u.username || u.displayName) ? (u.displayName || u.username) : '?'));
   return a;
 }
-function isMobile() { return window.innerWidth <= 760; }
+function isMobile() { return window.innerWidth <= 1024; }
 function showScrim(v) { const s = $('scrim'); if (s) s.classList.toggle('hidden', !v); }
 function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); $('details-panel').classList.remove('open'); showScrim(false); }
 const state = {
