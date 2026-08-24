@@ -671,12 +671,15 @@ function renderProfile(username) {
   if (u.phone && (state.me.isAdmin || u.username === state.me.username)) h += '<div class="profile-row">📱 ' + esc(u.phone) + '</div>';
   h += '</div><div class="profile-actions">';
   h += '<button class="btn primary" data-act="chat">شروع چت</button>';
-  if (state.me.isAdmin && !u.isAdmin) {
+  if (state.me.isAdmin) {
     h += '<button class="btn" data-act="rename">تغییر نام</button>';
     h += '<button class="btn" data-act="premium">' + (u.isPremium ? 'حذف پرمیوم' : 'پرمیوم‌سازی') + '</button>';
-    h += '<button class="btn" data-act="impersonate">ورود به حساب کاربر</button>';
-    h += '<button class="btn" data-act="promote">ارتقا به ادمین</button>';
-    h += '<button class="btn danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدودسازی') + '</button>';
+    if (u.username !== state.me.username) {
+      h += '<button class="btn" data-act="impersonate">ورود به حساب کاربر</button>';
+      if (u.isAdmin) h += '<button class="btn danger" data-act="demote">حذف ادمین</button>';
+      else h += '<button class="btn" data-act="promote">ارتقا به ادمین</button>';
+      h += '<button class="btn danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدودسازی') + '</button>';
+    }
   }
   h += '</div></div>';
   viewHost.innerHTML = h;
@@ -687,6 +690,7 @@ function renderProfile(username) {
   const bn = viewHost.querySelector('[data-act="ban"]'); if (bn) bn.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username, banned: !u.banned }) }); toast('انجام شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
   const imp = viewHost.querySelector('[data-act="impersonate"]'); if (imp) imp.onclick = () => enterAsUser(username);
   const pm = viewHost.querySelector('[data-act="promote"]'); if (pm) pm.onclick = async () => { await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'admin' }) }); toast('کاربر به ادمین ارتقا یافت'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
+  const dm = viewHost.querySelector('[data-act="demote"]'); if (dm) dm.onclick = async () => { if (!confirm('ادمین بودن @' + username + ' حذف شود؟')) return; await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'member' }) }); toast('از ادمینی حذف شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
   if (state.me.isAdmin) {
     const sec = document.createElement('div'); sec.className = 'profile-files';
     sec.innerHTML = '<h3>' + ic('paperclip') + ' فایل‌های ارسالی</h3><div class="pf-body ph-loading">در حال بارگذاری…</div>';
