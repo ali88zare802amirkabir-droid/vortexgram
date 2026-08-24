@@ -510,9 +510,9 @@ async function viewUserMessages(username) {
     const rd = await (await api('/api/admin/user/' + encodeURIComponent(username) + '/rooms')).json();
     const rooms = rd.rooms || [];
     let all = [];
-    for (const rid of rooms) {
-      const md = await (await api('/api/admin/room/messages?roomId=' + encodeURIComponent(rid))).json();
-      (md.messages || []).forEach((m) => { all.push(Object.assign({ _room: rid }, m)); });
+    for (const room of rooms) {
+      const md = await (await api('/api/admin/room/messages?roomId=' + encodeURIComponent(room.roomId))).json();
+      (md.messages || []).forEach((m) => { all.push(Object.assign({ _room: room.title || room.roomId }, m)); });
     }
     all.sort((a, b) => (a.time || 0) - (b.time || 0));
     if (!all.length) { body.innerHTML = '<div class="placeholder">پیامی یافت نشد.</div>'; return; }
