@@ -58,7 +58,7 @@ $('auth-verify').onclick = async () => {
 };
 $('auth-finish').onclick = async () => {
   try { const r = await fetch('/api/complete-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim(), displayName: authName.value.trim(), username: authName.value.trim() }) }); const d = await r.json();
-    if (!r.ok) return authErr(d.error || 'خطا'); if (d.token) finishLogin(d);
+    if (!r.ok) return authErr(d.error || 'خطا'); if (d.token) return finishLogin(d); if (d.pending) { authErr(d.message || 'درخواست ثبت شد؛ منتظر تایید ادمین', true); return; }
   } catch (e) { authErr(e.message); }
 };
 authPhone.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-send').click(); });
@@ -176,7 +176,7 @@ function handleWS(d) {
     case 'kicked': toast('حساب شما مسدود شد'); logout(); break;
     case 'premium-changed': if (state.me) { state.me.isPremium = d.isPremium; renderNav(); } break;
     case 'rename-result': if (d.approved && state.me) { state.me.displayName = d.displayName; renderNav(); } break;
-    case 'signup-request': toast('درخواست ثبت‌نام جدید: @' + d.username); break;
+    case 'signup-request': state.signupCount = (state.signupCount || 0) + 1; renderNav(); toast('درخواست ثبت‌نام جدید: @' + (d.displayName || d.username)); break;
   }
 }
 
@@ -530,14 +530,14 @@ async function renderSignups(wrap) {
   if (!list.length) { wrap.innerHTML = '<div class="placeholder">درخواست ثبت‌نام جدیدی نیست.</div>'; return; }
   let h = '<div class="signup-list">';
   list.forEach((s) => {
-    h += '<div class="signup-row" data-u="' + esc(s.username) + '"><div class="su-body"><div class="su-name">' + esc(s.displayName || s.username) + '</div><div class="su-sub">@' + esc(s.username) + (s.phone ? ' • ' + esc(s.phone) : '') + ' • ' + (s.bio ? esc(s.bio) : 'بدون بیو') + '</div></div><div class="su-actions"><button class="btn sm primary" data-act="approve">تایید</button><button class="btn sm danger" data-act="reject">رد</button></div></div>';
+    h += '<div class="signup-row" data-id="' + esc(s.id) + '"><div class="su-body"><div class="su-name">' + esc(s.displayName || s.username) + '</div><div class="su-sub">@' + esc(s.username) + (s.phone ? ' • ' + esc(s.phone) : '') + '</div></div><div class="su-actions"><button class="btn sm primary" data-act="approve">تایید</button><button class="btn sm danger" data-act="reject">رد</button></div></div>';
   });
   h += '</div>';
   wrap.innerHTML = h;
   wrap.querySelectorAll('.signup-row').forEach((row) => {
-    const u = row.dataset.u;
-    row.querySelector('[data-act="approve"]').onclick = async () => { await api('/api/admin/signups/approve', { method: 'POST', body: JSON.stringify({ username: u }) }); toast('تایید شد'); renderSignups(wrap); };
-    row.querySelector('[data-act="reject"]').onclick = async () => { await api('/api/admin/signups/reject', { method: 'POST', body: JSON.stringify({ username: u }) }); toast('رد شد'); renderSignups(wrap); };
+    const id = row.dataset.id;
+    row.querySelector('[data-act="approve"]').onclick = async () => { await api('/api/admin/signups/' + encodeURIComponent(id), { method: 'POST', body: JSON.stringify({ approve: true }) }); toast('تایید شد'); renderSignups(wrap); };
+    row.querySelector('[data-act="reject"]').onclick = async () => { await api('/api/admin/signups/' + encodeURIComponent(id), { method: 'POST', body: JSON.stringify({ approve: false }) }); toast('رد شد'); renderSignups(wrap); };
   });
   luc();
 }

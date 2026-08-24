@@ -245,6 +245,13 @@ app.post('/api/complete-register', (req, res) => {
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
   const rec = pendingCodes.get(phone);
   if (!rec || rec.exp < Date.now() || rec.code !== code) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
+  const existing = db.users.find((u) => u.phone === phone);
+  if (existing) {
+    pendingCodes.delete(phone);
+    if (existing.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
+    const token = createSession(existing.username);
+    return res.json({ token, me: publicUser(existing) });
+  }
   if (displayName.length < 2) return res.status(400).json({ error: 'نام نمایشی حداقل ۲ حرف' });
   if (username) {
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'نام کاربری: ۳ تا ۲۰ حرف انگلیسی/عدد/_' });
@@ -253,12 +260,11 @@ app.post('/api/complete-register', (req, res) => {
     username = 'u' + phone.slice(1);
     while (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) username += crypto.randomInt(0, 9);
   }
-  const u = { username, displayName, phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '' };
-  db.users.push(u);
+  if (db.signupRequests.some((r) => r.phone === phone)) return res.status(409).json({ error: 'درخواست عضویت تو قبلاً ثبت شده و منتظر تایید ادمین است' });
+  db.signupRequests.push({ id: crypto.randomUUID(), username, phone, displayName, at: Date.now(), type: 'phone' });
   saveDB();
-  pendingCodes.delete(phone);
-  const token = createSession(username);
-  res.json({ token, me: publicUser(u) });
+  for (const u of db.users.filter((x) => x.isAdmin)) notifyUser(u.username, { type: 'signup-request', username, displayName, phone });
+  res.json({ pending: true, message: 'درخواست عضویت ثبت شد ✅ منتظر تایید ادمین باش' });
 });
 
 function auth(req, res, next) {
@@ -377,7 +383,7 @@ app.get('/api/admin/users', auth, (req, res) => {
 // درخواست‌های ثبت‌نام در انتظار تایید
 app.get('/api/admin/signups', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
-  res.json({ signups: db.signupRequests.map((r) => ({ id: r.id, username: r.username, at: r.at })) });
+  res.json({ signups: db.signupRequests.map((r) => ({ id: r.id, username: r.username, displayName: r.displayName || r.username, phone: r.phone || null, at: r.at })) });
 });
 
 app.post('/api/admin/signups/:id', auth, (req, res) => {
@@ -388,15 +394,11 @@ app.post('/api/admin/signups/:id', auth, (req, res) => {
   const reqItem = db.signupRequests[idx];
   db.signupRequests.splice(idx, 1);
   if (approve) {
-    db.users.push({
-      username: reqItem.username,
-      salt: reqItem.salt,
-      passHash: reqItem.passHash,
-      displayName: reqItem.username,
-      isAdmin: false,
-      banned: false,
-      createdAt: Date.now(),
-    });
+    if (reqItem.phone) {
+      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '' });
+    } else {
+      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now() });
+    }
     saveDB();
     pushUsers();
   } else {
