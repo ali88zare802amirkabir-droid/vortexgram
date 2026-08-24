@@ -729,7 +729,7 @@ function applyVX() { $('app').classList.add('vx'); document.documentElement.styl
 function setFont(delta) { state.fontScale = Math.max(12, Math.min(20, state.fontScale + delta)); localStorage.setItem('vx_fontsize', state.fontScale); applyAppearance(); }
 
 /* AI PANEL */
-async function aiOnMessage(roomId) { const inp = $('ai-input'); const text = inp.value.trim(); if (!text) return; inp.value = ''; appendAIMsg('user', text); const loading = appendAIMsg('bot', 'در حال فکر کردن…'); try { const d = await (await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: 'ask', roomId: roomId, text: text }) })).json(); loading.textContent = d.reply || d.error || 'پاسخی دریافت نشد'; } catch (e) { loading.textContent = 'خطا: ' + e.message; } }
+async function aiOnMessage(roomId) { const inp = $('ai-input'); const text = inp.value.trim(); if (!text) return; inp.value = ''; appendAIMsg('user', text); const loading = appendAIMsg('bot', 'در حال فکر کردن…'); try { const d = await (await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: 'ask', roomId: roomId, text: text }) })).json(); loading.textContent = d.result || d.error || 'پاسخی دریافت نشد'; } catch (e) { loading.textContent = 'خطا: ' + e.message; } }
 function appendAIMsg(role, text) { const box = $('ai-conv'); const el = document.createElement('div'); el.className = 'ai-msg ' + role; el.textContent = text; box.appendChild(el); box.scrollTop = box.scrollHeight; return el; }
 
 /* VIEW ROUTER */
@@ -743,7 +743,7 @@ function renderView(id) {
   if (id === 'ai') {
     wrap.innerHTML = '<div class="ai-card"><div class="ai-conv" id="ai-conv"></div><div class="ai-input-row"><input id="ai-input" placeholder="از دستیار بپرس…" /><button id="ai-send">' + ic('send') + '</button></div><div class="ai-actions"><button data-a="summarize">' + ic('file-text') + ' خلاصه چت</button><button data-a="reply">' + ic('corner-down-left') + ' پیشنهاد پاسخ</button><button data-a="translate">' + ic('languages') + ' ترجمه</button><button data-a="rewrite">' + ic('edit-3') + ' بازنویسی</button></div></div>';
     $('ai-send').onclick = () => aiOnMessage(state.room); $('ai-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') aiOnMessage(state.room); });
-    wrap.querySelectorAll('.ai-actions button').forEach((b) => b.onclick = async () => { const a = b.dataset.a; if (a === 'summarize' && !state.room) return toast('اول یک چت باز کن'); if (a === 'reply' && !state.room) return toast('اول یک چت باز کن'); const act = a === 'summarize' ? 'summarize' : a === 'reply' ? 'reply' : a === 'translate' ? 'translate' : 'rewrite'; const d = await (await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: act, roomId: state.room, text: $('ai-input').value }) })).json(); appendAIMsg('bot', d.reply || d.error || ''); });
+    wrap.querySelectorAll('.ai-actions button').forEach((b) => b.onclick = async () => { const a = b.dataset.a; if (a === 'summarize' && !state.room) return toast('اول یک چت باز کن'); if (a === 'reply' && !state.room) return toast('اول یک چت باز کن'); const act = a === 'summarize' ? 'summarize' : a === 'reply' ? 'reply' : a === 'translate' ? 'translate' : 'rewrite'; const d = await (await api('/api/ai', { method: 'POST', body: JSON.stringify({ action: act, roomId: state.room, text: $('ai-input').value }) })).json(); appendAIMsg('bot', d.result || d.error || ''); });
   } else if (id === 'contacts') { renderContacts(wrap); }
   else if (id === 'settings') {
     const cat = state.settingsCat || 'main';
@@ -896,25 +896,28 @@ const SKINS = [
 ];
 function renderSkinsSub(body) {
   if (!state.me.isPremium) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }
-  const owned = JSON.parse(localStorage.getItem('vx_owned_skins') || '["default"]');
+  // کاربر پرمیوم همه اسکین‌ها را دارد
+  const allIds = SKINS.map((s) => s.id);
+  localStorage.setItem('vx_owned_skins', JSON.stringify(allIds));
+  const owned = allIds;
   let t = '<div class="settings-sec"><h3>' + ic('paintbrush') + ' فروشگاه اسکین</h3><div class="skins-grid">';
   SKINS.forEach((s) => {
     const isOwned = owned.includes(s.id);
     const isActive = localStorage.getItem('vx_theme') === s.theme && localStorage.getItem('vx_accent') === s.accent;
+    const prevBg = s.theme === 'midnight-rose' ? '#120e18' : s.theme === 'matrix' ? '#03080a' : s.theme === 'synthwave' ? '#130a1f' : s.theme === 'sunset' ? '#160c0c' : s.theme === 'forest' ? '#0a1611' : s.theme === 'light' ? '#e4eaf6' : s.theme === 'midnight' ? '#070b16' : '#0a0e1a';
     t += '<div class="skin-card' + (isActive ? ' active' : '') + (isOwned ? ' owned' : '') + '" data-id="'+s.id+'">';
-    t += '<div class="skin-preview" style="background:var(--'+s.theme+'-bg, #111);border:2px solid var(--'+s.accent+', #888)"></div>';
+    t += '<div class="skin-preview" style="background:'+prevBg+';border:2px solid var(--'+s.accent+', #888)"></div>';
     t += '<div class="skin-info"><b>'+esc(s.name)+'</b><span>'+esc(s.desc)+'</span>';
     if (s.price > 0) t += '<span class="skin-price">' + s.price.toLocaleString('fa-IR') + ' تومان</span>';
     else t += '<span class="skin-price free">رایگان</span>';
     t += '</div>';
-    t += '<button class="btn sm skin-act" data-id="'+s.id+'">' + (isOwned ? (isActive ? 'فعال' : 'اعمال') : 'خرید') + '</button>';
+    t += '<button class="btn sm skin-act" data-id="'+s.id+'">' + (isActive ? 'فعال' : 'اعمال') + '</button>';
     t += '</div>';
   });
   t += '</div></div>';
   body.innerHTML = t;
   body.querySelectorAll('.skin-act').forEach((b) => {
-    b.onclick = () => { const s = SKINS.find((x) => x.id === b.dataset.id); if (!s) return; const owned = JSON.parse(localStorage.getItem('vx_owned_skins') || '["default"]');
-      if (!owned.includes(s.id)) { if (confirm(s.name + ' به قیمت ' + s.price.toLocaleString('fa-IR') + ' تومان خریداری شود؟')) { owned.push(s.id); localStorage.setItem('vx_owned_skins', JSON.stringify(owned)); toast(s.name + ' خریداری شد'); } else return; }
+    b.onclick = () => { const s = SKINS.find((x) => x.id === b.dataset.id); if (!s) return;
       localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance(); toast(s.name + ' اعمال شد'); renderSettingsSub('skins', body.parentElement); };
   });
 }
