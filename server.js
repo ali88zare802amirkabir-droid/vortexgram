@@ -105,7 +105,7 @@ function sendSMS(phone, text) {
   });
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default' };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off' };
 }
 const LIMITS = {
   normalUploadMB: 30,
@@ -285,6 +285,14 @@ app.post('/api/skin', auth, (req, res) => {
   res.json({ ok: true, me: publicUser(req.user) });
 });
 
+// ذخیره افکت حاله/بال پروفایل (بخش مجزا)
+app.post('/api/profile-effect', auth, (req, res) => {
+  const effect = String((req.body || {}).effect || 'off').trim();
+  req.user.profileEffect = effect;
+  saveDB();
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
 const avatarUpload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -449,9 +457,9 @@ app.post('/api/admin/signups/:id', auth, (req, res) => {
   db.signupRequests.splice(idx, 1);
   if (approve) {
     if (reqItem.phone) {
-      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '', activeSkin: 'default' });
+      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '', activeSkin: 'default', profileEffect: 'off' });
     } else {
-      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default' });
+      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off' });
     }
     saveDB();
     pushUsers();

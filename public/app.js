@@ -664,16 +664,18 @@ function renderProfile(username) {
   setMode('view');
   const online = !!u.online;
   const skin = SKINS.find((s) => s.id === (u.activeSkin || 'default'));
-  const premium = !!(skin && skin.price > 0);
-  const mood = skin ? skin.mood : '';
-  const sa = premium ? ' data-accent="' + skin.accent + '"' : '';
+  const effId = (u.profileEffect && u.profileEffect !== 'off') ? u.profileEffect : '';
+  const eff = effId ? EFFECTS[effId] : null;
+  const premium = !!eff;
+  const mood = effId;
+  const sa = premium ? ' data-accent="' + eff.accent + '"' : '';
   const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
   let h = '<div class="profile-view' + (premium ? ' pv-premium mood-' + mood : '') + '">';
   h += '<button class="btn sm ghost" data-act="back">← بازگشت</button>';
   h += '<div class="profile-hero">';
   if (premium) h += '<div class="profile-banner"' + sa + '></div>';
   h += '<div class="profile-av' + (premium ? ' ringed' : '') + '"' + sa + '>' + avatarEl(u, 'xl').outerHTML + '</div>';
-  h += '<div class="profile-name">' + esc(u.displayName || u.username) + badge + (premium ? ' <span class="profile-skin-badge"' + sa + '>' + esc(skin.name) + '</span>' : '') + '</div>';
+  h += '<div class="profile-name">' + esc(u.displayName || u.username) + badge + (premium ? ' <span class="profile-skin-badge"' + sa + '>' + esc(eff.name) + '</span>' : '') + '</div>';
   h += '<div class="profile-uname">@' + esc(u.username) + (online ? ' <span class="onl">● آنلاین</span>' : '') + '</div></div>';
   if (u.bio) h += '<div class="profile-bio">' + esc(u.bio) + '</div>';
   if (u.phone && (state.me.isAdmin || u.username === state.me.username)) h += '<div class="profile-row">📱 ' + esc(u.phone) + '</div>';
@@ -847,6 +849,7 @@ const SETCATS = {
   notifications: { title: ic('bell') + ' اعلان‌ها', icon: 'bell' },
   privacy: { title: ic('lock') + ' حریم خصوصی', icon: 'lock' },
   skins: { title: ic('paintbrush') + ' اسکین‌ها و تم‌ها', icon: 'paintbrush' },
+  effects: { title: ic('sparkles') + ' حاله و بال', icon: 'sparkles' },
   logout: { title: ic('log-out') + ' خروج', icon: 'log-out' }
 };
 function renderSettingsMain(wrap) {
@@ -866,6 +869,7 @@ function renderSettingsSub(cat, wrap) {
   else if (cat === 'notifications') renderNotifSub(body);
   else if (cat === 'privacy') renderPrivSub(body);
   else if (cat === 'skins') renderSkinsSub(body);
+  else if (cat === 'effects') renderEffectsSub(body);
   else if (cat === 'logout') logout();
   wrap.appendChild(body);
 }
@@ -927,6 +931,12 @@ const SKINS = [
   { id: 'ios', name: 'آی‌او‌اس', price: 0, theme: 'ios', accent: 'ios', mood: 'calm', desc: 'ظاهر مینیمال و تمیز آی‌او‌اس با شیشه‌مات' },
   { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', mood: 'scary', desc: 'فاخرترین تم — طلایی و سیاهی' }
 ];
+const EFFECTS = {
+  scary: { name: 'ترسناک', accent: 'red', desc: 'حاله و بال‌های تاریک با اخگرهای بالارونده' },
+  happy: { name: 'شاد', accent: 'purple', desc: 'بال‌های پرجنب‌وجوش و ذرات رنگی جست‌وخیز' },
+  sad: { name: 'غم‌انگیز', accent: 'blue', desc: 'حاله آبی ملایم با باران آرام' },
+  calm: { name: 'آرام', accent: 'green', desc: 'حاله نرم و ذرات شناور' }
+};
 function renderSkinsSub(body) {
   if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }
   // کاربر پرمیوم همه اسکین‌ها را دارد
@@ -986,6 +996,25 @@ function openSkinPreview(s) {
   m.querySelector('.spm-backdrop').onclick = () => close(false);
   m.querySelector('#spm-cancel').onclick = () => close(false);
   m.querySelector('#spm-apply').onclick = () => close(true);
+}
+function renderEffectsSub(body) {
+  if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">بخش افکت‌های حاله و بال فقط برای کاربران پرمیوم است. برای فعال‌سازی با ادمین تماس بگیرید.</div></div>'; return; }
+  const cur = state.me.profileEffect || 'off';
+  const opts = Object.assign({ off: { name: 'خاموش', accent: 'blue', desc: 'بدون افکت اضافه' } }, EFFECTS);
+  let t = '<div class="settings-sec"><h3>' + ic('sparkles') + ' حاله و بال پروفایل</h3><div class="skins-grid">';
+  Object.keys(opts).forEach((id) => {
+    const e = opts[id]; const isActive = cur === id;
+    t += '<div class="skin-card eff-card' + (isActive ? ' active' : '') + '" data-id="' + id + '">';
+    t += '<div class="eff-preview" data-accent="' + e.accent + '" style="background:linear-gradient(135deg,var(--accent),var(--accent-2))"></div>';
+    t += '<div class="skin-info"><b>' + esc(e.name) + '</b><span>' + esc(e.desc) + '</span></div>';
+    t += '<button class="btn sm eff-act" data-id="' + id + '">' + (isActive ? 'فعال' : 'انتخاب') + '</button>';
+    t += '</div>';
+  });
+  t += '</div></div>';
+  body.innerHTML = t;
+  body.querySelectorAll('.eff-card').forEach((b) => {
+    b.onclick = () => { const id = b.dataset.id; state.me.profileEffect = id; localStorage.setItem('vx_profile_effect', id); api('/api/profile-effect', { method: 'POST', body: JSON.stringify({ effect: id }) }).catch(() => {}); toast(id === 'off' ? 'افکت خاموش شد' : EFFECTS[id].name + ' اعمال شد'); renderSettingsSub('effects', b.closest('.view-body').parentElement); };
+  });
 }
 
 /* INIT */
