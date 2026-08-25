@@ -727,7 +727,7 @@ function showImpersonateBanner() {
 async function startGroup(isChannel) { const name = prompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':'); if (!name) return; const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json(); state.groups.push(d.group); if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups })); openRoom('group:' + d.group.id); }
 
 /* THEME */
-function cycleTheme() { const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light']; const cur = localStorage.getItem('vx_theme') || 'cyber'; const idx = (themes.indexOf(cur) + 1) % themes.length; localStorage.setItem('vx_theme', themes[idx]); applyAppearance(); toast('تم: ' + themes[idx]); }
+function cycleTheme() { const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios']; const cur = localStorage.getItem('vx_theme') || 'cyber'; const idx = (themes.indexOf(cur) + 1) % themes.length; localStorage.setItem('vx_theme', themes[idx]); applyAppearance(); toast('تم: ' + themes[idx]); }
 function applyVX() { $('app').classList.add('vx'); document.documentElement.style.setProperty('--radius', localStorage.getItem('vx_radius') || '18px'); }
 
 /* FONT SIZE (settings) */
@@ -843,7 +843,7 @@ function renderSettingsSub(cat, wrap) {
   wrap.appendChild(body);
 }
 function renderAppSub(body) {
-  const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light'];
+  const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios'];
   const accents = ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red'];
   let t = '<div class="settings-sec"><h3>' + ic('palette') + ' تم</h3><div class="chip-row">' + themes.map((x) => '<button class="chip" data-theme-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
   t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ آکセント</h3><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
@@ -897,6 +897,7 @@ const SKINS = [
   { id: 'sunset', name: 'سنست', price: 400000, theme: 'sunset', accent: 'orange', desc: 'گرماهای غروب آفتاب' },
   { id: 'forest', name: 'جنگل', price: 600000, theme: 'forest', accent: 'green', desc: 'سبزهای طبیعی و آرام‌بخش' },
   { id: 'light', name: 'نور', price: 800000, theme: 'light', accent: 'blue', desc: 'تم روشن و مینیمال' },
+  { id: 'ios', name: 'آی‌او‌اس', price: 0, theme: 'ios', accent: 'ios', desc: 'ظاهر مینیمال و تمیز آی‌او‌اس با شیشه‌مات' },
   { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', desc: 'فاخرترین تم — طلایی و سیاهی' }
 ];
 function renderSkinsSub(body) {
@@ -909,9 +910,9 @@ function renderSkinsSub(body) {
   SKINS.forEach((s) => {
     const isOwned = owned.includes(s.id);
     const isActive = localStorage.getItem('vx_theme') === s.theme && localStorage.getItem('vx_accent') === s.accent;
-    const prevBg = s.theme === 'midnight-rose' ? '#120e18' : s.theme === 'matrix' ? '#03080a' : s.theme === 'synthwave' ? '#130a1f' : s.theme === 'sunset' ? '#160c0c' : s.theme === 'forest' ? '#0a1611' : s.theme === 'light' ? '#e4eaf6' : s.theme === 'midnight' ? '#070b16' : '#0a0e1a';
+    const prevBg = s.theme === 'midnight-rose' ? '#120e18' : s.theme === 'matrix' ? '#03080a' : s.theme === 'synthwave' ? '#130a1f' : s.theme === 'sunset' ? '#160c0c' : s.theme === 'forest' ? '#0a1611' : s.theme === 'light' ? '#e4eaf6' : s.theme === 'ios' ? '#f2f2f7' : s.theme === 'midnight' ? '#070b16' : '#0a0e1a';
     t += '<div class="skin-card' + (isActive ? ' active' : '') + (isOwned ? ' owned' : '') + '" data-id="'+s.id+'">';
-    t += '<div class="skin-preview" style="background:'+prevBg+';border:2px solid var(--'+s.accent+', #888)"></div>';
+    t += '<div class="skin-preview" style="background:'+prevBg+';border:2px solid '+(s.accent==='ios'?'#0a84ff':'var(--'+s.accent+', #888)')+'"></div>';
     t += '<div class="skin-info"><b>'+esc(s.name)+'</b><span>'+esc(s.desc)+'</span>';
     if (s.price > 0) t += '<span class="skin-price">' + s.price.toLocaleString('fa-IR') + ' تومان</span>';
     else t += '<span class="skin-price free">رایگان</span>';
