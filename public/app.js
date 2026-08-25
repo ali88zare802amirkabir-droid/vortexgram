@@ -665,9 +665,10 @@ function renderProfile(username) {
   const online = !!u.online;
   const skin = SKINS.find((s) => s.id === (u.activeSkin || 'default'));
   const premium = !!(skin && skin.price > 0);
+  const mood = skin ? skin.mood : '';
   const sa = premium ? ' data-accent="' + skin.accent + '"' : '';
   const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
-  let h = '<div class="profile-view' + (premium ? ' pv-premium' : '') + '">';
+  let h = '<div class="profile-view' + (premium ? ' pv-premium mood-' + mood : '') + '">';
   h += '<button class="btn sm ghost" data-act="back">← بازگشت</button>';
   h += '<div class="profile-hero">';
   if (premium) h += '<div class="profile-banner"' + sa + '></div>';
@@ -690,6 +691,16 @@ function renderProfile(username) {
   }
   h += '</div></div>';
   viewHost.innerHTML = h;
+  if (premium && mood) {
+    const av = viewHost.querySelector('.profile-av');
+    if (av) {
+      let pts = '';
+      for (let i = 0; i < 16; i++) { const l = (Math.random() * 100).toFixed(0); const dur = (2.2 + Math.random() * 3.4).toFixed(2); const dl = (Math.random() * 4).toFixed(2); const sz = (4 + Math.random() * 7).toFixed(0); pts += '<i class="pt" style="left:' + l + '%;width:' + sz + 'px;height:' + sz + 'px;animation-duration:' + dur + 's;animation-delay:-' + dl + 's"></i>'; }
+      const aura = document.createElement('div'); aura.className = 'profile-aura';
+      aura.innerHTML = '<span class="wing left"></span><span class="wing right"></span>' + pts;
+      av.appendChild(aura);
+    }
+  }
   viewHost.querySelector('[data-act="back"]').onclick = () => renderView('contacts');
   viewHost.querySelector('[data-act="chat"]').onclick = () => openDM(username);
   const rn = viewHost.querySelector('[data-act="rename"]'); if (rn) rn.onclick = () => renameUser(username, u.displayName, () => renderProfile(username));
@@ -905,15 +916,15 @@ function renderPrivSub(body) {
   ['vx_online', 'vx_lastseen', 'vx_showphone', 'vx_acceptall'].forEach((k) => { const el = body.querySelector('#priv-' + k); if (el) el.onchange = (e) => { localStorage.setItem(k, e.target.checked ? '1' : '0'); toast('تنظیمات حریم خصوصی ذخیره شد'); }; });
 }
 const SKINS = [
-  { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'cyber', accent: 'blue', desc: 'تم پیش‌فرض ورتیکس' },
-  { id: 'dark-rose', name: 'میدنايت رز', price: 50000, theme: 'midnight-rose', accent: 'pink', desc: 'تم تاریک با آکセント صورتی' },
-  { id: 'matrix', name: 'متریکس', price: 120000, theme: 'matrix', accent: 'green', desc: 'سبزهای کلاسیک متریکس' },
-  { id: 'synth', name: 'سنتویو', price: 250000, theme: 'synthwave', accent: 'purple', desc: 'نئونی رنگارنگ ۸۰‌ها' },
-  { id: 'sunset', name: 'سنست', price: 400000, theme: 'sunset', accent: 'orange', desc: 'گرماهای غروب آفتاب' },
-  { id: 'forest', name: 'جنگل', price: 600000, theme: 'forest', accent: 'green', desc: 'سبزهای طبیعی و آرام‌بخش' },
-  { id: 'light', name: 'نور', price: 800000, theme: 'light', accent: 'blue', desc: 'تم روشن و مینیمال' },
-  { id: 'ios', name: 'آی‌او‌اس', price: 0, theme: 'ios', accent: 'ios', desc: 'ظاهر مینیمال و تمیز آی‌او‌اس با شیشه‌مات' },
-  { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', desc: 'فاخرترین تم — طلایی و سیاهی' }
+  { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'cyber', accent: 'blue', mood: 'happy', desc: 'تم پیش‌فرض ورتیکس' },
+  { id: 'dark-rose', name: 'میدنايت رز', price: 50000, theme: 'midnight-rose', accent: 'pink', mood: 'sad', desc: 'تم تاریک با آکسنت صورتی' },
+  { id: 'matrix', name: 'متریکس', price: 120000, theme: 'matrix', accent: 'green', mood: 'scary', desc: 'سبزهای کلاسیک متریکس' },
+  { id: 'synth', name: 'سنتویو', price: 250000, theme: 'synthwave', accent: 'purple', mood: 'happy', desc: 'نئونی رنگارنگ ۸۰‌ها' },
+  { id: 'sunset', name: 'سنست', price: 400000, theme: 'sunset', accent: 'orange', mood: 'happy', desc: 'گرماهای غروب آفتاب' },
+  { id: 'forest', name: 'جنگل', price: 600000, theme: 'forest', accent: 'green', mood: 'calm', desc: 'سبزهای طبیعی و آرام‌بخش' },
+  { id: 'light', name: 'نور', price: 800000, theme: 'light', accent: 'blue', mood: 'calm', desc: 'تم روشن و مینیمال' },
+  { id: 'ios', name: 'آی‌او‌اس', price: 0, theme: 'ios', accent: 'ios', mood: 'calm', desc: 'ظاهر مینیمال و تمیز آی‌او‌اس با شیشه‌مات' },
+  { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', mood: 'scary', desc: 'فاخرترین تم — طلایی و سیاهی' }
 ];
 function renderSkinsSub(body) {
   if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }

@@ -156,6 +156,27 @@ a{color:var(--accent);text-decoration:none;}
 @keyframes pvCard{0%,100%{box-shadow:0 0 24px -8px var(--accent-glow);}50%{box-shadow:0 0 44px -4px var(--accent-glow);}}
 @keyframes pvAura{0%,100%{opacity:.4;}50%{opacity:.85;}}
 .profile-uname{color:var(--text-muted);font-size:14px;}
+/* animated wings + particles (mood-based) */
+.profile-av{overflow:visible;}
+.profile-aura{position:absolute;inset:-14px -54px;pointer-events:none;z-index:0;display:flex;align-items:center;justify-content:center;}
+.wing{position:absolute;top:50%;width:54px;height:54px;background:linear-gradient(135deg,var(--accent),var(--accent-2));border-radius:60% 0 60% 0;opacity:.5;filter:blur(.5px);box-shadow:0 0 18px var(--accent-glow);}
+.wing.left{left:2px;animation:wingL 2.4s ease-in-out infinite;}
+.wing.right{right:2px;animation:wingR 2.4s ease-in-out infinite;}
+@keyframes wingL{0%,100%{transform:rotate(-22deg) translateY(2px);}50%{transform:rotate(14deg) translateY(-8px);}}
+@keyframes wingR{0%,100%{transform:scaleX(-1) rotate(-22deg) translateY(2px);}50%{transform:scaleX(-1) rotate(14deg) translateY(-8px);}}
+.pt{position:absolute;bottom:8%;border-radius:50%;background:var(--accent);opacity:.85;box-shadow:0 0 8px var(--accent-glow);}
+.mood-happy .wing{animation-duration:1.6s;opacity:.6;}
+.mood-scary .wing{animation-duration:3.6s;opacity:.35;border-radius:60% 0 70% 0;}
+.mood-sad .wing{animation-duration:4.4s;opacity:.3;}
+.mood-calm .wing{animation-duration:5s;opacity:.45;}
+.mood-happy .pt{background:linear-gradient(135deg,var(--accent),var(--accent-2));animation:ptBounce ease-in-out infinite;}
+.mood-scary .pt{background:var(--accent-2);animation:ptRise linear infinite;}
+.mood-sad .pt{background:#7fb5ff;animation:ptFall linear infinite;}
+.mood-calm .pt{background:var(--accent);animation:ptDrift ease-in-out infinite;}
+@keyframes ptBounce{0%,100%{transform:translateY(0) scale(1);opacity:.9;}50%{transform:translateY(-48px) scale(1.25);opacity:.4;}}
+@keyframes ptRise{0%{transform:translateY(0);opacity:0;}12%{opacity:.9;}100%{transform:translateY(-130px);opacity:0;}}
+@keyframes ptFall{0%{transform:translateY(-12px);opacity:0;}12%{opacity:.7;}100%{transform:translateY(130px);opacity:0;}}
+@keyframes ptDrift{0%,100%{transform:translate(0,0);opacity:.7;}50%{transform:translate(16px,-28px);opacity:.3;}}
 .profile-uname .onl{color:var(--success);font-size:12px;}
 .profile-bio{margin-top:10px;color:var(--text);font-size:14px;max-width:420px;}
 .profile-row{margin-top:8px;color:var(--text-muted);font-size:14px;}
