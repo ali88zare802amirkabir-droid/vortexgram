@@ -901,7 +901,7 @@ const SKINS = [
   { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', desc: 'فاخرترین تم — طلایی و سیاهی' }
 ];
 function renderSkinsSub(body) {
-  if (!state.me.isPremium) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }
+  if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }
   // کاربر پرمیوم همه اسکین‌ها را دارد
   const allIds = SKINS.map((s) => s.id);
   localStorage.setItem('vx_owned_skins', JSON.stringify(allIds));
@@ -922,9 +922,9 @@ function renderSkinsSub(body) {
   });
   t += '</div></div>';
   body.innerHTML = t;
-  body.querySelectorAll('.skin-act').forEach((b) => {
+  body.querySelectorAll('.skin-card').forEach((b) => {
     b.onclick = () => { const s = SKINS.find((x) => x.id === b.dataset.id); if (!s) return;
-      localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance(); toast(s.name + ' اعمال شد'); renderSettingsSub('skins', body.parentElement); };
+      localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance(); toast(s.name + ' اعمال شد'); renderSettingsSub('skins', b.closest('.view-body').parentElement); };
   });
 }
 
