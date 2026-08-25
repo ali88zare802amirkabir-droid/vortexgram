@@ -105,7 +105,7 @@ function sendSMS(phone, text) {
   });
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default' };
 }
 const LIMITS = {
   normalUploadMB: 30,
@@ -277,6 +277,14 @@ app.post('/api/profile/bio', auth, (req, res) => {
   res.json({ ok: true, me: publicUser(req.user) });
 });
 
+// ذخیره تم/اسکین فعال کاربر (برای جلوه‌های پروفایل دیسکوردی)
+app.post('/api/skin', auth, (req, res) => {
+  const skin = String((req.body || {}).skin || '').trim();
+  req.user.activeSkin = skin || 'default';
+  saveDB();
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
 const avatarUpload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -364,6 +372,16 @@ app.get('/api/admin/users', auth, (req, res) => {
   res.json({ users: db.users.map(publicUser) });
 });
 
+// پروفایل عمومی هر کاربر (برای نمایش جلوه‌های تم در پروفایل)
+app.get('/api/user/:username', auth, (req, res) => {
+  const uname = String(req.params.username || '').replace('@', '');
+  const target = db.users.find((u) => u.username === uname);
+  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  const pu = publicUser(target);
+  delete pu.phone;
+  res.json({ u: pu });
+});
+
 // ورود ادمین به حساب کاربر (impersonate)
 app.post('/api/admin/impersonate', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
@@ -431,9 +449,9 @@ app.post('/api/admin/signups/:id', auth, (req, res) => {
   db.signupRequests.splice(idx, 1);
   if (approve) {
     if (reqItem.phone) {
-      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '' });
+      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '', activeSkin: 'default' });
     } else {
-      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now() });
+      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default' });
     }
     saveDB();
     pushUsers();

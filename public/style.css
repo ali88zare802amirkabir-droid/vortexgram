@@ -38,12 +38,12 @@
 *{box-sizing:border-box;margin:0;padding:0;} html,body{height:100%;}
 body{font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);font-size:14px;line-height:1.5;overflow:hidden;-webkit-font-smoothing:antialiased;transition:background .3s var(--ease),color .3s var(--ease);}
 body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(1200px 600px at 12% -8%,rgba(99,102,241,.10),transparent 60%),radial-gradient(1000px 520px at 100% 0%,rgba(34,211,238,.08),transparent 55%),radial-gradient(900px 500px at 80% 110%,rgba(139,92,246,.08),transparent 60%);}
-::-webkit-scrollbar{width:10px;height:10px;}
-::-webkit-scrollbar-track{background:transparent;margin:6px 2px;border-radius:10px;}
-::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--accent) 50%, transparent);border-radius:10px;border:2px solid transparent;background-clip:padding-box;transition:background .25s var(--ease);}
-::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb, var(--accent) 85%, transparent);}
-::-webkit-scrollbar-thumb:active{background:var(--accent);}
-*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb, var(--accent) 55%, transparent) transparent;}
+::-webkit-scrollbar{width:11px;height:11px;}
+::-webkit-scrollbar-track{background:transparent;margin:7px 3px;border-radius:10px;}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--accent),var(--accent-2));border-radius:10px;border:2px solid transparent;background-clip:padding-box;box-shadow:inset 0 0 0 0 var(--accent-glow);transition:background .25s var(--ease),box-shadow .25s var(--ease);}
+::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,var(--accent),var(--accent-2));box-shadow:0 0 10px var(--accent-glow);}
+::-webkit-scrollbar-thumb:active{filter:brightness(1.12);}
+*{scrollbar-width:thin;scrollbar-color:var(--accent) transparent;}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;} input,textarea{font-family:inherit;color:inherit;}
 a{color:var(--accent);text-decoration:none;}
 .icon{width:20px;height:20px;stroke-width:1.9;flex:none;}
@@ -138,6 +138,18 @@ a{color:var(--accent);text-decoration:none;}
 .profile-view .btn.sm.ghost{margin-bottom:14px;}
 .profile-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:10px 0 18px;}
 .profile-name{font-size:22px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;}
+.profile-banner{width:100%;height:92px;border-radius:16px;margin-bottom:6px;background:linear-gradient(120deg,var(--accent),var(--accent-2),var(--accent));background-size:220% 220%;animation:pvFlow 7s ease infinite;box-shadow:0 8px 28px var(--accent-glow);position:relative;overflow:hidden;}
+.profile-banner::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 18% 22%,rgba(255,255,255,.28),transparent 46%);mix-blend-mode:screen;}
+@keyframes pvFlow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.profile-av{margin:0 auto;width:max-content;position:relative;z-index:2;}
+.pv-premium .profile-av.ringed{margin-top:-34px;}
+.pv-premium .profile-av.ringed > .av{border-radius:50%!important;box-shadow:0 0 0 3px var(--bg-primary),0 0 0 5px var(--accent),0 0 26px var(--accent-glow);animation:pvPulse 2.6s ease-in-out infinite;}
+@keyframes pvPulse{0%,100%{box-shadow:0 0 0 3px var(--bg-primary),0 0 0 5px var(--accent),0 0 18px var(--accent-glow);}50%{box-shadow:0 0 0 3px var(--bg-primary),0 0 0 6px var(--accent),0 0 36px var(--accent-glow);}}
+.profile-skin-badge{display:inline-block;padding:2px 11px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(120deg,var(--accent),var(--accent-2));box-shadow:0 2px 12px var(--accent-glow);vertical-align:middle;position:relative;overflow:hidden;}
+.profile-skin-badge::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);animation:pvShine 2.4s linear infinite;}
+@keyframes pvShine{0%{left:-60%}100%{left:120%}}
+.pv-premium .profile-hero{padding-top:14px;}
+.pv-premium{position:relative;}
 .profile-uname{color:var(--text-muted);font-size:14px;}
 .profile-uname .onl{color:var(--success);font-size:12px;}
 .profile-bio{margin-top:10px;color:var(--text);font-size:14px;max-width:420px;}

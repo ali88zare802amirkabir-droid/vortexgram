@@ -469,7 +469,7 @@ function renderDetails() {
   const mk = (label, icon, fn) => { const r = document.createElement('div'); r.className = 'dp-act'; r.innerHTML = ic(icon) + '<span>' + label + '</span>'; r.onclick = fn; return r; };
   act.appendChild(mk('پاک کردن تاریخچه', 'trash-2', () => { if (confirm('پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; } }));
   if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); if (g && g.owner === state.me.username) act.appendChild(mk('مدیریت گروه', 'settings', () => toast('مدیریت گروه'))); }
-  act.appendChild(mk('مشاهده پروفایل', 'user', () => openProfile(rid)));
+  act.appendChild(mk('مشاهده پروفایل', 'user', () => { const other = rid.startsWith('dm:') ? rid.slice(3).split('|').find((p) => p !== state.me.username) : null; if (other) openProfile(other); else toast('نمایش پروفایل برای گروه در دسترس نیست'); }));
   p.appendChild(act); luc();
 }
 function setFlag(rid, key, val) { if (!state.chatState[rid]) state.chatState[rid] = {}; state.chatState[rid][key] = val; api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId: rid, key: key, value: val }) }); buildChatList(); }
@@ -659,15 +659,21 @@ function renameUser(username, current, cb) {
 function openProfile(username) { renderProfile(username); }
 function renderProfile(username) {
   if (isMobile()) closeDrawers();
-  let u = (state.users || []).find((x) => x.username === username);
-  if (!u && state.me.username === username) u = state.me;
-  if (!u) { api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; renderProfile(username); } }); return; }
+  let u = (state.me.username === username) ? state.me : (state.users || []).find((x) => x.username === username);
+  if (!u) { api('/api/user/' + encodeURIComponent(username)).then((r) => r.json()).then((d) => { if (d.u) { state.users = state.users || []; if (!state.users.find((x) => x.username === d.u.username)) state.users.push(d.u); renderProfile(username); } else { setMode('view'); viewHost.innerHTML = '<div class="placeholder">پروفایل یافت نشد.</div>'; } }).catch(() => { setMode('view'); viewHost.innerHTML = '<div class="placeholder">خطا در بارگذاری پروفایل.</div>'; }); return; }
   setMode('view');
   const online = !!u.online;
+  const skin = SKINS.find((s) => s.id === (u.activeSkin || 'default'));
+  const premium = !!(skin && skin.price > 0);
+  const sa = premium ? ' data-accent="' + skin.accent + '"' : '';
   const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
-  let h = '<div class="profile-view">';
+  let h = '<div class="profile-view' + (premium ? ' pv-premium' : '') + '">';
   h += '<button class="btn sm ghost" data-act="back">← بازگشت</button>';
-  h += '<div class="profile-hero">' + avatarEl(u, 'xl').outerHTML + '<div class="profile-name">' + esc(u.displayName || u.username) + badge + '</div><div class="profile-uname">@' + esc(u.username) + (online ? ' <span class="onl">● آنلاین</span>' : '') + '</div>';
+  h += '<div class="profile-hero">';
+  if (premium) h += '<div class="profile-banner"' + sa + '></div>';
+  h += '<div class="profile-av' + (premium ? ' ringed' : '') + '"' + sa + '>' + avatarEl(u, 'xl').outerHTML + '</div>';
+  h += '<div class="profile-name">' + esc(u.displayName || u.username) + badge + (premium ? ' <span class="profile-skin-badge"' + sa + '>' + esc(skin.name) + '</span>' : '') + '</div>';
+  h += '<div class="profile-uname">@' + esc(u.username) + (online ? ' <span class="onl">● آنلاین</span>' : '') + '</div></div>';
   if (u.bio) h += '<div class="profile-bio">' + esc(u.bio) + '</div>';
   if (u.phone && (state.me.isAdmin || u.username === state.me.username)) h += '<div class="profile-row">📱 ' + esc(u.phone) + '</div>';
   h += '</div><div class="profile-actions">';
@@ -814,6 +820,15 @@ function renderCalendar(wrap) {
   wrap.innerHTML = h; luc();
 }
 function applyBackground() { document.documentElement.style.setProperty('--chat-bg', localStorage.getItem('vx_bg') || ''); if (localStorage.getItem('vx_bgimg')) document.documentElement.style.setProperty('--chat-bg-img', "url('" + localStorage.getItem('vx_bgimg') + "')"); else document.documentElement.style.setProperty('--chat-bg-img', 'none'); }
+function persistActiveSkin() {
+  const th = localStorage.getItem('vx_theme') || 'cyber';
+  const ac = localStorage.getItem('vx_accent') || 'blue';
+  const s = SKINS.find((x) => x.theme === th && x.accent === ac);
+  const id = s ? s.id : 'default';
+  localStorage.setItem('vx_skin', id);
+  if (state.me) state.me.activeSkin = id;
+  api('/api/skin', { method: 'POST', body: JSON.stringify({ skin: id }) }).catch(() => {});
+}
 const SETCATS = {
   appearance: { title: ic('palette') + ' ظاهر', icon: 'palette' },
   background: { title: ic('image') + ' پس‌زمینه چت', icon: 'image' },
@@ -850,8 +865,8 @@ function renderAppSub(body) {
   t += '<div class="settings-sec"><h3>' + ic('type') + ' اندازه فونت</h3><div class="stepper"><button id="set-font-dec">−</button><span id="fs-val">' + (state.fontScale) + '</span><button id="set-font-inc">+</button></div></div>';
   t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '">';
   body.innerHTML = t;
-  body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); });
-  body.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); });
+  body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); persistActiveSkin(); });
+  body.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); persistActiveSkin(); });
   body.querySelector('#set-font-dec').onclick = () => setFont(-1);
   body.querySelector('#set-font-inc').onclick = () => setFont(1);
   body.querySelector('#set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
@@ -924,7 +939,7 @@ function renderSkinsSub(body) {
   body.innerHTML = t;
   body.querySelectorAll('.skin-card').forEach((b) => {
     b.onclick = () => { const s = SKINS.find((x) => x.id === b.dataset.id); if (!s) return;
-      localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance(); toast(s.name + ' اعمال شد'); renderSettingsSub('skins', b.closest('.view-body').parentElement); };
+      localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance(); persistActiveSkin(); toast(s.name + ' اعمال شد'); renderSettingsSub('skins', b.closest('.view-body').parentElement); };
   });
 }
 
