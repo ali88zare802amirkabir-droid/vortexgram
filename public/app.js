@@ -949,9 +949,42 @@ function renderSkinsSub(body) {
   t += '</div></div>';
   body.innerHTML = t;
   body.querySelectorAll('.skin-card').forEach((b) => {
-    b.onclick = () => { const s = SKINS.find((x) => x.id === b.dataset.id); if (!s) return;
-      localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance(); persistActiveSkin(); toast(s.name + ' اعمال شد'); renderSettingsSub('skins', b.closest('.view-body').parentElement); };
+    b.onclick = () => { const s = SKINS.find((x) => x.id === b.dataset.id); if (s) openSkinPreview(s); };
   });
+}
+function openSkinPreview(s) {
+  if (document.getElementById('skin-preview-modal')) return;
+  const prevTheme = localStorage.getItem('vx_theme');
+  const prevAccent = localStorage.getItem('vx_accent');
+  localStorage.setItem('vx_theme', s.theme); localStorage.setItem('vx_accent', s.accent); applyAppearance();
+  const moodLabel = { scary: 'ترسناک', happy: 'شاد', sad: 'غم‌انگیز', calm: 'آرام' }[s.mood] || s.mood;
+  const m = document.createElement('div'); m.id = 'skin-preview-modal'; m.className = 'skin-preview-modal';
+  m.innerHTML =
+    '<div class="spm-backdrop"></div>' +
+    '<div class="spm-card">' +
+      '<div class="spm-head"><b>' + esc(s.name) + '</b>' + (s.price > 0 ? '<span class="skin-price">' + s.price.toLocaleString('fa-IR') + ' تومان</span>' : '<span class="skin-price free">رایگان</span>') + '</div>' +
+      '<div class="spm-desc">' + esc(s.desc) + '</div>' +
+      '<div class="spm-opts">' +
+        '<div class="spm-opt"><span class="spm-dot" style="background:var(--accent)"></span>رنگ آکسنت: ' + s.accent + '</div>' +
+        '<div class="spm-opt">حاله: ' + moodLabel + '</div>' +
+        '<div class="spm-opt">بنر و حلقه و بال متحرک فعال</div>' +
+      '</div>' +
+      '<div class="spm-hint">پیش‌نمایش زندهٔ تم در پس‌زمینه نمایش داده شد — همهٔ گزینه‌ها قابل مشاهده است.</div>' +
+      '<div class="spm-actions">' +
+        '<button class="btn sm ghost" id="spm-cancel">بازگشت</button>' +
+        '<button class="btn sm primary" id="spm-apply">' + (localStorage.getItem('vx_theme') === s.theme && localStorage.getItem('vx_accent') === s.accent ? 'فعال' : 'اعمال') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(m);
+  const close = (apply) => {
+    if (!apply) { localStorage.setItem('vx_theme', prevTheme); localStorage.setItem('vx_accent', prevAccent); applyAppearance(); }
+    else { persistActiveSkin(); toast(s.name + ' اعمال شد'); }
+    m.remove();
+    if (state.me) { const pv = document.querySelector('.view-body.settings-sub'); if (pv) renderSettingsSub('skins', pv.parentElement); }
+  };
+  m.querySelector('.spm-backdrop').onclick = () => close(false);
+  m.querySelector('#spm-cancel').onclick = () => close(false);
+  m.querySelector('#spm-apply').onclick = () => close(true);
 }
 
 /* INIT */
