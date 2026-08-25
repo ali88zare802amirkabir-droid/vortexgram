@@ -4,3 +4,11 @@ data/
 public/uploads/
 *.log
 vortexgram/
+
+# Share project data + uploads with collaborators (but keep .env secrets & node_modules out)
+!data/
+!data/db.json
+!public/uploads/
+!public/uploads/**
+*.bak
+db.json.bak.*
