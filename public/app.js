@@ -858,6 +858,7 @@ function renderSettingsMain(wrap) {
   });
 }
 function renderSettingsSub(cat, wrap) {
+  Array.from(wrap.querySelectorAll('.view-body.settings-sub')).forEach((b) => b.remove());
   const body = document.createElement('div'); body.className = 'view-body settings-sub';
   if (cat === 'appearance') renderAppSub(body);
   else if (cat === 'background') renderBgSub(body);
