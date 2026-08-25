@@ -21,6 +21,13 @@ process.on('unhandledRejection', (e) => console.error('UNHANDLED:', e));
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
+const IMG_BASE = path.join(__dirname, 'public', 'img');
+const IMG_DIRS = {
+  profiles: path.join(IMG_BASE, 'profiles'),
+  backgrounds: path.join(IMG_BASE, 'backgrounds'),
+  effects: path.join(IMG_BASE, 'effects'),
+};
+Object.values(IMG_DIRS).forEach((d) => { try { fs.mkdirSync(d, { recursive: true }); } catch (e) {} });
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const MAX_MSG_LEN = 4000;
 const HISTORY_LIMIT = 200;
@@ -105,7 +112,7 @@ function sendSMS(phone, text) {
   });
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off' };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null };
 }
 const LIMITS = {
   normalUploadMB: 30,
@@ -288,7 +295,9 @@ app.post('/api/skin', auth, (req, res) => {
 // ذخیره افکت حاله/بال پروفایل (بخش مجزا)
 app.post('/api/profile-effect', auth, (req, res) => {
   const effect = String((req.body || {}).effect || 'off').trim();
+  const color = (req.body || {}).color ? String(req.body.color).trim() : (req.user.profileEffectColor || null);
   req.user.profileEffect = effect;
+  req.user.profileEffectColor = effect === 'off' ? null : color;
   saveDB();
   res.json({ ok: true, me: publicUser(req.user) });
 });
@@ -310,6 +319,35 @@ app.post('/api/profile/avatar', auth, avatarUpload.single('file'), (req, res) =>
   req.user.avatar = '/uploads/' + req.file.filename;
   saveDB();
   pushUsers();
+  res.json({ ok: true, avatar: req.user.avatar, me: publicUser(req.user) });
+});
+app.post('/api/profile/background', auth, avatarUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'تصویر مجاز نیست (فقط jpg/png/webp تا ۵MB)' });
+  if (req.user.profileBg && req.user.profileBg.startsWith('/uploads/')) {
+    fs.unlink(path.join(UPLOAD_DIR, path.basename(req.user.profileBg)), () => {});
+  }
+  req.user.profileBg = '/uploads/' + req.file.filename;
+  saveDB(); pushUsers();
+  res.json({ ok: true, profileBg: req.user.profileBg, me: publicUser(req.user) });
+});
+function setProfileBgSafe(url) {
+  if (typeof url !== 'string') return null;
+  if (/^\/uploads\/[\w.-]+$/.test(url)) return url;
+  if (/^\/img\/(profiles|backgrounds|effects)\/[\w.-]+\.(jpe?g|png|webp|gif)$/i.test(url)) return url;
+  return null;
+}
+app.post('/api/profile/background/url', auth, (req, res) => {
+  const url = setProfileBgSafe((req.body || {}).url);
+  if (!url) return res.status(400).json({ error: 'لینک تصویر معتبر نیست' });
+  req.user.profileBg = url;
+  saveDB(); pushUsers();
+  res.json({ ok: true, profileBg: req.user.profileBg, me: publicUser(req.user) });
+});
+app.post('/api/profile/avatar/url', auth, (req, res) => {
+  const url = setProfileBgSafe((req.body || {}).url);
+  if (!url) return res.status(400).json({ error: 'لینک تصویر معتبر نیست' });
+  req.user.avatar = url;
+  saveDB(); pushUsers();
   res.json({ ok: true, avatar: req.user.avatar, me: publicUser(req.user) });
 });
 
@@ -378,6 +416,17 @@ app.post('/api/admin/requests/:id', auth, (req, res) => {
 app.get('/api/admin/users', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
   res.json({ users: db.users.map(publicUser) });
+});
+
+// جستجوی کاربران بر اساس آیدی/نام (برای شروع چت و پیدا کردن افراد)
+app.get('/api/users/search', auth, (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  if (q.length < 1) return res.json({ users: [] });
+  const out = db.users
+    .filter((u) => u.username.toLowerCase().includes(q) || (u.displayName || '').toLowerCase().includes(q))
+    .slice(0, 25)
+    .map((u) => ({ username: u.username, displayName: u.displayName || u.username, avatar: u.avatar || null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, banned: !!u.banned, online: !!u.online }));
+  res.json({ users: out });
 });
 
 // پروفایل عمومی هر کاربر (برای نمایش جلوه‌های تم در پروفایل)
@@ -457,9 +506,9 @@ app.post('/api/admin/signups/:id', auth, (req, res) => {
   db.signupRequests.splice(idx, 1);
   if (approve) {
     if (reqItem.phone) {
-      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '', activeSkin: 'default', profileEffect: 'off' });
+      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '', activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null });
     } else {
-      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off' });
+      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null });
     }
     saveDB();
     pushUsers();
@@ -737,6 +786,19 @@ app.use('/uploads', express.static(UPLOAD_DIR, {
   },
 }));
 
+// ---------- image gallery (public/img) ----------
+const IMG_SUBDIRS = { profiles: 'profiles', backgrounds: 'backgrounds', effects: 'effects' };
+app.get('/api/images', auth, (req, res) => {
+  const key = IMG_SUBDIRS[String(req.query.dir || 'backgrounds')] || 'backgrounds';
+  const folder = IMG_DIRS[key];
+  let files = [];
+  try { files = fs.readdirSync(folder).filter((f) => /\.(jpe?g|png|webp|gif)$/i.test(f)).map((f) => '/img/' + key + '/' + encodeURIComponent(f)); } catch (e) {}
+  res.json({ images: files });
+});
+app.use('/img', express.static(IMG_BASE, {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
+}));
+
 // ---------- groups & channels ----------
 function publicGroups(username) {
   // گروه‌ها خصوصی‌اند: فقط برای اعضا نمایش داده می‌شوند
@@ -970,6 +1032,17 @@ wss.on('connection', (ws) => {
       if (!canAccess(roomId, username)) return;
       const msgs = (db.messages[roomId] || []).slice(-100).map(enrichMsg);
       wsSend(ws, { type: 'history', roomId, messages: msgs });
+      return;
+    }
+
+    if (data.type === 'read') {
+      const roomId = String(data.roomId || '').slice(0, 100);
+      if (!canAccess(roomId, username)) return;
+      const rs = readStateOf();
+      if (!rs[roomId]) rs[roomId] = {};
+      rs[roomId][username] = Date.now();
+      saveDB();
+      broadcast({ type: 'room-read', roomId, username, time: rs[roomId][username] });
       return;
     }
 

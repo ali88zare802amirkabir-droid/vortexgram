@@ -75,6 +75,9 @@ function applyAppearance() {
   document.documentElement.style.fontSize = fs + 'px';
   document.documentElement.style.zoom = String(Math.max(0.8, Math.min(1.6, fs / 14)));
   applyBackground();
+  const fontKey = localStorage.getItem('vx_font') || 'default';
+  const FONT_MAP = { default: '', messenger: '"Vazirmatn","Segoe UI",Tahoma,sans-serif', classic: 'Tahoma,"Segoe UI",sans-serif', modern: 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif' };
+  document.body.style.fontFamily = FONT_MAP[fontKey] || '';
 }
 applyAppearance();
 
@@ -167,7 +170,7 @@ function handleWS(d) {
     case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; renderNav(); renderDock(); buildChatList(); fetchPreviews(); break;
     case 'users': state.users = d.users || []; buildChatList(); break;
     case 'groups': state.groups = d.groups || []; buildChatList(); break;
-    case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; buildChatList(); break;
+    case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; buildChatList(); refreshReadTicks(d.roomId); break;
     case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); break; } $('messages').innerHTML = ''; state.lastDay = null; d.messages.forEach(addMessage); scrollBottom(); break;
     case 'message': onNewMessage(d.message); break;
     case 'message-updated': updateMessage(d); break;
@@ -240,6 +243,9 @@ function chatItemEl(r) {
   return it;
 }
 function computeUnread(rid, r) { if (!r.last) return 0; const rs = state.readState[rid] || {}; const read = rs[state.me.username] || 0; if (r.last.time <= read) return 0; return (r.messages.filter((m) => m.time > read && m.from !== state.me.username).length) || 1; }
+function roomMembers(rid) { if (rid.startsWith('dm:')) return rid.slice(3).split('|'); if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members : []; } return []; }
+function isReadByOther(rid, m) { const rs = state.readState[rid] || {}; return roomMembers(rid).some((u) => u !== state.me.username && (rs[u] || 0) >= m.time); }
+function refreshReadTicks(rid) { if (rid !== state.room) return; const r = state.rooms[rid]; if (!r) return; document.querySelectorAll('#messages .bubble').forEach((b) => { const m = r.messages.find((x) => x.id === b.dataset.id); if (!m || m.from !== state.me.username) return; const span = b.querySelector('.msg-meta .msg-time'); if (!span) return; const tick = span.querySelector('svg'); const want = isReadByOther(rid, m); const has = !!tick; if (want && !has) span.insertAdjacentHTML('afterbegin', ic('check-check')); else if (!want && has) { tick.remove(); span.insertAdjacentHTML('afterbegin', ic('check')); } }); }
 function previewText(m) {
   if (!m) return ''; if (m.kind === 'image') return '📷 تصویر'; if (m.kind === 'video') return '🎬 ویدیو'; if (m.kind === 'file') return '📎 فایل' + (m.name ? ': ' + m.name : ''); if (m.kind === 'audio' || m.kind === 'voice') return '🎙 پیام صوتی'; if (m.kind === 'sticker') return 'استیکر'; if (m.kind === 'poll') return '📊 نظرسنجی'; if (m.kind === 'checklist') return '✅ چک‌لیست'; return (m.content || '').slice(0, 60);
 }
@@ -301,7 +307,7 @@ function addMessage(m) {
   const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.dataset.id = m.id; bubble.dataset.from = m.from || '';
   if (m.replyToId) { const orig = (state.rooms[state.room] || {}).messages.find((x) => x.id === m.replyToId); if (orig) bubble.appendChild(replyRef(orig)); }
   bubble.appendChild(bodyEl(m));
-  const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.innerHTML = '<span class="msg-time">' + (mine ? (m.read ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>'; bubble.appendChild(meta);
+  const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.innerHTML = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>'; bubble.appendChild(meta);
   if (state.me.isPremium || true) { meta.appendChild(reactionsEl(m)); }
   wrap.appendChild(bubble);
   const actions = document.createElement('div'); actions.className = 'msg-actions';
@@ -505,6 +511,11 @@ const EMOJI = ['😀','😂','🥰','😎','🤔','😢','😡','👍','👎','�
 function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(); const o = c.createOscillator(); const g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 660; g.gain.value = 0.04; o.start(); o.stop(c.currentTime + 0.12); } catch (e) {} }
 function logout() { localStorage.removeItem('ft_token'); location.reload(); }
 $('auth-logout').onclick = logout;
+function showAuth() {
+  $('auth-screen').classList.remove('hidden');
+  const lb = $('auth-logout');
+  if (lb) lb.style.display = (localStorage.getItem('ft_token') || localStorage.getItem('ft_admin_token')) ? '' : 'none';
+}
 
 /* PROFILE */
 function openProfile(rid) {
@@ -536,23 +547,44 @@ function openDM(other) {
   switchNav('chats'); openRoom(rid);
 }
 function renderContacts(wrap) {
+  wrap.innerHTML = '<div class="contact-search"><input id="ct-search" class="inp" placeholder="جستجوی آیدی یا نام کاربر…"><div id="ct-results" class="ct-results"></div></div><div id="ct-list"></div>';
+  const listEl = wrap.querySelector('#ct-list');
+  const resultsEl = wrap.querySelector('#ct-results');
   const draw = (list) => {
     list = (list || []).filter((u) => u.username !== state.me.username);
-    if (!list.length) { wrap.innerHTML = '<div class="contact-empty">هنوز مخاطبی ثبت نشده است. از دکمه + یک چت جدید شروع کن.</div>'; return; }
+    if (!list.length) { listEl.innerHTML = '<div class="contact-empty">هنوز مخاطبی ثبت نشده است. از دکمه + یک چت جدید شروع کن یا بالا جستجو کن.</div>'; return; }
     let h = '<div class="contact-list">';
     list.forEach((u) => {
       const online = state.me.isAdmin ? !!u.online : false;
       h += '<div class="contact-item" data-u="' + esc(u.username) + '">' + avatarEl(u, 'md').outerHTML + '<div class="ci-body"><div class="ci-name">' + esc(u.displayName || u.username) + (online ? ' <span style="font-size:10px;color:var(--success)">●</span>' : '') + '</div><div class="ci-sub">@' + esc(u.username) + '</div></div><button class="btn sm" data-act="chat">چت</button><button class="btn sm ghost" data-act="profile">پروفایل</button>' + (state.me.isAdmin ? '<button class="btn sm danger" data-act="ban">' + ((u.banned) ? 'رفع مسدودی' : 'مسدود') + '</button>' : '') + '</div>';
     });
     h += '</div>';
-    wrap.innerHTML = h;
-    wrap.querySelectorAll('.contact-item').forEach((it) => {
+    listEl.innerHTML = h;
+    listEl.querySelectorAll('.contact-item').forEach((it) => {
       const u = it.dataset.u; const cur = (state.users || []).find((x) => x.username === u) || { banned: false };
       it.querySelector('[data-act="chat"]').onclick = () => openDM(u);
       it.querySelector('[data-act="profile"]').onclick = () => openProfile(u);
       const ban = it.querySelector('[data-act="ban"]'); if (ban) ban.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u, banned: !cur.banned }) }); toast('انجام شد'); renderView('contacts'); };
     });
     luc();
+  };
+  let timer;
+  wrap.querySelector('#ct-search').oninput = (e) => {
+    const q = e.target.value.trim();
+    clearTimeout(timer);
+    if (!q) { resultsEl.innerHTML = ''; return; }
+    timer = setTimeout(() => {
+      api('/api/users/search?q=' + encodeURIComponent(q)).then((r) => r.json()).then((d) => {
+        const us = d.users || [];
+        if (!us.length) { resultsEl.innerHTML = '<div class="placeholder">کاربری با این آیدی یافت نشد.</div>'; return; }
+        resultsEl.innerHTML = us.map((u) => '<div class="au-row" data-u="' + esc(u.username) + '">' + avatarEl(u, 'md').outerHTML + '<div class="au-body"><div class="au-name">' + esc(u.displayName || u.username) + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '') + (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + '</div><div class="au-sub">@' + esc(u.username) + (u.online ? ' • آنلاین' : '') + '</div></div><div class="au-actions"><button class="btn sm" data-act="chat">چت</button><button class="btn sm ghost" data-act="profile">پروفایل</button></div></div>').join('');
+        resultsEl.querySelectorAll('.au-row').forEach((row) => {
+          const u = row.dataset.u;
+          row.querySelector('[data-act="chat"]').onclick = () => openDM(u);
+          row.querySelector('[data-act="profile"]').onclick = () => openProfile(u);
+        });
+      }).catch(() => {});
+    }, 250);
   };
   let list = state.me.isAdmin ? (state.users || []) : Object.keys(getContacts()).map((u) => ({ username: u, displayName: getContacts()[u] || u }));
   if (state.me.isAdmin && (!state.users || !state.users.length)) {
@@ -667,15 +699,17 @@ function renderProfile(username) {
   const effId = (u.profileEffect && u.profileEffect !== 'off') ? u.profileEffect : '';
   const eff = effId ? EFFECTS[effId] : null;
   const premium = !!eff;
-  const mood = effId;
-  const sa = premium ? ' data-accent="' + eff.accent + '"' : '';
+  const mood = eff ? eff.family : '';
+  const colHex = (u.profileEffectColor) || (eff ? eff.color : '#3b82f6');
+  const sa = premium ? ' style="--accent:' + colHex + ';--accent-2:' + shade(colHex, -22) + ';--accent-glow:' + glow(colHex) + '"' : '';
   const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
-  let h = '<div class="profile-view' + (premium ? ' pv-premium mood-' + mood : '') + '">';
+  let h = '<div class="profile-view' + (premium ? ' pv-premium mood-' + mood : '') + '"' + sa + '>';
   h += '<button class="btn sm ghost" data-act="back">← بازگشت</button>';
+  if (u.profileBg) h += '<div class="profile-bg" style="background-image:url(\'' + u.profileBg + '\')"></div>';
   h += '<div class="profile-hero">';
-  if (premium) h += '<div class="profile-banner"' + sa + '></div>';
-  h += '<div class="profile-av' + (premium ? ' ringed' : '') + '"' + sa + '>' + avatarEl(u, 'xl').outerHTML + '</div>';
-  h += '<div class="profile-name">' + esc(u.displayName || u.username) + badge + (premium ? ' <span class="profile-skin-badge"' + sa + '>' + esc(eff.name) + '</span>' : '') + '</div>';
+  if (premium) h += '<div class="profile-banner"></div>';
+  h += '<div class="profile-av' + (premium ? ' ringed' : '') + '">' + avatarEl(u, 'xl').outerHTML + '</div>';
+  h += '<div class="profile-name">' + esc(u.displayName || u.username) + badge + (premium ? ' <span class="profile-skin-badge">' + esc(eff.name) + '</span>' : '') + '</div>';
   h += '<div class="profile-uname">@' + esc(u.username) + (online ? ' <span class="onl">● آنلاین</span>' : '') + '</div></div>';
   if (u.bio) h += '<div class="profile-bio">' + esc(u.bio) + '</div>';
   if (u.phone && (state.me.isAdmin || u.username === state.me.username)) h += '<div class="profile-row">📱 ' + esc(u.phone) + '</div>';
@@ -690,6 +724,14 @@ function renderProfile(username) {
       else h += '<button class="btn" data-act="promote">ارتقا به ادمین</button>';
       h += '<button class="btn danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدودسازی') + '</button>';
     }
+  }
+  if (u.username === state.me.username) {
+    h += '<div class="profile-edit">';
+    h += '<button class="btn sm ghost" data-act="av-up">تغییر عکس</button>';
+    h += '<button class="btn sm ghost" data-act="bg-up">پس‌زمینه</button>';
+    h += '<button class="btn sm ghost" data-act="bg-gallery">گالری پینترست</button>';
+    h += '</div>';
+    h += '<input type="file" id="prof-file" accept="image/*" style="display:none">';
   }
   h += '</div></div>';
   viewHost.innerHTML = h;
@@ -728,7 +770,41 @@ function renderProfile(username) {
       sec.querySelector('.pf-body').innerHTML = h;
     }).catch(() => { sec.querySelector('.pf-body').innerHTML = '<div class="placeholder">خطا در بارگذاری.</div>'; });
   }
+  const pf = viewHost.querySelector('#prof-file');
+  if (pf) {
+    pf.onchange = (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      const target = pf.dataset.target;
+      toast('در حال آپلود…');
+      fetch('/api/profile/' + (target === 'bg' ? 'background' : 'avatar'), { method: 'POST', headers: { Authorization: 'Bearer ' + state.token }, body: fd })
+        .then((r) => r.json()).then((d) => { if (d.me) state.me = d.me; toast(target === 'bg' ? 'پس‌زمینه تنظیم شد' : 'عکس پروفایل تغییر کرد'); renderProfile(username); })
+        .catch(() => toast('خطا در آپلود'));
+    };
+  }
+  const avUp = viewHost.querySelector('[data-act="av-up"]'); if (avUp) avUp.onclick = () => { if (pf) { pf.dataset.target = 'avatar'; pf.click(); } };
+  const bgUp = viewHost.querySelector('[data-act="bg-up"]'); if (bgUp) bgUp.onclick = () => { if (pf) { pf.dataset.target = 'bg'; pf.click(); } };
+  const bgGal = viewHost.querySelector('[data-act="bg-gallery"]'); if (bgGal) bgGal.onclick = () => openGallery('backgrounds', (url) => {
+    api('/api/profile/background/url', { method: 'POST', body: JSON.stringify({ url }) }).then((r) => r.json()).then((d) => { if (d.me) state.me = d.me; toast('پس‌زمینه از گالری تنظیم شد'); renderProfile(username); }).catch(() => toast('خطا در تنظیم پس‌زمینه'));
+  });
   luc();
+}
+function openGallery(dir, cb) {
+  if (document.getElementById('gallery-modal')) return;
+  const m = document.createElement('div'); m.id = 'gallery-modal'; m.className = 'modal-overlay';
+  m.innerHTML = '<div class="modal"><div class="modal-head"><b>انتخاب از گالری</b><button class="icon-btn" data-close>✕</button></div>' +
+    '<div class="gallery-grid" id="gallery-grid"><div class="placeholder">در حال بارگذاری…</div></div>' +
+    '<div class="modal-foot">تصویرهایی که از پینترست دانلود کردی رو توی پوشهٔ <code>public/img/' + dir + '</code> بریز تا اینجا نمایش داده شوند.</div></div>';
+  document.body.appendChild(m);
+  const close = () => m.remove();
+  m.querySelector('[data-close]').onclick = close;
+  m.addEventListener('click', (e) => { if (e.target === m || e.target.classList.contains('modal')) close(); });
+  api('/api/images?dir=' + dir).then((r) => r.json()).then((d) => {
+    const g = m.querySelector('#gallery-grid');
+    if (!d.images || !d.images.length) { g.innerHTML = '<div class="placeholder">هنوز تصویری نیست. فایل‌ها رو در <code>public/img/' + dir + '</code> قرار بده.</div>'; return; }
+    g.innerHTML = d.images.map((u) => '<button class="gallery-item" data-url="' + u + '"><img src="' + u + '" loading="lazy"></button>').join('');
+    g.querySelectorAll('.gallery-item').forEach((b) => b.onclick = () => { close(); cb(b.dataset.url); });
+  }).catch(() => { m.querySelector('#gallery-grid').innerHTML = '<div class="placeholder">خطا در بارگذاری گالری.</div>'; });
 }
 function enterAsUser(username) {
   if (!confirm('وارد حساب @' + username + ' می‌شوید؟ پس از ورود می‌توانید با دکمه بازگشت به پنل ادمین برگردید.')) return;
@@ -879,6 +955,9 @@ function renderAppSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('palette') + ' تم</h3><div class="chip-row">' + themes.map((x) => '<button class="chip" data-theme-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
   t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ آکセント</h3><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
   t += '<div class="settings-sec"><h3>' + ic('type') + ' اندازه فونت</h3><div class="stepper"><button id="set-font-dec">−</button><span id="fs-val">' + (state.fontScale) + '</span><button id="set-font-inc">+</button></div></div>';
+  const fonts = [['default', 'پیش‌فرض'], ['messenger', 'پیام‌رسان'], ['classic', 'کلاسیک'], ['modern', 'مدرن']];
+  const curFont = localStorage.getItem('vx_font') || 'default';
+  t += '<div class="settings-sec"><h3>' + ic('type') + ' فونت</h3><div class="chip-row">' + fonts.map((f) => '<button class="chip' + (curFont === f[0] ? ' on' : '') + '" data-font="' + f[0] + '">' + f[1] + '</button>').join('') + '</div></div>';
   t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '">';
   body.innerHTML = t;
   body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); persistActiveSkin(); });
@@ -886,6 +965,7 @@ function renderAppSub(body) {
   body.querySelector('#set-font-dec').onclick = () => setFont(-1);
   body.querySelector('#set-font-inc').onclick = () => setFont(1);
   body.querySelector('#set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
+  body.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_font', b.dataset.font); applyAppearance(); renderSettingsSub('appearance', body.parentElement); });
 }
 function renderBgSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('palette') + ' رنگ پس‌زمینه</h3><input type="color" id="set-bg" value="' + (localStorage.getItem('vx_bg') || '#0a0a14') + '"></div>';
@@ -931,12 +1011,43 @@ const SKINS = [
   { id: 'ios', name: 'آی‌او‌اس', price: 0, theme: 'ios', accent: 'ios', mood: 'calm', desc: 'ظاهر مینیمال و تمیز آی‌او‌اس با شیشه‌مات' },
   { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', mood: 'scary', desc: 'فاخرترین تم — طلایی و سیاهی' }
 ];
-const EFFECTS = {
-  scary: { name: 'ترسناک', accent: 'red', desc: 'حاله و بال‌های تاریک با اخگرهای بالارونده' },
-  happy: { name: 'شاد', accent: 'purple', desc: 'بال‌های پرجنب‌وجوش و ذرات رنگی جست‌وخیز' },
-  sad: { name: 'غم‌انگیز', accent: 'blue', desc: 'حاله آبی ملایم با باران آرام' },
-  calm: { name: 'آرام', accent: 'green', desc: 'حاله نرم و ذرات شناور' }
+const EFFECT_PALETTES = {
+  red: '#ff3b5c', pink: '#ff5bd1', purple: '#a855f7', blue: '#3b82f6',
+  cyan: '#22d3ee', green: '#22c55e', lime: '#a3e635', orange: '#fb923c',
+  gold: '#f5c518', white: '#e8ecff', ice: '#8fd9ff', violet: '#7c3aed',
 };
+const EFFECT_FAMILIES = [
+  { id: 'scary',  name: 'ترسناک',   desc: 'حاله و بال‌های تاریک با اخگرهای بالارونده', colors: ['red', 'purple', 'orange'] },
+  { id: 'happy',  name: 'شاد',      desc: 'بال‌های پرجنب‌وجوش و ذرات رنگی جست‌وخیز', colors: ['pink', 'cyan', 'lime', 'gold'] },
+  { id: 'sad',    name: 'غم‌انگیز', desc: 'حاله آبی ملایم با باران آرام', colors: ['blue', 'cyan', 'ice'] },
+  { id: 'calm',   name: 'آرام',     desc: 'حاله نرم و ذرات شناور', colors: ['green', 'blue', 'white'] },
+  { id: 'neon',   name: 'نئون',     desc: 'درخشش نئونی دیجیتال', colors: ['cyan', 'pink', 'green', 'purple'] },
+  { id: 'fire',   name: 'آتش',      desc: 'شعله‌های گداخته و اخگر', colors: ['orange', 'red', 'gold'] },
+  { id: 'ice',    name: 'یخ',       desc: 'بلورهای سرد و درخشش یخی', colors: ['ice', 'cyan', 'blue'] },
+  { id: 'gold',   name: 'طلایی',    desc: 'جلال طلایی و حلقه براق', colors: ['gold', 'orange', 'white'] },
+  { id: 'galaxy', name: 'کهکشان',   desc: 'ستاره‌های کیهانی و مه رنگی', colors: ['purple', 'blue', 'pink'] },
+  { id: 'love',   name: 'عشق',      desc: 'قلب‌های صورتی و حاله گرم', colors: ['pink', 'red', 'gold'] },
+  { id: 'nature', name: 'طبیعت',    desc: 'برگ‌های سبز و نسیم', colors: ['green', 'lime', 'cyan'] },
+  { id: 'cyber',  name: 'سایبر',    desc: 'مدارهای دیجیتال و نور', colors: ['cyan', 'green', 'violet'] },
+  { id: 'mystic', name: 'مرموز',    desc: 'جادوی بنفش و ذرات درخشان', colors: ['purple', 'pink', 'blue'] },
+  { id: 'royal',  name: 'سلطنتی',   desc: 'بنفش شاهانه و زر', colors: ['purple', 'gold', 'red'] },
+  { id: 'sunset', name: 'غروب',     desc: 'گرمای غروب و پرتوهای نارنجی', colors: ['orange', 'red', 'gold', 'pink'] },
+  { id: 'aurora', name: 'شفق',      desc: 'شفق قطبی سبز و بنفش', colors: ['green', 'cyan', 'violet'] },
+];
+const EFFECTS = {};
+EFFECT_FAMILIES.forEach((f) => {
+  f.colors.forEach((ck) => {
+    const id = f.id + '-' + ck;
+    EFFECTS[id] = {
+      id, family: f.id, name: f.name, desc: f.desc,
+      accent: ck, color: EFFECT_PALETTES[ck],
+      colors: f.colors.map((c) => ({ key: c, hex: EFFECT_PALETTES[c] })),
+    };
+  });
+});
+function hexToRgb(h) { h = (h || '#3b82f6').replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function shade(hex, p) { const [r, g, b] = hexToRgb(hex); const f = (c) => Math.max(0, Math.min(255, Math.round(c + (p / 100) * 255))); return '#' + [f(r), f(g), f(b)].map((c) => c.toString(16).padStart(2, '0')).join(''); }
+function glow(hex, a) { const [r, g, b] = hexToRgb(hex); return 'rgba(' + r + ',' + g + ',' + b + ',' + (a == null ? .35 : a) + ')'; }
 function renderSkinsSub(body) {
   if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }
   // کاربر پرمیوم همه اسکین‌ها را دارد
@@ -1000,21 +1111,50 @@ function openSkinPreview(s) {
 function renderEffectsSub(body) {
   if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">بخش افکت‌های حاله و بال فقط برای کاربران پرمیوم است. برای فعال‌سازی با ادمین تماس بگیرید.</div></div>'; return; }
   const cur = state.me.profileEffect || 'off';
-  const opts = Object.assign({ off: { name: 'خاموش', accent: 'blue', desc: 'بدون افکت اضافه' } }, EFFECTS);
-  let t = '<div class="settings-sec"><h3>' + ic('sparkles') + ' حاله و بال پروفایل</h3><div class="skins-grid">';
-  Object.keys(opts).forEach((id) => {
-    const e = opts[id]; const isActive = cur === id;
-    t += '<div class="skin-card eff-card' + (isActive ? ' active' : '') + '" data-id="' + id + '">';
-    t += '<div class="eff-preview" data-accent="' + e.accent + '" style="background:linear-gradient(135deg,var(--accent),var(--accent-2))"></div>';
-    t += '<div class="skin-info"><b>' + esc(e.name) + '</b><span>' + esc(e.desc) + '</span></div>';
-    t += '<button class="btn sm eff-act" data-id="' + id + '">' + (isActive ? 'فعال' : 'انتخاب') + '</button>';
-    t += '</div>';
+  const curFam = cur !== 'off' ? cur.split('-')[0] : '';
+  const curCol = cur !== 'off' ? cur.split('-')[1] : '';
+  let t = '<div class="settings-sec"><h3>' + ic('sparkles') + ' حاله و بال پروفایل</h3>';
+  t += '<div class="eff-note">روی هر افکت بزن تا پالت رنگ‌هایش باز شود؛ رنگ دلخواهت رو انتخاب کن.</div>';
+  t += '<div class="eff-grid">';
+  t += '<div class="eff-card off' + (cur === 'off' ? ' active' : '') + '" data-off="1"><div class="eff-preview off"></div><div class="skin-info"><b>خاموش</b><span>بدون افکت</span></div></div>';
+  EFFECT_FAMILIES.forEach((f) => {
+    const open = curFam === f.id;
+    const c0 = EFFECT_PALETTES[f.colors[0]];
+    const c1 = EFFECT_PALETTES[f.colors[1] || f.colors[0]];
+    t += '<div class="eff-card fam' + (open ? ' active' : '') + '" data-fam="' + f.id + '">';
+    t += '<div class="eff-preview" style="background:linear-gradient(135deg,' + c0 + ',' + c1 + ')"></div>';
+    t += '<div class="skin-info"><b>' + esc(f.name) + '</b><span>' + esc(f.desc) + '</span></div>';
+    t += '<div class="eff-colors' + (open ? ' open' : '') + '">';
+    f.colors.forEach((ck) => {
+      const on = open && curCol === ck;
+      t += '<button class="eff-swatch' + (on ? ' on' : '') + '" data-eff="' + f.id + '-' + ck + '" data-color="' + EFFECT_PALETTES[ck] + '" style="background:' + EFFECT_PALETTES[ck] + '" title="' + ck + '"></button>';
+    });
+    t += '</div></div>';
   });
   t += '</div></div>';
   body.innerHTML = t;
-  body.querySelectorAll('.eff-card').forEach((b) => {
-    b.onclick = () => { const id = b.dataset.id; state.me.profileEffect = id; localStorage.setItem('vx_profile_effect', id); api('/api/profile-effect', { method: 'POST', body: JSON.stringify({ effect: id }) }).catch(() => {}); toast(id === 'off' ? 'افکت خاموش شد' : EFFECTS[id].name + ' اعمال شد'); renderSettingsSub('effects', b.closest('.view-body').parentElement); };
+  body.querySelector('[data-off]').onclick = () => applyEffect('off', null);
+  body.querySelectorAll('.eff-card.fam').forEach((c) => {
+    c.addEventListener('click', (e) => {
+      if (e.target.classList.contains('eff-swatch')) return;
+      const wasOpen = c.classList.contains('active');
+      body.querySelectorAll('.eff-card.fam').forEach((x) => { x.classList.remove('active'); x.querySelector('.eff-colors').classList.remove('open'); });
+      if (!wasOpen) { c.classList.add('active'); c.querySelector('.eff-colors').classList.add('open'); }
+    });
   });
+  body.querySelectorAll('.eff-swatch').forEach((s) => {
+    s.onclick = (e) => { e.stopPropagation(); applyEffect(s.dataset.eff, s.dataset.color); };
+  });
+}
+function applyEffect(eff, color) {
+  state.me.profileEffect = eff;
+  if (color) state.me.profileEffectColor = color;
+  localStorage.setItem('vx_profile_effect', eff);
+  if (color) localStorage.setItem('vx_profile_effect_color', color);
+  api('/api/profile-effect', { method: 'POST', body: JSON.stringify({ effect: eff, color: color || null }) })
+    .then((r) => r.json()).then((d) => { if (d.me) state.me = d.me; }).catch(() => {});
+  toast(eff === 'off' ? 'افکت خاموش شد' : (EFFECTS[eff] ? EFFECTS[eff].name : 'افکت') + ' اعمال شد');
+  renderSettingsSub('effects', document.querySelector('.view-body.settings-sub') ? document.querySelector('.view-body.settings-sub').parentElement : null);
 }
 
 /* INIT */
@@ -1031,7 +1171,7 @@ document.addEventListener('click', (e) => { const dp = document.querySelector('.
 (async function init() {
   if (state.token) {
     try { const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + state.token } }); if (r.ok) { const d = await r.json(); if (d.me) { state.me = d.me; enterApp(); } else logout(); } else logout(); }
-    catch (e) { $('auth-screen').classList.remove('hidden'); }
-  } else { $('auth-screen').classList.remove('hidden'); }
+    catch (e) { showAuth(); }
+  } else { showAuth(); }
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
 })();
