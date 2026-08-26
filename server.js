@@ -1017,10 +1017,14 @@ app.post('/api/chats/state', auth, (req, res) => {
   if (!canAccess(roomId, req.user.username)) return res.status(403).json({ error: 'دسترسی نداری' });
   const st = chatStateOf(req.user.username);
   const cur = st[roomId] || {};
-  st[roomId] = {
-    archived: 'archived' in (req.body || {}) ? !!req.body.archived : !!cur.archived,
-    pinned: 'pinned' in (req.body || {}) ? !!req.body.pinned : !!cur.pinned,
-  };
+  const body = req.body || {};
+  if (body.key && 'value' in body) {
+    cur[body.key] = !!body.value;
+  } else {
+    if ('archived' in body) cur.archived = !!body.archived;
+    if ('pinned' in body) cur.pinned = !!body.pinned;
+  }
+  st[roomId] = cur;
   saveDB();
   res.json({ ok: true });
 });
