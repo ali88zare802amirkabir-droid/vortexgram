@@ -105,6 +105,7 @@ const NAV = [
   { id: 'calendar', label: 'تقویم', icon: 'calendar' },
   { id: 'users', label: 'کاربران', icon: 'users' },
   { id: 'signups', label: 'درخواست‌ها', icon: 'user-plus' },
+  { id: 'stats', label: 'آمار', icon: 'bar-chart-2' },
   { id: 'bookmarks', label: 'نشان‌ها', icon: 'bookmark' },
   { id: 'settings', label: 'تنظیمات', icon: 'settings' },
 ];
@@ -114,7 +115,7 @@ function renderNav() {
   const av = avatarEl(state.me, 'sm'); av.id = 'nav-av'; nav.replaceChild(av, $('nav-av'));
   $('nav-name').textContent = state.me.displayName;
   nav.onclick = openProfile;
-  const adminOnly = ['users', 'signups'];
+  const adminOnly = ['users', 'signups', 'stats'];
   NAV.forEach((n) => {
     if (adminOnly.includes(n.id) && !state.me.isAdmin) return;
     const d = document.createElement('div'); d.className = 'nav-item' + (state.nav === n.id ? ' active' : '');
@@ -222,6 +223,8 @@ function buildChatList() {
   else if (f === 'groups') rooms = rooms.filter((r) => r.isGroup);
   else if (f === 'channels') rooms = rooms.filter((r) => r.isGroup && (state.groups.find((g) => 'group:' + g.id === r.rid) || {}).type === 'channel');
   else if (f === 'bots') rooms = rooms.filter((r) => r.isBot);
+  const blocked = (state.me && Array.isArray(state.me.blocked)) ? state.me.blocked : [];
+  rooms = rooms.filter((r) => { if (r.isGroup || r.isBot) return true; const other = r.rid.slice(3).split('|').find((p) => p !== state.me.username); return !blocked.includes(other); });
   if (state.search) { const q = state.search.toLowerCase(); rooms = rooms.filter((r) => r.title.toLowerCase().includes(q)); }
   rooms.sort((a, b) => (b.pinned - a.pinned) || (b.lastTime - a.lastTime));
   const active = rooms.filter((r) => !r.archived);
@@ -237,7 +240,9 @@ function buildChatList() {
 }
 function chatItemEl(r) {
   const it = document.createElement('div'); it.className = 'chat-item' + (state.room === r.rid ? ' active' : ''); it.dataset.roomId = r.rid;
-  const av = avatarEl(r.isGroup ? { displayName: r.title } : (r.isBot ? { displayName: BOT_NAME } : { displayName: r.title }), 'md');
+  let avSrc = null;
+  if (r.isGroup) { const g = state.groups.find((x) => 'group:' + x.id === r.rid); if (g && g.avatar) avSrc = g.avatar; }
+  const av = avatarEl(avSrc ? { avatar: avSrc, displayName: r.title } : (r.isBot ? { displayName: BOT_NAME } : { displayName: r.title }), 'md');
   it.innerHTML = '<div class="ci-av">' + av.outerHTML + (r.online ? '<span class="online-dot"></span>' : '') + '</div><div class="ci-body"><div class="ci-row1"><div class="ci-name">' + esc(r.title) + (r.isBot ? ' <span style="font-size:9px;background:var(--accent);color:#fff;padding:1px 5px;border-radius:6px">AI</span>' : '') + '</div><div class="ci-time">' + (r.lastTime ? fmt(r.lastTime) : '') + '</div></div><div class="ci-row2">' + (r.pinned ? ic('pin') : '') + (r.muted ? ic('volume-x') : '') + '<div class="ci-last">' + esc(r.lastMsg) + '</div>' + (r.unread ? '<div class="ci-badge">' + r.unread + '</div>' : '') + '</div></div>';
   it.onclick = () => openRoom(r.rid); it.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, r.rid); };
   return it;
@@ -266,11 +271,50 @@ function openRoom(rid) {
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
-function renderRoomHeader() { $('conv-name').textContent = roomTitle(state.room); $('conv-sub').textContent = roomOnline(state.room); const av = avatarEl(state.room.startsWith('group:') ? { displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm'); av.id = 'conv-av'; const old = $('conv-av'); if (old) old.replaceWith(av); }
+function renderRoomHeader() {
+  $('conv-name').textContent = roomTitle(state.room); $('conv-sub').textContent = roomOnline(state.room);
+  let avSrc = null;
+  if (state.room && state.room.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === state.room); if (g && g.avatar) avSrc = g.avatar; }
+  const av = avatarEl(avSrc ? { avatar: avSrc, displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm');
+  av.id = 'conv-av'; const old = $('conv-av'); if (old) old.replaceWith(av);
+}
 $('conv-info').onclick = () => { if (isMobile()) { const open = !$('details-panel').classList.contains('open'); $('details-panel').classList.toggle('open', open); showScrim(open); renderDetails(); } else { $('details-panel').classList.toggle('hidden'); renderDetails(); } };
 $('conv-back').onclick = () => { state.room = null; buildChatList(); setMode('chats'); if (isMobile()) { $('conversation').classList.remove('chat-open'); } };
 $('scrim').onclick = () => closeDrawers();
-$('conv-search').onclick = () => { $('conv-searchbox').classList.toggle('hidden'); };
+$('conv-search').onclick = () => { const sb = $('conv-searchbox'); const wasHidden = sb.classList.contains('hidden'); sb.classList.toggle('hidden'); if (wasHidden) { $('conv-search-input').value = ''; $('conv-search-input').focus(); searchChatMessages(''); } else { searchChatMessages(''); } };
+$('conv-search-input').addEventListener('input', (e) => { searchChatMessages(e.target.value); });
+$('conv-search-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('conv-search-input').value = ''; searchChatMessages(''); $('conv-searchbox').classList.add('hidden'); } if (e.key === 'Enter') { e.preventDefault(); const msgs = document.querySelectorAll('#messages .wrap'); let found = null; for (const w of msgs) { if (!w.classList.contains('search-hide')) { found = w; break; } } if (found) { found.scrollIntoView({ behavior: 'smooth', block: 'center' }); found.querySelector('.bubble').style.transition = 'box-shadow 0.3s'; found.querySelector('.bubble').style.boxShadow = '0 0 0 2px var(--accent)'; setTimeout(() => { const b = found.querySelector('.bubble'); if (b) b.style.boxShadow = ''; }, 1500); } } });
+function searchChatMessages(q) {
+  const msgs = document.querySelectorAll('#messages .wrap');
+  if (!q) { msgs.forEach((w) => { w.classList.remove('search-hide'); const body = w.querySelector('.msg-body'); if (body) body.querySelectorAll('mark.search-hl').forEach((m) => { m.replaceWith(document.createTextNode(m.textContent)); }); }); return; }
+  const ql = q.toLowerCase();
+  msgs.forEach((w) => {
+    const id = w.dataset.id;
+    const r = state.rooms[state.room];
+    const m = r ? r.messages.find((x) => x.id === id) : null;
+    if (!m) { w.classList.add('search-hide'); return; }
+    const fromName = (m.fromName || m.from || '').toLowerCase();
+    const content = (m.content || '').toLowerCase();
+    const match = content.includes(ql) || fromName.includes(ql);
+    w.classList.toggle('search-hide', !match);
+    if (match) {
+      const body = w.querySelector('.msg-body');
+      if (body && m.kind !== 'image' && m.kind !== 'video' && m.kind !== 'voice' && m.kind !== 'file' && m.kind !== 'audio' && m.kind !== 'sticker' && m.kind !== 'poll' && m.kind !== 'checklist') {
+        const orig = m.content || '';
+        const idx = orig.toLowerCase().indexOf(ql);
+        if (idx >= 0) {
+          body.textContent = '';
+          body.appendChild(document.createTextNode(orig.slice(0, idx)));
+          const mark = document.createElement('mark');
+          mark.className = 'search-hl';
+          mark.textContent = orig.slice(idx, idx + q.length);
+          body.appendChild(mark);
+          body.appendChild(document.createTextNode(orig.slice(idx + q.length)));
+        }
+      }
+    }
+  });
+}
 
 function onNewMessage(m) {
   const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.messages.push(m); r.last = m;
@@ -284,6 +328,8 @@ function pushNotification(m) {
 }
 function scrollBottom() { const c = $('messages'); c.scrollTop = c.scrollHeight; }
 function isNearBottom() { const c = $('messages'); return !!c && (c.scrollHeight - c.scrollTop - c.clientHeight) < 90; }
+$('scroll-fab').onclick = () => { scrollBottom(); };
+$('messages').addEventListener('scroll', () => { const fab = $('scroll-fab'); if (!fab) return; fab.classList.toggle('hidden', isNearBottom()); });
 function daySep(t) { const d = new Date(t); const s = d.toLocaleDateString('fa-IR'); return s; }
 function emojiOnly(text) {
   if (!text || typeof text !== 'string') return false;
@@ -329,6 +375,7 @@ function replyRef(orig) { const r = document.createElement('div'); r.className =
 function bodyEl(m) {
   const b = document.createElement('div'); b.className = 'msg-body';
   if (m.kind === 'image' || m.kind === 'video') { b.appendChild(mediaEl(m)); }
+  else if (m.kind === 'album') { b.appendChild(albumEl(m)); }
   else if (m.kind === 'voice') { b.appendChild(voiceEl(m)); }
   else if (m.kind === 'file' || m.kind === 'audio') { b.appendChild(fileEl(m)); }
   else if (m.kind === 'sticker') { const s = document.createElement('img'); s.className = 'sticker'; s.src = m.sticker || m.content; b.appendChild(s); }
@@ -336,6 +383,19 @@ function bodyEl(m) {
   else if (m.kind === 'checklist') { b.appendChild(checklistEl(m)); }
   else b.textContent = m.content || '';
   return b;
+}
+function albumEl(m) {
+  const d = document.createElement('div'); d.className = 'album-grid';
+  const urls = m.urls || (m.src ? [m.src] : []);
+  urls.forEach((url, i) => {
+    const item = document.createElement('div'); item.className = 'album-item';
+    const isVid = /\.(mp4|webm|ogg)$/i.test(url);
+    if (isVid) { const v = document.createElement('video'); v.src = url; v.loading = 'lazy'; v.controls = false; v.onclick = () => openViewer(url, 'video'); item.appendChild(v); }
+    else { const im = document.createElement('img'); im.src = url; im.loading = 'lazy'; im.onclick = () => openViewer(url, 'image'); item.appendChild(im); }
+    d.appendChild(item);
+  });
+  if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
+  return d;
 }
 function mediaEl(m) { const d = document.createElement('div'); d.className = 'media'; const im = document.createElement('img'); im.src = m.src; im.loading = 'lazy'; im.onclick = () => openViewer(m.src, m.kind); d.appendChild(im); if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); } return d; }
 function fileEl(m) {
@@ -393,7 +453,34 @@ async function doSend(m) { if (!state.ws || state.ws.readyState !== 1) { toast('
 $('composer-send').onclick = sendMessage;
 $('composer-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } if (e.key === 'Escape') setReply(null); });
 $('composer-input').addEventListener('input', () => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'typing', roomId: state.room, on: true })); });
-$('composer-emoji').onclick = () => { $('emoji-pop').classList.toggle('hidden'); if (!$('emoji-pop').dataset.filled) { EMOJI.slice(0, 64).forEach((e) => { const s = document.createElement('span'); s.textContent = e; s.onclick = () => { $('composer-input').value += e; $('emoji-pop').classList.add('hidden'); }; $('emoji-pop').appendChild(s); }); $('emoji-pop').dataset.filled = '1'; } };
+function uploadFileFromBlob(blob, name) {
+  const fd = new FormData(); fd.append('file', blob, name || 'paste.png');
+  const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%';
+  const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
+  xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; };
+  xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); const isImg = blob.type.startsWith('image/'); const isVid = blob.type.startsWith('video/'); doSend({ kind: isImg ? 'image' : isVid ? 'video' : 'file', src: d.url, name: name || 'paste', size: blob.size, content: '' }); } catch (e) { toast('خطا در آپلود'); } };
+  xhr.send(fd);
+}
+document.addEventListener('paste', (e) => {
+  if (!state.room) return;
+  const items = (e.clipboardData || e.originalEvent && e.originalEvent.clipboardData || {}).items;
+  if (!items) return;
+  for (const it of items) {
+    if (it.kind === 'file') {
+      e.preventDefault();
+      const f = it.getAsFile();
+      if (f) uploadFileFromBlob(f, f.name || 'clipboard.png');
+      return;
+    }
+  }
+});
+const convEl = $('conversation');
+if (convEl) {
+  convEl.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.add('drag-over'); });
+  convEl.addEventListener('dragleave', (e) => { e.preventDefault(); convEl.classList.remove('drag-over'); });
+  convEl.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.remove('drag-over'); if (!state.room) return; const files = e.dataTransfer.files; if (files.length) { for (const f of files) { const isImg = f.type.startsWith('image/'); const isVid = f.type.startsWith('video/'); const fd = new FormData(); fd.append('file', f); const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%'; const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); doSend({ kind: isImg ? 'image' : isVid ? 'video' : 'file', src: d.url, name: f.name, size: f.size, content: '' }); } catch (err) { toast('خطا در آپلود'); } }; xhr.send(fd); } } });
+$('composer-emoji').onclick = () => { const pop = $('emoji-pop'); pop.classList.toggle('hidden'); if (pop.classList.contains('hidden')) return; if (!pop.dataset.filled) { pop.innerHTML = '<div class="emoji-picker-wrap"><div class="emoji-search-row"><input type="text" id="emoji-search" class="input" placeholder="جستجوی ایموجی..." /></div><div class="emoji-cats" id="emoji-cats"></div><div class="emoji-grid" id="emoji-grid"></div></div>'; const cats = pop.querySelector('#emoji-cats'); const grid = pop.querySelector('#emoji-grid'); const search = pop.querySelector('#emoji-search'); Object.keys(EMOJI_CATEGORIES).forEach((cat, i) => { const btn = document.createElement('button'); btn.className = 'emoji-cat-btn' + (i === 0 ? ' active' : ''); btn.textContent = cat.split(' ')[0]; btn.title = cat; btn.onclick = () => { cats.querySelectorAll('.emoji-cat-btn').forEach((b) => b.classList.remove('active')); btn.classList.add('active'); renderEmojiGrid(grid, EMOJI_CATEGORIES[cat]); search.value = ''; }; cats.appendChild(btn); }); renderEmojiGrid(grid, EMOJI_CATEGORIES[Object.keys(EMOJI_CATEGORIES)[0]]); search.addEventListener('input', (e) => { const q = e.target.value.trim().toLowerCase(); if (!q) { const active = cats.querySelector('.emoji-cat-btn.active'); const catName = Object.keys(EMOJI_CATEGORIES).find((c) => c.split(' ')[0] === active.textContent) || Object.keys(EMOJI_CATEGORIES)[0]; renderEmojiGrid(grid, EMOJI_CATEGORIES[catName]); return; } const matches = ALL_EMOJIS.filter((em) => em.includes(q)); renderEmojiGrid(grid, matches); }); pop.dataset.filled = '1'; } };
+function renderEmojiGrid(grid, emojis) { grid.innerHTML = ''; emojis.forEach((e) => { const s = document.createElement('span'); s.className = 'emoji-item'; s.textContent = e; s.onclick = () => { $('composer-input').value += e; }; grid.appendChild(s); }); }
 $('composer-attach').onclick = () => $('file-input').click();
 $('file-input').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FormData(); rd.append('file', f); const bar = $('upload-bar'); bar.classList.remove('hidden'); const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); xhr.onload = () => { bar.classList.add('hidden'); const d = JSON.parse(xhr.responseText); const isImg = f.type.startsWith('image/'); const isVid = f.type.startsWith('video/'); doSend({ kind: isImg ? 'image' : isVid ? 'video' : f.type.startsWith('audio/') ? 'voice' : 'file', src: d.url, name: f.name, size: f.size, content: '' }); }; xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.send(rd); };
 let recorder = null, recChunks = [], recStart = 0, recStream = null, recAnalyser = null, recTimer = null, recBlob = null, recDur = 0;
@@ -474,8 +561,44 @@ function renderDetails() {
   const act = document.createElement('div'); act.className = 'dp-sec'; act.innerHTML = '<div class="dp-sec-title">عملیات</div>';
   const mk = (label, icon, fn) => { const r = document.createElement('div'); r.className = 'dp-act'; r.innerHTML = ic(icon) + '<span>' + label + '</span>'; r.onclick = fn; return r; };
   act.appendChild(mk('پاک کردن تاریخچه', 'trash-2', () => { if (confirm('پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; } }));
-  if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); if (g && g.owner === state.me.username) act.appendChild(mk('مدیریت گروه', 'settings', () => toast('مدیریت گروه'))); }
+  if (rid.startsWith('group:')) {
+    const g = state.groups.find((x) => 'group:' + x.id === rid);
+    if (g) {
+      if (g.owner === state.me.username) act.appendChild(mk('مدیریت گروه', 'settings', () => toast('مدیریت گروه')));
+      act.appendChild(mk('لینک دعوت', 'link', async () => {
+        try {
+          const res = await api('/api/groups/' + g.id + '/invite');
+          const d = await res.json();
+          if (d.ok) {
+            const link = location.origin + d.link;
+            navigator.clipboard.writeText(link).then(() => toast('لینک دعوت کپی شد')).catch(() => {});
+            if (confirm('لینک دعوت:\n' + link + '\n\nآیا می‌خواهید کپی شود؟')) {
+              navigator.clipboard.writeText(link).catch(() => {});
+            }
+          }
+        } catch (e) { toast('خطا در دریافت لینک'); }
+      }));
+    }
+  }
   act.appendChild(mk('مشاهده پروفایل', 'user', () => { const other = rid.startsWith('dm:') ? rid.slice(3).split('|').find((p) => p !== state.me.username) : null; if (other) openProfile(other); else toast('نمایش پروفایل برای گروه در دسترس نیست'); }));
+  if (rid.startsWith('dm:')) {
+    const other = rid.slice(3).split('|').find((p) => p !== state.me.username);
+    if (other && other !== BOT_USERNAME) {
+      const isBlocked = state.me.blocked && state.me.blocked.includes(other);
+      act.appendChild(mk(isBlocked ? 'آنبلاک کردن' : 'مسدود کردن', isBlocked ? 'user-check' : 'user-x', async () => {
+        if (isBlocked) {
+          const res = await api('/api/unblock', { method: 'POST', body: JSON.stringify({ username: other }) });
+          const d = await res.json();
+          if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); renderDetails(); }
+        } else {
+          if (!confirm('آیا می‌خواهید این کاربر را مسدود کنید؟')) return;
+          const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
+          const d = await res.json();
+          if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
+        }
+      }));
+    }
+  }
   p.appendChild(act); luc();
 }
 function setFlag(rid, key, val) { if (!state.chatState[rid]) state.chatState[rid] = {}; state.chatState[rid][key] = val; api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId: rid, key: key, value: val }) }); buildChatList(); }
@@ -507,7 +630,18 @@ function openForward(id) {
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
 /* PART 3 — views, palette, new menu, profile, misc, init */
-const EMOJI = ['😀','😂','🥰','😎','🤔','😢','😡','👍','👎','❤️','🔥','🎉','💯','✅','👏','🙏','😅','😴','🤩','😇','💔','⚡','🌟','🍕','☕','🌹','👀','🚀','💡','🤝','😉','🥳','😭','👌','💪','🤖','🌈','🍻','🎯','💎','📌','✨','⭐','😍','🤗','😜','🙄','😱','🤯'];
+const EMOJI_CATEGORIES = {
+  '😀 چهره‌ها': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🫣','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','🫤','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'],
+  '👋 اشاره': ['👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','🫷','🫸','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏','💪'],
+  '❤️ قلب': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟'],
+  '🐾 حیوانات': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪲','🪳','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊'],
+  '🍕 غذا': ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥖','🍞','🥨','🥯','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'],
+  '⚽ ورزش': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🥍','🏑','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','🎯','🪃','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫','🎟️','🎪','🤹','🎭','🩰','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎮','🕹️','🎰','🎲'],
+  '🚗 وسایل نقلیه': ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🛵','🏍️','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','⛽','🛞','🚨','🚥','🚦','🛑','🚧','⚓','🛟','⛵','🛶','🛳️','⛴️','🛥️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸'],
+  '物件': ['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','🖲️','🕹️','🗜️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','⌛','⏳','📡','🔋','🪫','💡','🔦','🕯️','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒️','🛠️','⛏️','🪚','🔩','⚙️','🪤','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','🪬','💈','⚗️','🔭','🔬','🕳️','🩹','🩺','🩻','🩼','💊','💉','🩸','🧬','🦠','🧫','🧪','🌡️','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🫧','🪥','🪒','🧽','🪣','🧴','🛎️','🔑','🗝️','🚪','🪑','🛋️','🛏️','🛌','🧸','🪆','🖼️','🪞','🪟','🛍️','🛒','🎁','🎈','🎏','🎀','🪄','🪅','🎊','🎉','🎎','🏮','🎐','🧧','✉️','📩','📨','📧','💌','📥','📤','📦','🏷️','🪧','📪','📫','📬','📭','📮','📯','📜','📃','📄','📑','🧾','📊','📈','📉','🗒️','🗓️','📆','📅','🗑️','📇','🗃️','🗳️','🗄️','📋','📁','📂','🗂️','🗞️','📰','📓','📔','📒','📕','📖','📗','📘','📙','📚','HeaderValue','🔖','🧷','🔗','📎','🖇️','📐','📏','🧮','📌','📍','✂️','🖊️','🖋️','✏️','✒️','🖌️','🖍️','📝','💼','📁','📂','🗂️'],
+  '✳️ نمادها': ['🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔺','🔻','💠','🔶','🔷','🔳','🔲','▪️','▫️','◾','◽','◼️','◻️','🟥','🟧','🟨','🟩','🟦','🟪','⬛','⬜','🟫','Inline code','💯','❗','❓','❕','❔','‼️','⁉️','🔅','🔆','〽️','⚠️','🚸','🔱','⚜️','🔰','♻️','✅','🈯','💹','❇️','✳️','❎','🌐','💠','Ⓜ️','🌀','💤','🏧','🚾','🅿️','🛗','🈳','🈂️','🛂','🛃','🛄','🛅','🚹','🚺','🚼','⚧️','🚻','🚮','🎦','📶','🈁','🔣','ℹ️','🔤','🔡','🔠','🆖','🆗','🆙','🆒','🆕','🆓','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','🔢','#️⃣','*️⃣','⏏️','▶️','⏸️','⏯️','⏹️','⏺️','⏭️','⏮️','⏩','⏪','⏫','⏬','◀️','🔼','🔽','➡️','⬅️','⬆️','⬇️','↗️','↘️','↙️','↖️','↕️','↔️','↪️','↩️','⤴️','⤵️','🔀','🔁','🔂','🔄','🔃','🎵','🎶','➕','➖','➗','✖️','🟰','♾️','💲','💱','™️','©️','®️','〰️','➰','➿','🔚','🔙','🔛','🔝','🔜','✔️','☑️','🔘','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤']
+};
+const ALL_EMOJIS = Object.values(EMOJI_CATEGORIES).flat();
 function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(); const o = c.createOscillator(); const g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 660; g.gain.value = 0.04; o.start(); o.stop(c.currentTime + 0.12); } catch (e) {} }
 function logout() { localStorage.removeItem('ft_token'); location.reload(); }
 $('auth-logout').onclick = logout;
@@ -658,6 +792,28 @@ async function renderSignups(wrap) {
     row.querySelector('[data-act="approve"]').onclick = async () => { await api('/api/admin/signups/' + encodeURIComponent(id), { method: 'POST', body: JSON.stringify({ approve: true }) }); toast('تایید شد'); renderSignups(wrap); };
     row.querySelector('[data-act="reject"]').onclick = async () => { await api('/api/admin/signups/' + encodeURIComponent(id), { method: 'POST', body: JSON.stringify({ approve: false }) }); toast('رد شد'); renderSignups(wrap); };
   });
+  luc();
+}
+async function renderStats(wrap) {
+  wrap.innerHTML = '<div class="ph-loading">در حال بارگذاری آمار…</div>';
+  try {
+    const d = await (await api('/api/admin/stats')).json();
+    const stats = [
+      { label: 'کل کاربران', value: d.totalUsers, icon: 'users' },
+      { label: 'آنلاین', value: d.onlineUsers, icon: 'wifi' },
+      { label: 'گروه‌ها و کانال‌ها', value: d.totalGroups, icon: 'users' },
+      { label: 'کل پیام‌ها', value: d.totalMessages, icon: 'message-square' },
+      { label: 'پیام‌های امروز', value: d.msgsToday, icon: 'calendar' },
+      { label: 'درخواست‌های منتظر', value: d.pendingSignups, icon: 'user-plus' },
+      { label: 'کاربران مسدود', value: d.bannedUsers, icon: 'user-x' },
+      { label: 'پریمیوم', value: d.premiumUsers, icon: 'crown' },
+      { label: 'فایل‌های آپلود', value: d.totalUploads, icon: 'upload' },
+    ];
+    let h = '<div class="stats-grid">';
+    stats.forEach((s) => { h += '<div class="stat-card"><div class="stat-ic">' + ic(s.icon) + '</div><div class="stat-val">' + (s.value || 0) + '</div><div class="stat-lbl">' + s.label + '</div></div>'; });
+    h += '</div>';
+    wrap.innerHTML = h;
+  } catch (e) { wrap.innerHTML = '<div class="placeholder">خطا در بارگذاری آمار.</div>'; }
   luc();
 }
 function renameModal(current, onOk) {
@@ -819,7 +975,27 @@ function showImpersonateBanner() {
   b.innerHTML = 'شما به عنوان @' + esc(me) + ' وارد شده‌اید <button id="imp-back">بازگشت به پنل ادمین</button>';
   b.querySelector('#imp-back').onclick = () => { const t = localStorage.getItem('ft_admin_token'); if (t) { localStorage.setItem('ft_token', t); localStorage.removeItem('ft_admin_token'); location.reload(); } };
 }
-async function startGroup(isChannel) { const name = prompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':'); if (!name) return; const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json(); state.groups.push(d.group); if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups })); openRoom('group:' + d.group.id); }
+async function startGroup(isChannel) {
+  const name = prompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':');
+  if (!name) return;
+  const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json();
+  state.groups.push(d.group);
+  if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups }));
+  openRoom('group:' + d.group.id);
+  setTimeout(() => {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*'; input.style.display = 'none';
+    document.body.appendChild(input);
+    input.onchange = async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('avatar', f);
+      const res = await fetch('/api/groups/' + d.group.id + '/avatar', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd });
+      const r = await res.json();
+      if (r.ok) { toast('آواتار گروه تنظیم شد'); const g = state.groups.find((x) => x.id === d.group.id); if (g) g.avatar = r.avatar; buildChatList(); }
+      input.remove();
+    };
+    if (confirm('آیا می‌خواهید آواتار برای گروه انتخاب کنید؟')) input.click(); else input.remove();
+  }, 500);
+}
 
 /* THEME */
 function cycleTheme() { const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios']; const cur = localStorage.getItem('vx_theme') || 'cyber'; const idx = (themes.indexOf(cur) + 1) % themes.length; localStorage.setItem('vx_theme', themes[idx]); applyAppearance(); toast('تم: ' + themes[idx]); }
@@ -869,6 +1045,7 @@ function renderView(id) {
   else if (id === 'bookmarks') { wrap.innerHTML = '<div class="placeholder">🔖 پیام‌های نشان‌شده اینجا نمایش داده می‌شوند. (نمونه)</div>'; }
   else if (id === 'users') { if (state.me.isAdmin) renderUsers(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else if (id === 'signups') { if (state.me.isAdmin) renderSignups(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
+  else if (id === 'stats') { if (state.me.isAdmin) renderStats(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else { wrap.innerHTML = '<div class="placeholder">این بخش در نسخه نمایشی در دسترس است.</div>'; }
   luc();
 }

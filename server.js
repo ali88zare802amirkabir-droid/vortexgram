@@ -112,7 +112,7 @@ function sendSMS(phone, text) {
   });
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [] };
 }
 const LIMITS = {
   normalUploadMB: 30,
@@ -126,7 +126,14 @@ function isDmAllowed(roomId, username) {
 }
 function canAccess(roomId, username) {
   if (typeof roomId !== 'string') return false;
-  if (roomId.startsWith('dm:')) return roomId.slice(3).split('|').includes(username);
+  if (roomId.startsWith('dm:')) {
+    const parts = roomId.slice(3).split('|');
+    if (!parts.includes(username)) return false;
+    const other = parts.find((p) => p !== username);
+    const otherUser = db.users.find((u) => u.username === other);
+    if (otherUser && Array.isArray(otherUser.blocked) && otherUser.blocked.includes(username)) return false;
+    return true;
+  }
   if (roomId.startsWith('group:')) {
     const g = findGroup(roomId.slice(6));
     return !!g && !!memberOf(g, username);
@@ -410,7 +417,45 @@ app.post('/api/admin/requests/:id', auth, (req, res) => {
   saveDB();
   pushUsers();
   notifyUser(item.username, { type: 'rename-result', approved: approve, displayName: approve ? item.newName : undefined });
-  res.json({ ok: true });
+});
+
+app.post('/api/block', auth, (req, res) => {
+  const { username } = req.body || {};
+  const target = String(username || '');
+  if (!target || target === req.user.username) return res.status(400).json({ error: 'نامعتبر' });
+  const targetUser = db.users.find((u) => u.username === target);
+  if (!targetUser) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  if (!Array.isArray(req.user.blocked)) req.user.blocked = [];
+  if (!req.user.blocked.includes(target)) { req.user.blocked.push(target); saveDB(); }
+  res.json({ ok: true, blocked: req.user.blocked });
+});
+
+app.post('/api/unblock', auth, (req, res) => {
+  const { username } = req.body || {};
+  const target = String(username || '');
+  if (!Array.isArray(req.user.blocked)) req.user.blocked = [];
+  req.user.blocked = req.user.blocked.filter((u) => u !== target);
+  saveDB();
+  res.json({ ok: true, blocked: req.user.blocked });
+});
+
+app.get('/api/blocked', auth, (req, res) => {
+  res.json({ blocked: Array.isArray(req.user.blocked) ? req.user.blocked : [] });
+});
+
+app.get('/api/admin/stats', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const totalUsers = db.users.length;
+  const onlineUsers = [...online.keys()].length;
+  const totalGroups = db.groups.length;
+  const totalMessages = Object.values(db.messages).reduce((sum, arr) => sum + arr.length, 0);
+  const today = new Date().toDateString();
+  const msgsToday = Object.values(db.messages).reduce((sum, arr) => sum + arr.filter((m) => new Date(m.time).toDateString() === today).length, 0);
+  const pendingSignups = db.signupRequests.length;
+  const bannedUsers = db.users.filter((u) => u.banned).length;
+  const premiumUsers = db.users.filter((u) => u.isPremium).length;
+  const totalUploads = (() => { try { return require('fs').readdirSync(UPLOAD_DIR).length; } catch { return 0; } })();
+  res.json({ totalUsers, onlineUsers, totalGroups, totalMessages, msgsToday, pendingSignups, bannedUsers, premiumUsers, totalUploads });
 });
 
 app.get('/api/admin/users', auth, (req, res) => {
@@ -828,13 +873,12 @@ app.post('/api/groups', auth, (req, res) => {
   const name = String((req.body || {}).name || '').trim();
   const type = (req.body || {}).type === 'channel' ? 'channel' : 'group';
   if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'نام باید ۲ تا ۳۰ کاراکتر باشد' });
-  // محدودیت ساخت برای حساب رایگان
   if (!req.user.isAdmin) {
     const owned = db.groups.filter((g) => g.owner === req.user.username).length;
     const maxOwned = req.user.isPremium ? 10 : 2;
     if (owned >= maxOwned) return res.status(403).json({ error: req.user.isPremium ? 'سقف ساخت: ۱۰ گروه/کانال' : 'حساب رایگان: حداکثر ۲ گروه/کانال — پرمیوم شو ⭐' });
   }
-  const g = { id: crypto.randomBytes(6).toString('hex'), type, name, owner: req.user.username, members: [{ username: req.user.username, role: 'owner' }], createdAt: Date.now() };
+  const g = { id: crypto.randomBytes(6).toString('hex'), type, name, owner: req.user.username, members: [{ username: req.user.username, role: 'owner' }], createdAt: Date.now(), avatar: null };
   db.groups.push(g);
   saveDB();
   broadcastGroups();
@@ -926,6 +970,35 @@ app.post('/api/groups/:id/kick', auth, (req, res) => {
   saveDB();
   broadcastGroups();
   res.json({ ok: true });
+});
+
+app.post('/api/groups/:id/avatar', auth, avatarUpload.single('avatar'), (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (g.owner !== req.user.username && !req.user.isAdmin) return res.status(403).json({ error: 'فقط مالک' });
+  if (!req.file) return res.status(400).json({ error: 'فایلی ارسال نشد' });
+  g.avatar = '/uploads/' + req.file.filename;
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true, avatar: g.avatar });
+});
+
+app.get('/api/groups/:id/invite', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!memberOf(g, req.user.username)) return res.status(403).json({ error: 'عضو نیستی' });
+  if (!g.inviteToken) { g.inviteToken = crypto.randomBytes(8).toString('hex'); saveDB(); }
+  res.json({ ok: true, token: g.inviteToken, link: '/join/' + g.inviteToken });
+});
+
+app.post('/api/groups/join/:token', auth, (req, res) => {
+  const g = db.groups.find((x) => x.inviteToken === req.params.token);
+  if (!g) return res.status(404).json({ error: 'لینک دعوت نامعتبر یا منقضی' });
+  if (memberOf(g, req.user.username)) return res.status(409).json({ error: 'از قبل عضو هستی' });
+  g.members.push({ username: req.user.username, role: 'member' });
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true, group: { id: g.id, name: g.name, type: g.type } });
 });
 
 // ---------- وضعیت چت‌ها: بایگانی / سنجاق ----------
@@ -1057,6 +1130,12 @@ wss.on('connection', (ws) => {
       if (!user || user.banned) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
+      if (roomId.startsWith('dm:')) {
+        const other = roomId.slice(3).split('|').find((p) => p !== username);
+        const otherUser = db.users.find((u) => u.username === other);
+        if (otherUser && Array.isArray(otherUser.blocked) && otherUser.blocked.includes(username)) return wsSend(ws, { type: 'error', text: 'شما توسط این کاربر مسدود شده‌اید' });
+        if (user.blocked && Array.isArray(user.blocked) && user.blocked.includes(other)) return wsSend(ws, { type: 'error', text: 'شما این کاربر را مسدود کرده‌اید' });
+      }
       if (!canPost(roomId, username)) return wsSend(ws, { type: 'error', text: 'در کانال فقط مدیران می‌توانند پیام بفرستند' });
       const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file', 'poll', 'checklist', 'album'].includes(data.kind) ? data.kind : 'text';
       const maxLen = (user.isPremium || user.isAdmin) ? MAX_MSG_LEN : 700;
