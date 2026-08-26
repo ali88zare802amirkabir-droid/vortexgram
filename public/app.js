@@ -908,7 +908,7 @@ function renderCalendar(wrap) {
   h += '</div>';
   wrap.innerHTML = h; luc();
 }
-function applyBackground() { document.documentElement.style.setProperty('--chat-bg', localStorage.getItem('vx_bg') || ''); if (localStorage.getItem('vx_bgimg')) document.documentElement.style.setProperty('--chat-bg-img', "url('" + localStorage.getItem('vx_bgimg') + "')"); else document.documentElement.style.setProperty('--chat-bg-img', 'none'); }
+function applyBackground() { document.documentElement.style.setProperty('--chat-bg', localStorage.getItem('vx_bg') || ''); if (localStorage.getItem('vx_bgimg')) document.documentElement.style.setProperty('--chat-bg-img', "url('" + localStorage.getItem('vx_bgimg') + "')"); else document.documentElement.style.removeProperty('--chat-bg-img'); }
 function persistActiveSkin() {
   const th = localStorage.getItem('vx_theme') || 'cyber';
   const ac = localStorage.getItem('vx_accent') || 'blue';
