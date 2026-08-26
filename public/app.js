@@ -621,13 +621,16 @@ function renderDetails() {
 function setFlag(rid, key, val) { if (!state.chatState[rid]) state.chatState[rid] = {}; state.chatState[rid][key] = val; api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId: rid, key: key, value: val }) }); buildChatList(); }
 
 /* CHAT CONTEXT MENU */
+function closeCtxMenus() { document.querySelectorAll('.ctx-menu').forEach((m) => m.remove()); }
 function openChatMenu(e, rid) {
+  closeCtxMenus();
   const pop = document.createElement('div'); pop.className = 'ctx-menu'; pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px';
   const mk = (t, icn, fn) => { const r = document.createElement('div'); r.className = 'ctx-item'; r.innerHTML = ic(icn) + '<span>' + t + '</span>'; r.onclick = () => { fn(); pop.remove(); }; pop.appendChild(r); };
   mk('باز کردن', 'message-square', () => openRoom(rid));   mk('پین', 'pin', () => setFlag(rid, 'pinned', !chatFlags(rid).pinned)); mk('بی‌صدا', 'volume-x', () => setFlag(rid, 'muted', true)); mk('مخفی', 'eye-off', () => setFlag(rid, 'hidden', true)); mk('آرشیو', 'archive', () => setFlag(rid, 'archived', !chatFlags(rid).archived));
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
 function openMsgMore(e, m) {
+  closeCtxMenus();
   const pop = document.createElement('div'); pop.className = 'ctx-menu'; pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px';
   const mk = (t, icn, fn) => { const r = document.createElement('div'); r.className = 'ctx-item'; r.innerHTML = ic(icn) + '<span>' + t + '</span>'; r.onclick = () => { fn(); pop.remove(); }; pop.appendChild(r); };
   mk('واکنش', 'smile', () => openReactionPicker(document.querySelector('[data-id="' + m.id + '"] .bubble'), m.id));
@@ -1362,6 +1365,13 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (closeAllOverlays()) { e.preventDefault(); e.stopPropagation(); } }
 }, true);
 document.addEventListener('click', (e) => { const dp = document.querySelector('.ctx-menu'); });
+document.addEventListener('contextmenu', (e) => {
+  const chatItem = e.target.closest('.chat-item');
+  const msgWrap = e.target.closest('.msg');
+  if (chatItem || msgWrap) { e.preventDefault(); }
+  else { closeCtxMenus(); }
+});
+document.addEventListener('click', () => closeCtxMenus());
 (async function init() {
   if (state.token) {
     try { const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + state.token } }); if (r.ok) { const d = await r.json(); if (d.me) { state.me = d.me; enterApp(); } else logout(); } else logout(); }
