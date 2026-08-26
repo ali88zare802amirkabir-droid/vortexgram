@@ -41,26 +41,42 @@ const state = {
 const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-username');
 const stepPhone = $('auth-step-phone'), stepCode = $('auth-step-code'), stepName = $('auth-step-name');
 const authError = $('auth-error');
-let authPhoneVal = '';
+let authPhoneVal = '', authBusy = false;
 function showAuthStep(s) { stepPhone.classList.toggle('hidden', s !== 'phone'); stepCode.classList.toggle('hidden', s !== 'code'); stepName.classList.toggle('hidden', s !== 'name'); authError.textContent = ''; }
 function authErr(m, ok) { authError.textContent = m; authError.style.color = ok ? 'var(--success)' : 'var(--danger)'; }
+function authBusyState(busy) { authBusy = busy; $('auth-send').disabled = busy; $('auth-verify').disabled = busy; $('auth-finish').disabled = busy; if (busy) { $('auth-send').textContent = 'در حال ارسال…'; } else { $('auth-send').textContent = 'دریافت کد'; } }
+function normalizePhoneDisplay(p) { return p.replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[\s\-()]/g, ''); }
 function finishLogin(d) { state.token = d.token; state.me = d.me; localStorage.setItem('ft_token', d.token); enterApp(); }
 $('auth-send').onclick = async () => {
-  const phone = authPhone.value.trim();
+  if (authBusy) return;
+  const raw = authPhone.value.trim();
+  const phone = normalizePhoneDisplay(raw);
+  if (!/^09\d{9}$/.test(phone)) return authErr('شماره موبایل معتبر نیست (باید با ۰۹ شروع شود و ۱۱ رقم باشد)');
+  authBusyState(true);
   try { const r = await fetch('/api/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) }); const d = await r.json();
-    if (!r.ok) return authErr(d.error || 'خطا'); authPhoneVal = phone; $('auth-phone-label').textContent = 'کد به ' + phone + ' ارسال شد'; showAuthStep('code');
-    if (d.devCode) authErr('کد ورود (ارسال پیامک غیرفعال است): ' + d.devCode, true); else if (d.note) authErr(d.note, true);
-  } catch (e) { authErr(e.message); }
+    if (!r.ok) { authErr(d.error || 'خطا'); authBusyState(false); return; } authPhoneVal = phone; $('auth-phone-label').textContent = 'کد به ' + phone + ' ارسال شد'; showAuthStep('code'); authBusyState(false);
+    if (d.devCode) authErr('کد ورود (پیامک غیرفعال): ' + d.devCode, true); else if (d.note) authErr(d.note, true);
+  } catch (e) { authErr(e.message); authBusyState(false); }
 };
 $('auth-verify').onclick = async () => {
-  try { const r = await fetch('/api/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim() }) }); const d = await r.json();
+  if (authBusy) return;
+  const code = authCode.value.trim();
+  if (!/^\d{6}$/.test(code)) return authErr('کد باید ۶ رقمی باشد');
+  authBusyState(true);
+  try { const r = await fetch('/api/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code }) }); const d = await r.json();
+    authBusyState(false);
     if (!r.ok) return authErr(d.error || 'خطا'); if (d.token) return finishLogin(d); if (d.needsName) return showAuthStep('name');
-  } catch (e) { authErr(e.message); }
+  } catch (e) { authErr(e.message); authBusyState(false); }
 };
 $('auth-finish').onclick = async () => {
-  try { const r = await fetch('/api/complete-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim(), displayName: authName.value.trim(), username: authName.value.trim() }) }); const d = await r.json();
+  if (authBusy) return;
+  const displayName = authName.value.trim();
+  if (displayName.length < 2) return authErr('نام نمایشی حداقل ۲ حرف باشد');
+  authBusyState(true);
+  try { const r = await fetch('/api/complete-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim(), displayName, username: displayName }) }); const d = await r.json();
+    authBusyState(false);
     if (!r.ok) return authErr(d.error || 'خطا'); if (d.token) return finishLogin(d); if (d.pending) { authErr(d.message || 'درخواست ثبت شد؛ منتظر تایید ادمین', true); return; }
-  } catch (e) { authErr(e.message); }
+  } catch (e) { authErr(e.message); authBusyState(false); }
 };
 authPhone.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-send').click(); });
 authCode.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-verify').click(); });
@@ -644,7 +660,7 @@ const EMOJI_CATEGORIES = {
 };
 const ALL_EMOJIS = Object.values(EMOJI_CATEGORIES).flat();
 function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(); const o = c.createOscillator(); const g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 660; g.gain.value = 0.04; o.start(); o.stop(c.currentTime + 0.12); } catch (e) {} }
-function logout() { localStorage.removeItem('ft_token'); location.reload(); }
+function logout() { if (!confirm('آیا می‌خواهید از حساب خارج شوید؟')) return; localStorage.removeItem('ft_token'); location.reload(); }
 $('auth-logout').onclick = logout;
 function showAuth() {
   $('auth-screen').classList.remove('hidden');
