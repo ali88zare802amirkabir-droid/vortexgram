@@ -293,6 +293,14 @@ function renderRoomHeader() {
   if (state.room && state.room.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === state.room); if (g && g.avatar) avSrc = g.avatar; }
   const av = avatarEl(avSrc ? { avatar: avSrc, displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm');
   av.id = 'conv-av'; const old = $('conv-av'); if (old) old.replaceWith(av);
+  $('conv-name').onclick = $('conv-av').onclick = () => {
+    if (!state.room) return;
+    if (state.room.startsWith('dm:')) {
+      const other = state.room.slice(3).split('|').find((p) => p !== state.me.username);
+      if (other && other !== BOT_USERNAME) openProfile(other);
+    } else { toast('پروفایل گروه از بخش اطلاعات قابل مشاهده است'); }
+  };
+  $('conv-name').style.cursor = 'pointer';
 }
 $('conv-info').onclick = () => { if (isMobile()) { const open = !$('details-panel').classList.contains('open'); $('details-panel').classList.toggle('open', open); showScrim(open); renderDetails(); } else { $('details-panel').classList.toggle('hidden'); renderDetails(); } };
 $('conv-back').onclick = () => { state.room = null; buildChatList(); setMode('chats'); if (isMobile()) { $('conversation').classList.remove('chat-open'); } };
