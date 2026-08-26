@@ -512,6 +512,12 @@ a{color:var(--primary);text-decoration:none;}
 @media (max-width:520px){
   #command-dock .dock-item{font-size:10px;gap:3px;}
 }
+@media (max-width:360px){
+  .msg{max-width:92%;}
+  .chat-item .ci-name{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cl-items{padding-bottom:80px;}
+  #command-dock .dock-item{font-size:9px;padding:4px 6px;}
+}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important;}}
 
 
