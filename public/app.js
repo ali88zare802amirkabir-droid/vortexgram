@@ -910,6 +910,7 @@ recInit();
 $('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png' }; doSend(m); };
 function setReply(m) { state.replyTo = m; if (m) $('reply-bar').innerHTML = '<div class="rb-text">پاسخ به: ' + esc(previewText(m)) + '</div><div class="rb-x" onclick="setReply(null)">' + ic('x') + '</div>'; $('reply-bar').classList.toggle('hidden', !m); luc(); }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
+document.addEventListener('touchstart', (e) => { if (e.target.closest('.msg-actions')) return; const msg = e.target.closest('.msg'); if (msg) { document.querySelectorAll('.msg-actions-active').forEach((m) => { if (m !== msg) m.classList.remove('msg-actions-active'); }); msg.classList.toggle('msg-actions-active'); } else { document.querySelectorAll('.msg-actions-active').forEach((m) => m.classList.remove('msg-actions-active')); } });
 function openReactionPicker(bubble, id) { const pop = document.createElement('div'); pop.className = 'reac-pop'; ALL_EMOJIS.slice(0, 12).forEach((em) => { const s = document.createElement('span'); s.textContent = em; s.onclick = () => { toggleReaction(id, em, state.room); pop.remove(); }; pop.appendChild(s); }); document.body.appendChild(pop); const r = bubble.getBoundingClientRect(); pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + 6) + 'px'; setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 100); }
 async function toggleReaction(id, em, rid) { reactionBurst(id, em); await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId: rid }) }); }
 async function votePoll(id, opt, rid) { await api('/api/poll/vote', { method: 'POST', body: JSON.stringify({ msgId: id, option: opt, roomId: rid }) }); }
@@ -982,7 +983,10 @@ function openChatMenu(e, rid) {
 }
 function openMsgMore(e, m) {
   closeCtxMenus();
-  const pop = document.createElement('div'); pop.className = 'ctx-menu'; pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px';
+  const isM = isMobile();
+  const pop = document.createElement('div'); pop.className = 'ctx-menu';
+  if (isM) { pop.style.left = '50%'; pop.style.top = '50%'; pop.style.transform = 'translate(-50%, -50%)'; }
+  else { pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px'; }
   const mk = (t, icn, fn) => { const r = document.createElement('div'); r.className = 'ctx-item'; r.innerHTML = ic(icn) + '<span>' + t + '</span>'; r.onclick = () => { fn(); pop.remove(); }; pop.appendChild(r); };
   mk('واکنش', 'smile', () => openReactionPicker(document.querySelector('[data-id="' + m.id + '"] .bubble'), m.id));
   mk('پاسخ', 'reply', () => setReply(m));
@@ -991,7 +995,12 @@ function openMsgMore(e, m) {
   if (m.from === state.me.username) mk('ویرایش', 'edit-3', () => { const t = prompt('ویرایش پیام', m.content); if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); });
   if (m.from === state.me.username) mk('حذف', 'trash-2', () => { if (confirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); });
   mk('پین', 'pin', async () => { await api('/api/pin', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: m.id }) }); });
-  document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
+  document.body.appendChild(pop);
+  if (isM) {
+    setTimeout(() => document.addEventListener('touchstart', () => pop.remove(), { once: true }), 50);
+  } else {
+    setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
+  }
 }
 function openForward(id) {
   const m = (state.rooms[state.room] || {}).messages.find((x) => x.id === id); if (!m) return;

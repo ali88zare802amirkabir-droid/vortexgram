@@ -661,10 +661,11 @@ app.post('/api/reactions', auth, (req, res) => {
   if (!emoji || ['__proto__', 'constructor', 'prototype'].includes(emoji)) return res.status(400).json({ error: 'واکنش نامعتبر' });
   if (!m.reactions || typeof m.reactions !== 'object' || Array.isArray(m.reactions)) m.reactions = {};
   const u = req.user.username;
-  const list = m.reactions[emoji] || [];
-  if (list.includes(u)) m.reactions[emoji] = list.filter((x) => x !== u);
-  else m.reactions[emoji] = [...list, u];
-  if (!m.reactions[emoji].length) delete m.reactions[emoji];
+  for (const [emojiKey, users] of Object.entries(m.reactions)) {
+    m.reactions[emojiKey] = users.filter((x) => x !== u);
+    if (!m.reactions[emojiKey].length) delete m.reactions[emojiKey];
+  }
+  m.reactions[emoji] = [u];
   saveDB();
   broadcast({ type: 'message-updated', roomId: rid, id: msgId, message: { reactions: m.reactions } });
   res.json({ ok: true, reactions: m.reactions });

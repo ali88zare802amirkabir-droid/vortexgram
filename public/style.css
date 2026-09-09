@@ -519,8 +519,13 @@ a{color:var(--primary);text-decoration:none;}
 .msg:not(.mine) .msg-actions{inset-inline-start:0;}
 .msg.mine .msg-actions{inset-inline-end:0;}
 .msg:hover .msg-actions{opacity:1;pointer-events:auto;}
-.msg-actions .icon-btn{width:30px;height:30px;border-radius:8px;}
-.msg-actions .icon{width:16px;height:16px;}
+.msg-actions-active .msg-actions{opacity:1;pointer-events:auto;}
+@media(max-width:1024px){
+.msg-actions{opacity:1;pointer-events:auto;}
+.msg-actions .icon-btn{width:34px;height:34px;border-radius:10px;}
+.ctx-menu{left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;max-width:85vw;max-height:70vh;overflow-y:auto;}
+.reac-pop{left:50%!important;top:auto!important;bottom:80px!important;transform:translateX(-50%)!important;}
+}
 
 .typing-ind{display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:12px;color:var(--outline);height:26px;}
 
