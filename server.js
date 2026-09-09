@@ -68,7 +68,7 @@ try {
 let saveTimer = null;
 function flushDB() {
   clearTimeout(saveTimer);
-  try { db.sessions = Object.fromEntries(sessions); fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) { console.error('save failed', e.message); }
+  try { db.sessions = Object.fromEntries(sessions); fs.writeFile(DB_FILE, JSON.stringify(db), () => {}); } catch (e) { console.error('save failed', e.message); }
 }
 function saveDB() {
   clearTimeout(saveTimer);
