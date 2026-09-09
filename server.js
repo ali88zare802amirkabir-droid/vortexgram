@@ -282,6 +282,20 @@ app.post('/api/complete-register', (req, res) => {
     while (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) username += crypto.randomInt(0, 9);
   }
   if (db.signupRequests.some((r) => r.phone === phone)) return res.status(409).json({ error: 'درخواست عضویت تو قبلاً ثبت شده و منتظر تایید ادمین است' });
+
+  const adminPhones = (process.env.ADMIN_PHONES || '').split(',').map(s => s.trim()).filter(Boolean);
+  const isAdmin = adminPhones.includes(phone);
+
+  if (isAdmin) {
+    const user = { username, phone, displayName, salt: null, passHash: null, isAdmin: true, isPremium: true, banned: false, createdAt: Date.now(), avatar: null, bio: 'ادمین سیستم', activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null };
+    db.users.push(user);
+    pendingCodes.delete(phone);
+    saveDB();
+    pushUsers();
+    const token = createSession(user.username);
+    return res.json({ ok: true, token, me: publicUser(user), message: 'حساب ادمین ساخته شد ✅' });
+  }
+
   db.signupRequests.push({ id: crypto.randomUUID(), username, phone, displayName, at: Date.now(), type: 'phone' });
   saveDB();
   for (const u of db.users.filter((x) => x.isAdmin)) notifyUser(u.username, { type: 'signup-request', username, displayName, phone });
