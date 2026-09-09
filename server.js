@@ -39,6 +39,13 @@ const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const BOT_USERNAME = 'vortex_bot';
 const BOT_NAME = 'Vortex AI';
 
+// فقط ادمین اصلی (شماره ثبت‌شده در ADMIN_PHONES) دسترسی‌های حساس را دارد
+function isOriginalAdmin(user) {
+  if (!user || !user.isAdmin) return false;
+  const adminPhones = (process.env.ADMIN_PHONES || '').split(',').map(s => s.trim()).filter(Boolean);
+  return adminPhones.includes(user.phone);
+}
+
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -521,9 +528,10 @@ app.get('/api/user/:username', auth, (req, res) => {
   res.json({ u: pu });
 });
 
-// ورود ادمین به حساب کاربر (impersonate)
+// ورود ادمین به حساب کاربر (impersonate) — فقط ادمین اصلی
 app.post('/api/admin/impersonate', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  if (!isOriginalAdmin(req.user)) return res.status(403).json({ error: 'فقط ادمین اصلی اجازه دارد' });
   const username = String((req.body || {}).username || '').replace('@', '');
   const target = db.users.find((u) => u.username === username);
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
@@ -533,12 +541,16 @@ app.post('/api/admin/impersonate', auth, (req, res) => {
   res.json({ ok: true, token, username: target.username });
 });
 
-// ارتقای کاربر به ادمین (کل پروژه) یا ادمین گروه
+// ارتقای کاربر به ادمین (کل پروژه) — فقط ادمین اصلی
 app.post('/api/admin/promote', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  if (!isOriginalAdmin(req.user)) return res.status(403).json({ error: 'فقط ادمین اصلی اجازه دارد' });
   const { username, scope, role } = req.body || {};
   const target = db.users.find((u) => u.username === String(username).replace('@', ''));
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  if (target.isAdmin && !isOriginalAdmin(target)) {
+    // ادمین اصلی نمی‌تونه ادمین اصلی دیگه‌ای رو حذف کنه
+  }
   if (scope && scope !== 'global') {
     const g = db.groups.find((x) => x.id === String(scope).replace('group:', ''));
     if (!g) return res.status(404).json({ error: 'گروه یافت نشد' });
