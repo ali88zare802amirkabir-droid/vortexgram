@@ -5,12 +5,15 @@ const http = require('http');
 const express = require('express');
 const multer = require('multer');
 const { WebSocketServer } = require('ws');
+const dns = require('dns');
 
 // ---------- .env ----------
-for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('\n')) {
-  const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
+try {
+  for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
+} catch (e) { console.warn('.env not found, using environment variables only'); }
 
 const { chatCompletion } = require('./ai/groq');
 const prompts = require('./ai/prompts');
@@ -31,7 +34,7 @@ Object.values(IMG_DIRS).forEach((d) => { try { fs.mkdirSync(d, { recursive: true
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const MAX_MSG_LEN = 4000;
 const HISTORY_LIMIT = 200;
-const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 
 const BOT_USERNAME = 'vortex_bot';
 const BOT_NAME = 'Vortex AI';
@@ -75,6 +78,16 @@ const sessions = new Map();
 const online = new Map();
 const msgTimestamps = new Map();
 const pendingCodes = new Map(); // phone -> { code, exp }
+// rate-limit ساده ضد بروت‌فورس برای اندپوینت‌های احراز هویت (حافظه‌ای، هر پروسه)
+const authAttempts = new Map(); // key -> [timestamps]
+function authRateOk(key, max, windowMs) {
+  const now = Date.now();
+  const arr = (authAttempts.get(key) || []).filter((t) => now - t < windowMs);
+  if (arr.length >= max) { authAttempts.set(key, arr); return false; }
+  arr.push(now);
+  authAttempts.set(key, arr);
+  return true;
+}
 // بارگذاری نشست‌های ذخیره‌شده تا لاگین پس از ری‌استارت سرور باقی بماند
 try { if (db.sessions) for (const [k, v] of Object.entries(db.sessions)) sessions.set(k, v); } catch (e) {}
 
@@ -160,6 +173,13 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  if (req.path === '/api/swtest' && req.method === 'POST') {
+    try { fs.writeFileSync(path.join(__dirname, 'swtest-result.txt'), JSON.stringify(req.body)); } catch (e) {}
+    return res.json({ ok: true });
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
 
 // ---------- auth api ----------
@@ -192,6 +212,7 @@ app.post('/api/register', (req, res) => {
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
+  if (!authRateOk('login:' + (req.ip || '?'), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — یک دقیقه صبر کن' });
   const pending = db.signupRequests.find((r) => r.username.toLowerCase() === String(username || '').toLowerCase());
   if (pending) return res.status(403).json({ error: 'ثبت‌نامت هنوز توسط ادمین تایید نشده ⏳' });
   const user = db.users.find((u) => u.username.toLowerCase() === String(username || '').toLowerCase());
@@ -209,6 +230,7 @@ function genCode() { return String(crypto.randomInt(0, 1000000)).padStart(6, '0'
 app.post('/api/send-code', async (req, res) => {
   const phone = normalizePhone((req.body || {}).phone);
   if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
+  if (!authRateOk('send-code:' + phone, 5, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
   const code = genCode();
   pendingCodes.set(phone, { code, exp: Date.now() + 2 * 60 * 1000 });
   const sms = await sendSMS(phone, `کد ورود VORTEXGRAM: ${code}`);
@@ -222,6 +244,7 @@ app.post('/api/verify-code', (req, res) => {
   const phone = normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '');
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
+  if (!authRateOk('verify-code:' + phone, 10, 5 * 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — چند دقیقه صبر کن' });
   const rec = pendingCodes.get(phone);
   if (!rec || rec.exp < Date.now()) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
   if (rec.code !== code) return res.status(401).json({ error: 'کد اشتباه است' });
@@ -312,10 +335,10 @@ app.post('/api/profile-effect', auth, (req, res) => {
 const avatarUpload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
-    filename: (req, file, cb) => cb(null, 'av-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex') + (EXT_BY_MIME[file.mimetype] || '')),
+    filename: (req, file, cb) => cb(null, 'av-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex') + (EXT_BY_MIME[cleanMime(file.mimetype)] || '')),
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)),
+  fileFilter: (req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(cleanMime(file.mimetype))),
 });
 app.post('/api/profile/avatar', auth, avatarUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'عکس مجاز نیست (فقط jpg/png/webp تا ۵MB)' });
@@ -529,9 +552,14 @@ app.get('/api/admin/user/:username/files', auth, (req, res) => {
     else if (m.kind === 'file') out.files.push(entry);
     if (/^https?:\/\//.test(m.content || '')) out.links.push({ roomId: m.roomId, time: m.time, url: m.content, content: m.content });
   };
-  for (const roomId of Object.keys(db.messages)) {
-    if (!canAccess(roomId, req.user.username)) continue;
-    (db.messages[roomId] || []).forEach((m) => { if (m.from === username) pushKind(m); });
+  for (const [roomId, arr] of Object.entries(db.messages)) {
+    if (roomId.startsWith('dm:')) {
+      if (!roomId.slice(3).split('|').includes(username)) continue;
+    } else if (roomId.startsWith('group:')) {
+      const g = findGroup(roomId.slice(6));
+      if (!g || !memberOf(g, username)) continue;
+    } else continue;
+    arr.forEach((m) => { if (m.from === username) pushKind(m); });
   }
   res.json(out);
 });
@@ -598,18 +626,21 @@ function findMsg(roomId, id) {
   return arr.find((m) => m.id === id);
 }
 app.post('/api/reactions', auth, (req, res) => {
-  const { roomId, msgId, emoji } = req.body || {};
-  if (!canAccess(String(roomId || ''), req.user.username)) return res.status(403).json({ error: 'دسترسی' });
-  const m = findMsg(String(roomId), String(msgId));
+  const { roomId, msgId } = req.body || {};
+  const rid = String(roomId || '');
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(rid, String(msgId));
   if (!m) return res.status(404).json({ error: 'پیام یافت نشد' });
-  if (!m.reactions) m.reactions = {};
+  const emoji = String((req.body || {}).emoji || '').slice(0, 8);
+  if (!emoji || ['__proto__', 'constructor', 'prototype'].includes(emoji)) return res.status(400).json({ error: 'واکنش نامعتبر' });
+  if (!m.reactions || typeof m.reactions !== 'object' || Array.isArray(m.reactions)) m.reactions = {};
   const u = req.user.username;
   const list = m.reactions[emoji] || [];
   if (list.includes(u)) m.reactions[emoji] = list.filter((x) => x !== u);
   else m.reactions[emoji] = [...list, u];
   if (!m.reactions[emoji].length) delete m.reactions[emoji];
   saveDB();
-  broadcast({ type: 'message-updated', roomId, id: msgId, message: { reactions: m.reactions } });
+  broadcast({ type: 'message-updated', roomId: rid, id: msgId, message: { reactions: m.reactions } });
   res.json({ ok: true, reactions: m.reactions });
 });
 
@@ -634,7 +665,9 @@ app.post('/api/poll/vote', auth, (req, res) => {
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
   const m = findMsg(rid, String(msgId));
   if (!m || m.kind !== 'poll' || !m.poll) return res.status(404).json({ error: 'نظرسنجی یافت نشد' });
-  m.poll.votes[req.user.username] = Number(option);
+  const opt = Number(option);
+  if (!Number.isInteger(opt) || opt < 0 || opt >= (m.poll.options || []).length) return res.status(400).json({ error: 'گزینه نامعتبر' });
+  m.poll.votes[req.user.username] = opt;
   saveDB();
   broadcast({ type: 'message-updated', roomId: rid, id: msgId, poll: m.poll });
   res.json({ ok: true, poll: m.poll });
@@ -662,8 +695,10 @@ app.post('/api/schedule', auth, (req, res) => {
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
   const atTs = Number(at);
   if (!atTs || atTs < Date.now()) return res.status(400).json({ error: 'زمان نامعتبر' });
+  const k = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file'].includes(kind) ? kind : 'text';
+  const vUrl = typeof url === 'string' && /^\/uploads\/[\w.-]+$/.test(url) ? url : undefined;
   const id = crypto.randomUUID();
-  db.scheduled.push({ id, roomId: rid, from: req.user.username, kind: kind || 'text', content: String(content || '').slice(0, 4000), url: url || undefined, name: name || undefined, mime: mime || undefined, replyTo: replyTo || undefined, at: atTs });
+  db.scheduled.push({ id, roomId: rid, from: req.user.username, kind: k, content: String(content || '').slice(0, 4000), url: vUrl, name: typeof name === 'string' ? name.slice(0, 80) : undefined, mime: typeof mime === 'string' ? mime.slice(0, 60) : undefined, replyTo: replyTo && typeof replyTo === 'object' && typeof replyTo.id === 'string' ? { id: replyTo.id.slice(0, 40), name: String(replyTo.name || '').slice(0, 40), snippet: String(replyTo.snippet || '').slice(0, 120) } : undefined, at: atTs });
   saveDB();
   res.json({ ok: true, id });
 });
@@ -672,17 +707,59 @@ app.post('/api/schedule', auth, (req, res) => {
 const httpsMod = require('https');
 const httpMod = require('http');
 const urlMod = require('url');
-app.get('/api/link-preview', auth, (req, res) => {
+function isPrivateIp(ip) {
+  if (typeof ip !== 'string' || !ip) return true;
+  if (ip.includes(':')) return true; // IPv6 always blocked
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some((n) => isNaN(n) || n < 0 || n > 255)) return true;
+  const [a, b] = p;
+  if (a === 0 || a === 10 || a === 127 || a >= 224) return true; // loopback, private class A, multicast
+  if (a === 169 && b === 254) return true; // link-local
+  if (a === 172 && b >= 16 && b <= 31) return true; // private class B
+  if (a === 192 && b === 168) return true; // private class C
+  if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+  if (a === 203 && b === 0 && p[2] === 113) return true; // documentation
+  if (a === 240) return true; // reserved
+  return false;
+}
+function fetchWithRedirects(url, opts, maxRedirects = 3) {
+  const mod = url.startsWith('https:') ? httpsMod : httpMod;
+  return new Promise((resolve, reject) => {
+    const reqO = mod.get(url, opts, (r) => {
+      if ([301, 302, 303, 307, 308].includes(r.statusCode) && r.headers.location && maxRedirects > 0) {
+        r.resume();
+        try {
+          const next = new urlMod.URL(r.headers.location, url);
+          if (next.protocol !== 'http:' && next.protocol !== 'https:') return reject(new Error('bad redirect protocol'));
+          const port = Number(next.port) || (next.protocol === 'https:' ? 443 : 80);
+          if (![80, 443, 8080, 8443].includes(port)) return reject(new Error('bad redirect port'));
+          return resolve(fetchWithRedirects(next.href, opts, maxRedirects - 1));
+        } catch { return reject(new Error('bad redirect url')); }
+      }
+      resolve(r);
+    });
+    reqO.on('timeout', () => { reqO.destroy(); reject(new Error('timeout')); });
+    reqO.on('error', reject);
+  });
+}
+app.get('/api/link-preview', auth, async (req, res) => {
   const raw = String(req.query.url || '');
   let u;
   try { u = new urlMod.URL(raw); } catch { return res.status(400).json({ error: 'لینک نامعتبر' }); }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return res.status(400).json({ error: 'فقط http(s)' });
-  const mod = u.protocol === 'https:' ? httpsMod : httpMod;
-  const reqO = mod.get(raw, { timeout: 3500, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'text/html' } }, (r) => {
+  const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+  if (![80, 443, 8080, 8443].includes(port)) return res.status(400).json({ error: 'پورت غیرمجاز' });
+  try {
+    const addrs = await dns.promises.lookup(u.hostname, { all: true });
+    if (!addrs.length || addrs.some((i) => isPrivateIp(i.address))) return res.status(400).json({ error: 'آدرس مقصد مجاز نیست' });
+  } catch { return res.status(400).json({ error: 'دامنه یافت نشد' }); }
+  try {
+    const r = await fetchWithRedirects(u.href, { timeout: 3000, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'text/html' } }, 3);
     const ct = r.headers['content-type'] || '';
     if (!ct.includes('text/html')) { r.resume(); return res.json({ url: raw, domain: u.hostname }); }
     let buf = ''; let n = 0;
-    r.on('data', (c) => { buf += c; n += c.length; if (n > 200000) r.destroy(); });
+    r.on('data', (c) => { buf += c; n += c.length; if (n > 100000) r.destroy(); });
     r.on('end', () => {
       const title = (buf.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
       const desc = (buf.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) || [])[1]
@@ -690,9 +767,9 @@ app.get('/api/link-preview', auth, (req, res) => {
       const og = (buf.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']*)["']/i) || [])[1] || '';
       res.json({ url: raw, domain: u.hostname, title: title.slice(0, 200).trim(), description: desc.slice(0, 300).trim(), image: og.slice(0, 300).trim() });
     });
-  });
-  reqO.on('timeout', () => { reqO.destroy(); res.json({ url: raw, domain: u.hostname }); });
-  reqO.on('error', () => res.json({ url: raw, domain: u.hostname }));
+  } catch {
+    res.json({ url: raw, domain: u.hostname });
+  }
 });
 
 // ===== AI داخلی (دستورات و پنل) =====
@@ -700,19 +777,21 @@ app.post('/api/ai', auth, async (req, res) => {
   if (!process.env.GROQ_API_KEYS_STR) return res.status(503).json({ error: 'AI تنظیم نشده' });
   const { action, roomId, text, tone } = req.body || {};
   const a = String(action || '');
+  const rid = String(roomId || '');
+  if ((a === 'summarize' || a === 'reply' || a === 'ask') && !canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
   try {
     let out = null;
     if (a === 'summarize') {
-      out = await chatCompletion([{ role: 'system', content: 'Summarize the following chat in Persian in 3-5 short bullet points. Concise, no preamble.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(String(roomId || ''), 40) }]);
+      out = await chatCompletion([{ role: 'system', content: 'Summarize the following chat in Persian in 3-5 short bullet points. Concise, no preamble.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(rid, 40) }]);
     } else if (a === 'reply') {
-      out = await chatCompletion([{ role: 'system', content: 'Based on the recent chat, suggest 3 short reply options in Persian, one per line, no numbering, no labels.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(String(roomId || ''), 40) }]);
+      out = await chatCompletion([{ role: 'system', content: 'Based on the recent chat, suggest 3 short reply options in Persian, one per line, no numbering, no labels.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(rid, 40) }]);
     } else if (a === 'translate') {
       out = await chatCompletion([{ role: 'system', content: 'Translate the text. If Persian translate to English, else to Persian. Return only the translation.' }, { role: 'user', content: String(text || '') }]);
     } else if (a === 'rewrite') {
       const t = String(tone || 'natural');
       out = await chatCompletion([{ role: 'system', content: `Rewrite the text in Persian with a ${t} tone. Return only the rewritten text.` }, { role: 'user', content: String(text || '') }]);
     } else if (a === 'ask') {
-      out = await chatCompletion([{ role: 'system', content: 'Answer briefly in Persian using chat context if relevant.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(String(roomId || ''), 30) + '\n\nQ: ' + String(text || '') }]);
+      out = await chatCompletion([{ role: 'system', content: 'Answer briefly in Persian using chat context if relevant.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(rid, 30) + '\n\nQ: ' + String(text || '') }]);
     } else return res.status(400).json({ error: 'action نامعتبر' });
     if (!out) return res.status(502).json({ error: 'پاسخی دریافت نشد' });
     res.json({ result: out });
@@ -802,13 +881,17 @@ const EXT_BY_MIME = {
   'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.aac', 'audio/x-matroska': '.mka',
   'application/pdf': '.pdf', 'application/zip': '.zip', 'text/plain': '.txt',
 };
+function cleanMime(m) { return String(m || '').split(';')[0].trim(); }
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + crypto.randomBytes(5).toString('hex') + (EXT_BY_MIME[file.mimetype] || '')),
+    filename: (req, file, cb) => cb(null, Date.now() + '-' + crypto.randomBytes(5).toString('hex') + (EXT_BY_MIME[cleanMime(file.mimetype)] || '')),
   }),
   limits: { fileSize: LIMITS.premiumUploadMB * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, !!EXT_BY_MIME[file.mimetype]),
+  fileFilter: (req, file, cb) => {
+    if (!EXT_BY_MIME[cleanMime(file.mimetype)]) return cb(null, false);
+    cb(null, true);
+  },
 });
 app.post('/api/upload', auth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'فایل مجاز نیست یا حجمش زیاد است' });
@@ -817,7 +900,7 @@ app.post('/api/upload', auth, upload.single('file'), (req, res) => {
     fs.unlink(req.file.path, () => {});
     return res.status(400).json({ error: `حداکثر ${maxMB} مگابایت` + (req.user.isPremium ? '' : ' — با پرمیوم تا ۱۰۰ مگ') });
   }
-  const m = req.file.mimetype;
+  const m = cleanMime(req.file.mimetype);
   const kind = m.startsWith('image/') ? (m === 'image/gif' ? 'gif' : 'image') : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : 'file';
   res.json({ url: '/uploads/' + req.file.filename, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
 });
@@ -1043,7 +1126,11 @@ app.post('/api/chats/read', auth, (req, res) => {
 
 // ---------- websocket ----------
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
+const onUpgrade = (req, socket, head) => {
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+};
+server.on('upgrade', onUpgrade);
 
 function wsSend(ws, obj) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
@@ -1141,15 +1228,19 @@ wss.on('connection', (ws) => {
         if (user.blocked && Array.isArray(user.blocked) && user.blocked.includes(other)) return wsSend(ws, { type: 'error', text: 'شما این کاربر را مسدود کرده‌اید' });
       }
       if (!canPost(roomId, username)) return wsSend(ws, { type: 'error', text: 'در کانال فقط مدیران می‌توانند پیام بفرستند' });
-      const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file', 'poll', 'checklist', 'album'].includes(data.kind) ? data.kind : 'text';
+      const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'voice', 'file', 'poll', 'checklist', 'album'].includes(data.kind) ? data.kind : 'text';
       const maxLen = (user.isPremium || user.isAdmin) ? MAX_MSG_LEN : 700;
 
       // اعتبارسنجی بار پیام بر اساس نوع
       let content = '';
       let album = undefined, poll = undefined, checklist = undefined;
-      if (kind === 'text' || kind === 'sticker') {
+      if (kind === 'text') {
         content = String(data.content ?? '').slice(0, maxLen);
         if (!content.trim()) return;
+      } else if (kind === 'sticker') {
+        const stk = typeof data.sticker === 'string' ? data.sticker.trim().slice(0, 300) : '';
+        if (!stk || !/^(https?:\/\/[\w.-]+\.\w{2,}|\/uploads\/[\w.-]+)/.test(stk)) return;
+        content = stk;
       } else if (kind === 'album') {
         if (!Array.isArray(data.album) || data.album.length < 1) return;
         album = data.album.filter((u) => typeof u === 'string' && /^\/uploads\/[\w.-]+$/.test(u)).slice(0, 10);
@@ -1167,7 +1258,8 @@ wss.on('connection', (ws) => {
           checklist = { title: t, items: items.map((x) => ({ text: x, done: false })) };
         }
       } else {
-        if (typeof data.url !== 'string' || !/^\/uploads\/[\w.-]+$/.test(data.url)) return;
+        const mUrl = typeof data.url === 'string' ? data.url : typeof data.src === 'string' ? data.src : '';
+        if (!/^\/uploads\/[\w.-]+$/.test(mUrl)) return;
       }
 
       // نقل قول (ریپلای)
@@ -1180,10 +1272,12 @@ wss.on('connection', (ws) => {
         };
       }
 
+      const mediaUrl = (kind === 'image' || kind === 'gif' || kind === 'video' || kind === 'audio' || kind === 'voice' || kind === 'file') ? (typeof data.url === 'string' ? data.url : typeof data.src === 'string' ? data.src : '') : '';
       const msg = {
         id: crypto.randomUUID(), roomId, from: username, fromName: user.displayName, kind,
-        content, url: data.url || undefined, mime: typeof data.mime === 'string' ? data.mime.slice(0, 60) : undefined,
-        name: typeof data.name === 'string' ? data.name.slice(0, 80) : undefined, time: now,
+        content, url: mediaUrl || undefined, src: mediaUrl || undefined, mime: typeof data.mime === 'string' ? data.mime.slice(0, 60) : undefined,
+        name: typeof data.name === 'string' ? data.name.slice(0, 80) : undefined, size: typeof data.size === 'number' && data.size > 0 ? data.size : undefined, duration: typeof data.duration === 'number' && data.duration > 0 ? Math.min(3600, data.duration) : undefined, time: now,
+        wave: Array.isArray(data.wave) ? data.wave.map((v) => Number(v)).filter((v) => Number.isFinite(v)).map((v) => Math.max(0, Math.min(1, v))).slice(0, 100) : undefined,
         fromAvatar: user.avatar || undefined, fromPremium: !!user.isPremium,
         replyTo, album, poll, checklist,
         reactions: {}, silent: !!data.silent,
@@ -1246,7 +1340,10 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     if (username) {
-      online.delete(username);
+      const stored = online.get(username);
+      if (stored && stored.ws === ws) {
+        online.delete(username);
+      }
       const u = db.users.find((x) => x.username === username);
       if (u) { u.lastSeen = Date.now(); saveDB(); }
       pushUsers();
@@ -1468,3 +1565,4 @@ function botMsg(roomId, content) {
 }
 
 server.listen(PORT, () => console.log(`vortexgram on http://localhost:${PORT}`));
+if (Number(process.env.PORT) !== 3000 && process.env.VX_MIRROR === '1') server2.listen(3000, () => console.log('vortexgram mirrored on http://localhost:3000'));

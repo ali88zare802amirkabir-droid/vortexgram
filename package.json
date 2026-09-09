@@ -8,6 +8,9 @@
     "dev": "node server.js"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "express": "^4.19.2",
     "multer": "^2.0.1",
     "ws": "^8.18.0"

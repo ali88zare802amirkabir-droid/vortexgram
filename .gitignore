@@ -2,13 +2,61 @@ node_modules/
 .env
 data/
 public/uploads/
+
+# Logs
 *.log
+*.err
+*.err.log
+*.out.log
+*.log-err
+tunnel-*.log
+tunnel-*.txt
+cf-*.log
+cf-*.err
+cf-*.log-err
+ssh-*.log
+next-live.log
+server-*.log
+
+# Archives & backups
+*.rar
+*.zip
+*.bak
+*.bak.*
+db.json.bak
+
+# Debug / test files
+debug_test*.js
+final_test*.js
+font_test*.js
+skins_test*.js
+test-fixed.*
+
+# Tunnel / deployment scripts & state
+run-ssh.bat
+run-tunnel.bat
+tunnel.bat
+tunnel-guard.ps1
+tunnel-keepalive.ps1
+start-cf.ps1
+start-cf2.ps1
+start.ps1
+tunnel-status.txt
+tunnel-url.txt
+run.bat
+test-fixed.bat
+build-android.bat
+
+# Capacitor / Android build artifacts
+android/
+backup-pre-android/
+capacitor.config.json
+ANDROID_BUILD.md
+
+# Vortexgram subfolder
 vortexgram/
 
-# Share project data + uploads with collaborators (but keep .env secrets & node_modules out)
-!data/
-!data/db.json
-!public/uploads/
-!public/uploads/**
-*.bak
-db.json.bak.*
+# Unneeded files
+swtest-result.txt
+public/swtest.html
+public/_effects-backup.css

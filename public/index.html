@@ -4,11 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>VORTEX Messenger</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#031427" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VORTEX" />
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="img/icons/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=71" />
-  <script src="icons.js?v=71"></script>
+  <link rel="stylesheet" href="style.css?v=102" />
+  <script src="icons.js?v=83"></script>
 </head>
 <body>
   <div id="auth-screen">
@@ -81,7 +89,7 @@
         <div id="messages"></div>
         <button id="scroll-fab" class="scroll-fab hidden" title="رفتن به پایین"><i data-lucide="arrow-down" class="icon"></i></button>
         <div id="reply-bar" class="hidden"></div>
-        <div class="composer">
+        <div class="composer" id="composer">
           <div class="tools">
             <button class="icon-btn" id="composer-attach" title="پیوست" aria-label="پیوست فایل"><i data-lucide="paperclip" class="icon"></i></button>
             <input type="file" id="file-input" class="hidden" />
@@ -91,6 +99,16 @@
           </div>
           <textarea id="composer-input" placeholder="پیام بنویس..." rows="1"></textarea>
           <button class="send-btn" id="composer-send"><i data-lucide="send" class="icon"></i></button>
+          <div id="rec-inline" class="rec-inline hidden">
+            <button class="rec-inline-btn rec-inline-del" id="rec-inline-del" title="لغو"><i data-lucide="trash-2" class="icon"></i></button>
+            <div class="rec-inline-center">
+              <div class="rec-inline-dot"></div>
+              <div class="rec-inline-time" id="rec-inline-time">0:00</div>
+              <div class="rec-inline-wave" id="rec-inline-wave"></div>
+            </div>
+            <button class="rec-inline-btn rec-inline-send" id="rec-inline-send" title="ارسال"><i data-lucide="send" class="icon"></i></button>
+            <button class="rec-inline-btn rec-inline-pause hidden" id="rec-inline-pause" title="مکث"><i data-lucide="pause" class="icon"></i></button>
+          </div>
           <span id="rec-badge" class="rec-badge hidden"></span>
           <div id="emoji-pop" class="hidden"></div>
         </div>
@@ -100,11 +118,28 @@
 
     <aside id="details-panel"></aside>
     <div id="command-dock"></div>
+
+    <div id="scrim" class="hidden"></div>
   </div>
 
-  <div id="scrim" class="hidden"></div>
-
   <div id="toast"></div>
-  <script src="app.js?v=71"></script>
+  <script src="effects.js?v=78"></script>
+  <script src="app.js?v=102"></script>
+  <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
+(function () {
+  var def = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); def = e;
+    var b = document.createElement('button');
+    b.id = 'pwa-install';
+    b.textContent = 'نصب اپ VORTEX';
+    b.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;background:var(--primary,#6ea8fe);color:#002e5c;border:none;padding:10px 18px;border-radius:12px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.4);';
+    b.onclick = function () { if (def) { def.prompt(); } };
+    document.body.appendChild(b);
+    window.__pwaBtn = b;
+  });
+  window.addEventListener('appinstalled', function () { var b = window.__pwaBtn; if (b) b.remove(); });
+})();
+</script>
 </body>
 </html>
