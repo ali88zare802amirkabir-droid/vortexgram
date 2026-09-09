@@ -49,12 +49,11 @@ function isOriginalAdmin(user) {
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-let db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [], pinned: {}, scheduled: [] };
+let db = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [] };
 try {
   const raw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  db = { users: [], renameRequests: [], messages: {}, groups: [], signupRequests: [], pinned: {}, scheduled: [], ...raw };
+  db = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], ...raw };
   if (!Array.isArray(db.groups)) db.groups = [];
-  if (!Array.isArray(db.signupRequests)) db.signupRequests = [];
   if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
   if (!Array.isArray(db.scheduled)) db.scheduled = [];
   // مهاجرت اعضای قدیمی (رشته) به ساختار نقش‌دار
@@ -196,32 +195,19 @@ app.post('/api/register', (req, res) => {
   if (!password || String(password).length < 4) return res.status(400).json({ error: 'رمز حداقل ۴ کاراکتر' });
   const unameLower = username.toLowerCase();
   if (db.users.some((u) => u.username.toLowerCase() === unameLower)) return res.status(409).json({ error: 'این نام کاربری قبلا ثبت شده' });
-  if (db.signupRequests.some((r) => r.username.toLowerCase() === unameLower)) return res.status(409).json({ error: 'درخواست ثبت‌نام تو منتظر تایید ادمین است' });
 
-  // ثبت‌نام آزاد نیست — به‌صورت درخواست برای تایید ادمین ذخیره می‌شود
   const salt = crypto.randomBytes(16).toString('hex');
-  db.signupRequests.push({
-    id: crypto.randomUUID(),
-    username,
-    salt,
-    passHash: hash(String(password), salt),
-    at: Date.now(),
-  });
+  db.users.push({ username, salt, passHash: hash(String(password), salt), displayName: username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null });
   saveDB();
-
-  // خبر به همه ادمین‌های آنلاین
-  for (const u of db.users.filter((x) => x.isAdmin)) {
-    notifyUser(u.username, { type: 'signup-request', username });
-  }
-
-  res.json({ ok: true, pending: true, message: 'درخواست ثبت‌نامت ثبت شد ✅ بعد از تایید ادمین می‌توانی وارد شوی' });
+  pushUsers();
+  const token = createSession(username);
+  const user = db.users.find((u) => u.username === username);
+  res.json({ ok: true, token, me: publicUser(user) });
 });
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
   if (!authRateOk('login:' + (req.ip || '?'), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — یک دقیقه صبر کن' });
-  const pending = db.signupRequests.find((r) => r.username.toLowerCase() === String(username || '').toLowerCase());
-  if (pending) return res.status(403).json({ error: 'ثبت‌نامت هنوز توسط ادمین تایید نشده ⏳' });
   const user = db.users.find((u) => u.username.toLowerCase() === String(username || '').toLowerCase());
   if (!user || user.passHash !== hash(String(password || ''), user.salt)) {
     return res.status(401).json({ error: 'نام کاربری یا رمز اشتباه است' });
@@ -288,25 +274,17 @@ app.post('/api/complete-register', (req, res) => {
     username = 'u' + phone.slice(1);
     while (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) username += crypto.randomInt(0, 9);
   }
-  if (db.signupRequests.some((r) => r.phone === phone)) return res.status(409).json({ error: 'درخواست عضویت تو قبلاً ثبت شده و منتظر تایید ادمین است' });
 
   const adminPhones = (process.env.ADMIN_PHONES || '').split(',').map(s => s.trim()).filter(Boolean);
   const isAdmin = adminPhones.includes(phone);
 
-  if (isAdmin) {
-    const user = { username, phone, displayName, salt: null, passHash: null, isAdmin: true, isPremium: true, banned: false, createdAt: Date.now(), avatar: null, bio: 'ادمین سیستم', activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null };
-    db.users.push(user);
-    pendingCodes.delete(phone);
-    saveDB();
-    pushUsers();
-    const token = createSession(user.username);
-    return res.json({ ok: true, token, me: publicUser(user), message: 'حساب ادمین ساخته شد ✅' });
-  }
-
-  db.signupRequests.push({ id: crypto.randomUUID(), username, phone, displayName, at: Date.now(), type: 'phone' });
+  const user = { username, phone, displayName, salt: null, passHash: null, isAdmin, isPremium: isAdmin, banned: false, createdAt: Date.now(), avatar: null, bio: isAdmin ? 'ادمین سیستم' : '', activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null };
+  db.users.push(user);
+  pendingCodes.delete(phone);
   saveDB();
-  for (const u of db.users.filter((x) => x.isAdmin)) notifyUser(u.username, { type: 'signup-request', username, displayName, phone });
-  res.json({ pending: true, message: 'درخواست عضویت ثبت شد ✅ منتظر تایید ادمین باش' });
+  pushUsers();
+  const token = createSession(user.username);
+  return res.json({ ok: true, token, me: publicUser(user), message: isAdmin ? 'حساب ادمین ساخته شد ✅' : 'حساب ساخته شد ✅' });
 });
 
 function auth(req, res, next) {
@@ -495,11 +473,10 @@ app.get('/api/admin/stats', auth, (req, res) => {
   const totalMessages = Object.values(db.messages).reduce((sum, arr) => sum + arr.length, 0);
   const today = new Date().toDateString();
   const msgsToday = Object.values(db.messages).reduce((sum, arr) => sum + arr.filter((m) => new Date(m.time).toDateString() === today).length, 0);
-  const pendingSignups = db.signupRequests.length;
   const bannedUsers = db.users.filter((u) => u.banned).length;
   const premiumUsers = db.users.filter((u) => u.isPremium).length;
   const totalUploads = (() => { try { return require('fs').readdirSync(UPLOAD_DIR).length; } catch { return 0; } })();
-  res.json({ totalUsers, onlineUsers, totalGroups, totalMessages, msgsToday, pendingSignups, bannedUsers, premiumUsers, totalUploads });
+  res.json({ totalUsers, onlineUsers, totalGroups, totalMessages, msgsToday, bannedUsers, premiumUsers, totalUploads });
 });
 
 app.get('/api/admin/users', auth, (req, res) => {
@@ -588,33 +565,6 @@ app.get('/api/admin/user/:username/files', auth, (req, res) => {
     arr.forEach((m) => { if (m.from === username) pushKind(m); });
   }
   res.json(out);
-});
-
-// درخواست‌های ثبت‌نام در انتظار تایید
-app.get('/api/admin/signups', auth, (req, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
-  res.json({ signups: db.signupRequests.map((r) => ({ id: r.id, username: r.username, displayName: r.displayName || r.username, phone: r.phone || null, at: r.at })) });
-});
-
-app.post('/api/admin/signups/:id', auth, (req, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
-  const approve = !!(req.body || {}).approve;
-  const idx = db.signupRequests.findIndex((r) => r.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'درخواست یافت نشد' });
-  const reqItem = db.signupRequests[idx];
-  db.signupRequests.splice(idx, 1);
-  if (approve) {
-    if (reqItem.phone) {
-      db.users.push({ username: reqItem.username, displayName: reqItem.displayName, phone: reqItem.phone, isAdmin: false, isPremium: false, createdAt: Date.now(), avatar: null, bio: '', activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null });
-    } else {
-      db.users.push({ username: reqItem.username, salt: reqItem.salt, passHash: reqItem.passHash, displayName: reqItem.username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null });
-    }
-    saveDB();
-    pushUsers();
-  } else {
-    saveDB();
-  }
-  res.json({ ok: true, approved: approve, username: reqItem.username });
 });
 
 app.post('/api/admin/ban', auth, (req, res) => {
