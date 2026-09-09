@@ -389,12 +389,14 @@ function addMessage(m) {
   actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); openMsgMore(e, m); };
   wrap.appendChild(actions);
   if (m.kind === 'sticker') {
-    wrap.classList.add('msg-sticker');
+    wrap.classList.add('msg-sticker', 'emoji-enter');
+    setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
   } else if ((!m.kind || m.kind === 'text') && emojiOnly(m.content) && emojiCount(m.content) < 5) {
     const cnt = emojiCount(m.content);
-    wrap.classList.add('msg-emoji-only');
+    wrap.classList.add('msg-emoji-only', 'emoji-enter');
     const fs = cnt <= 1 ? 64 : cnt === 2 ? 48 : cnt === 3 ? 36 : 28;
     bubble.style.fontSize = fs + 'px';
+    setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
   }
   msgs.appendChild(wrap); luc();
 }
@@ -590,7 +592,19 @@ function checklistEl(m) {
   items.forEach((it, idx) => { const row = document.createElement('div'); row.className = 'cl-item' + (it.done ? ' done' : ''); row.innerHTML = '<span class="cl-box">' + (it.done ? ic('check') : '') + '</span><span>' + esc(it.text) + '</span>'; row.onclick = () => toggleCheck(m.id, idx, !it.done, m.roomId); d.appendChild(row); });
   const done = items.filter((i) => i.done).length; d.innerHTML += '<div class="cl-foot">' + done + '/' + items.length + '</div>'; return d;
 }
-function reactionsEl(m) { const c = document.createElement('div'); c.className = 'reactions'; const rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {}; Object.keys(rs).forEach((emoji) => { const users = Array.isArray(rs[emoji]) ? rs[emoji] : (rs[emoji] ? [rs[emoji]] : []); if (!users.length) return; const badge = document.createElement('span'); badge.className = 'reac' + (users.includes(state.me.username) ? ' me' : ''); badge.textContent = emoji + (users.length > 1 ? ' ' + users.length : ''); badge.onclick = () => toggleReaction(m.id, emoji, m.roomId); c.appendChild(badge); }); return c; }
+const _burstAt = new Map(); // msgId|emoji -> timestamp (جلوگیری از افکت تکراری)
+function reactionBurst(msgId, emoji) {
+  _burstAt.set(msgId + '|' + emoji, Date.now());
+  const wrap = document.querySelector('.msg[data-id="' + msgId + '"]');
+  if (!wrap) return;
+  const b = document.createElement('span');
+  b.className = 'reac-burst';
+  b.textContent = emoji;
+  b.style.setProperty('--dx', (Math.round(Math.random() * 44) - 22) + 'px');
+  wrap.appendChild(b);
+  setTimeout(() => b.remove(), 1100);
+}
+function reactionsEl(m) { const c = document.createElement('div'); c.className = 'reactions'; const rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {}; Object.keys(rs).forEach((emoji) => { const users = Array.isArray(rs[emoji]) ? rs[emoji] : (rs[emoji] ? [rs[emoji]] : []); if (!users.length) return; const badge = document.createElement('span'); badge.className = 'reac' + (users.includes(state.me.username) ? ' me' : ''); badge.dataset.em = emoji; badge.textContent = emoji + (users.length > 1 ? ' ' + users.length : ''); badge.onclick = () => toggleReaction(m.id, emoji, m.roomId); c.appendChild(badge); }); return c; }
 
 /* COMPOSER */
 function sendMessage() {
@@ -897,10 +911,10 @@ $('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'h
 function setReply(m) { state.replyTo = m; if (m) $('reply-bar').innerHTML = '<div class="rb-text">پاسخ به: ' + esc(previewText(m)) + '</div><div class="rb-x" onclick="setReply(null)">' + ic('x') + '</div>'; $('reply-bar').classList.toggle('hidden', !m); luc(); }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
 function openReactionPicker(bubble, id) { const pop = document.createElement('div'); pop.className = 'reac-pop'; ALL_EMOJIS.slice(0, 12).forEach((em) => { const s = document.createElement('span'); s.textContent = em; s.onclick = () => { toggleReaction(id, em, state.room); pop.remove(); }; pop.appendChild(s); }); document.body.appendChild(pop); const r = bubble.getBoundingClientRect(); pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + 6) + 'px'; setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 100); }
-async function toggleReaction(id, em, rid) { const d = await (await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId: rid }) })).json(); }
+async function toggleReaction(id, em, rid) { reactionBurst(id, em); await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId: rid }) }); }
 async function votePoll(id, opt, rid) { await api('/api/poll/vote', { method: 'POST', body: JSON.stringify({ msgId: id, option: opt, roomId: rid }) }); }
 async function toggleCheck(id, idx, done, rid) { await api('/api/checklist/toggle', { method: 'POST', body: JSON.stringify({ msgId: id, index: idx, roomId: rid }) }); }
-function updateMessage(d) { const el = document.querySelector('[data-id="' + d.id + '"]'); if (!el) return; if (d.message && d.message.reactions) { const old = el.querySelector('.reactions'); const r = reactionsEl(d.message); if (old) old.replaceWith(r); else { const body = el.querySelector('.msg-body'); if (body) body.appendChild(r); } } if (d.message && d.message.poll) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(pollEl(d.message)); } if (d.message && d.message.checklist) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(checklistEl(d.message)); } luc(); }
+function updateMessage(d) { const el = document.querySelector('[data-id="' + d.id + '"]'); if (!el) return; if (d.message && d.message.reactions) { const old = el.querySelector('.reactions'); const oldKeys = old ? Array.from(old.querySelectorAll('.reac')).map((x) => x.dataset.em) : []; const r = reactionsEl(d.message); const now = Date.now(); r.querySelectorAll('.reac').forEach((b) => { if (!oldKeys.includes(b.dataset.em)) { b.classList.add('new'); if (now - (_burstAt.get(d.id + '|' + b.dataset.em) || 0) > 1500) reactionBurst(d.id, b.dataset.em); } }); if (old) old.replaceWith(r); else { const body = el.querySelector('.msg-body'); if (body) body.appendChild(r); } } if (d.message && d.message.poll) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(pollEl(d.message)); } if (d.message && d.message.checklist) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(checklistEl(d.message)); } luc(); }
 function showTyping(d) { const sub = $('conv-sub'); if (d.roomId === state.room) sub.textContent = d.on ? (d.username === BOT_USERNAME ? 'در حال نوشتن…' : 'کاربر در حال نوشتن…') : roomOnline(state.room); }
 function markRead(rid) { if (!rid) return; if (!state.readState[rid]) state.readState[rid] = {}; state.readState[rid][state.me.username] = Date.now(); if (state.rooms[rid]) state.rooms[rid].unread = 0; buildChatList(); if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'read', roomId: rid })); }
 

@@ -963,6 +963,15 @@ a{color:var(--primary);text-decoration:none;}
 .msg-emoji-only .bubble{font-size:48px;line-height:1;}
 .msg-sticker .sticker{width:128px;height:128px;object-fit:contain;}
 .msg-emoji-only .msg-meta,.msg-sticker .msg-meta{opacity:.75;}
+/* Telegram-like effects: reaction burst + badge pop + emoji entrance */
+.reac.new{animation:reac-pop .4s cubic-bezier(.2,1.8,.4,1);}
+@keyframes reac-pop{0%{transform:scale(.4);}60%{transform:scale(1.3);}100%{transform:scale(1);}}
+.reac-burst{position:absolute;bottom:90%;left:50%;font-size:34px;line-height:1;pointer-events:none;z-index:20;animation:reac-float 1s ease-out forwards;}
+@keyframes reac-float{0%{transform:translate(-50%,0) scale(.5);opacity:0;}15%{opacity:1;transform:translate(-50%,-10px) scale(1.15);}100%{transform:translate(calc(-50% + var(--dx,0px)),-70px) scale(1);opacity:0;}}
+.msg-emoji-only.emoji-enter .bubble,.msg-sticker.emoji-enter .bubble{animation:emoji-enter .45s cubic-bezier(.2,1.6,.4,1);}
+@keyframes emoji-enter{0%{transform:scale(.3);opacity:0;}60%{transform:scale(1.12);opacity:1;}100%{transform:scale(1);opacity:1;}}
+.reac-pop span{transition:transform .12s var(--ease);}
+.reac-pop span:hover{transform:scale(1.35);}
 
 /* upload/download progress in file rows */
 .file-row .progress-bar{height:3px;background:var(--surface-container-highest);border-radius:2px;overflow:hidden;margin-top:6px;width:100%;}
