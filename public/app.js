@@ -444,7 +444,7 @@ function albumEl(m) {
   if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
   return d;
 }
-function mediaEl(m) { const d = document.createElement('div'); d.className = 'media'; const u = m.src || m.url; const im = document.createElement('img'); im.src = u; im.loading = 'lazy'; im.onclick = () => openViewer(u, m.kind); d.appendChild(im); if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); } return d; }
+function mediaEl(m) { const d = document.createElement('div'); d.className = 'media'; const u = m.src || m.url; if (m.kind === 'video') { const v = document.createElement('video'); v.src = u; v.controls = true; v.preload = 'metadata'; v.onclick = () => openViewer(u, 'video'); d.appendChild(v); } else { const im = document.createElement('img'); im.src = u; im.loading = 'lazy'; im.onclick = () => openViewer(u, m.kind); d.appendChild(im); } if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); } return d; }
 function fileEl(m) {
   const d = document.createElement('div'); d.className = 'file-row';
   d.innerHTML = ic('file') + '<div class="file-info"><div class="file-name">' + esc(m.name || 'فایل') + '</div><div class="file-size">' + (m.size ? Math.round(m.size / 1024) + ' KB' : '') + '</div></div><button class="file-dl">' + ic('download') + '</button><div class="progress-bar hidden"><div class="progress-fill"></div></div>';
