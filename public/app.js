@@ -403,7 +403,7 @@ function addMessage(m) {
   actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(bubble, m.id); };
   actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
   actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
-  if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = (e) => { e.stopPropagation(); if (confirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
+  if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
   actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); openMsgMore(e, m); };
   wrap.appendChild(actions);
   if (m.kind === 'sticker') {
@@ -949,7 +949,7 @@ function renderDetails() {
   const pins = (state.pinned[rid] || []); if (pins.length) { const sec = document.createElement('div'); sec.className = 'dp-sec'; sec.innerHTML = '<div class="dp-sec-title">' + ic('pin') + ' پیام‌های پین‌شده</div>'; pins.forEach((id) => { const msg = (state.rooms[rid] || {}).messages.find((x) => x.id === id); if (!msg) return; const it = document.createElement('div'); it.className = 'dp-pin'; it.innerHTML = '<span>' + esc(previewText(msg)) + '</span>'; it.onclick = () => { const el = document.querySelector('[data-id="' + id + '"]'); if (el) el.scrollIntoView(); }; sec.appendChild(it); }); p.appendChild(sec); }
   const act = document.createElement('div'); act.className = 'dp-sec'; act.innerHTML = '<div class="dp-sec-title">عملیات</div>';
   const mk = (label, icon, fn) => { const r = document.createElement('div'); r.className = 'dp-act'; r.innerHTML = ic(icon) + '<span>' + label + '</span>'; r.onclick = fn; return r; };
-  act.appendChild(mk('پاک کردن تاریخچه', 'trash-2', () => { if (confirm('پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; } }));
+  act.appendChild(mk('پاک کردن تاریخچه', 'trash-2', async () => { if (await uConfirm('پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; } }));
   if (rid.startsWith('group:')) {
     const g = state.groups.find((x) => 'group:' + x.id === rid);
     if (g) {
@@ -961,7 +961,7 @@ function renderDetails() {
           if (d.ok) {
             const link = location.origin + d.link;
             navigator.clipboard.writeText(link).then(() => toast('لینک دعوت کپی شد')).catch(() => {});
-            if (confirm('لینک دعوت:\n' + link + '\n\nآیا می‌خواهید کپی شود؟')) {
+            if (await uConfirm('لینک دعوت:\n' + link + '\n\nآیا می‌خواهید کپی شود؟')) {
               navigator.clipboard.writeText(link).catch(() => {});
             }
           }
@@ -980,7 +980,7 @@ function renderDetails() {
           const d = await res.json();
           if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); renderDetails(); }
         } else {
-          if (!confirm('آیا می‌خواهید این کاربر را مسدود کنید؟')) return;
+          if (!(await uConfirm('آیا می‌خواهید این کاربر را مسدود کنید؟'))) return;
           const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
           const d = await res.json();
           if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
@@ -1012,8 +1012,8 @@ function openMsgMore(e, m) {
   mk('پاسخ', 'reply', () => setReply(m));
   mk('فوروارد', 'forward', () => openForward(m.id));
   mk('رونوشت', 'clipboard', () => { navigator.clipboard.writeText(m.content || ''); toast('کپی شد'); });
-  if (m.from === state.me.username) mk('ویرایش', 'edit-3', () => { const t = prompt('ویرایش پیام', m.content); if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); });
-  if (m.from === state.me.username) mk('حذف', 'trash-2', () => { if (confirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); });
+  if (m.from === state.me.username) mk('ویرایش', 'edit-3', async () => { const t = await uPrompt('ویرایش پیام', m.content, 'متن جدید پیام'); if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); });
+  if (m.from === state.me.username) mk('حذف', 'trash-2', async () => { if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); });
   mk('پین', 'pin', async () => { await api('/api/pin', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: m.id }) }); });
   document.body.appendChild(pop);
   if (isM) {
@@ -1066,7 +1066,7 @@ function beep() {
     o.start(); o.stop(_beepCtx.currentTime + 0.12);
   } catch (e) {}
 }
-function logout(force) { if (!force && !confirm('آیا می‌خواهید از حساب خارج شوید؟')) return; localStorage.removeItem('ft_token'); location.reload(); }
+async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; localStorage.removeItem('ft_token'); location.reload(); }
 $('auth-logout').onclick = logout;
 function showAuth() {
   $('auth-screen').classList.remove('hidden');
@@ -1079,6 +1079,29 @@ function showAuth() {
 /* VIEWER */
 function openViewer(src, kind) { const v = document.createElement('div'); v.className = 'viewer'; const s = esc(src); v.innerHTML = (kind === 'video' ? '<video src="' + s + '" controls autoplay></video>' : '<img src="' + s + '">') + '<div class="v-close" onclick="this.parentNode.remove()">' + ic('x') + '</div>'; v.onclick = (e) => { if (e.target === v) v.remove(); }; document.body.appendChild(v); luc(); }
 
+/* IN-APP DIALOGS (موبایل: بدون prompt/confirm مرورگر که روی iOS باز نمی‌شود) */
+function uPrompt(title, initial, placeholder) {
+  return new Promise((resolve) => {
+    const pop = document.createElement('div'); pop.className = 'u-pop';
+    pop.innerHTML = '<div class="u-pop-box"><div class="u-pop-title">' + esc(title) + '</div><input class="inp" data-k="inp" value="' + esc(initial || '') + '" placeholder="' + esc(placeholder || '') + '"><div class="u-pop-actions"><button class="btn sm ghost" data-k="0">انصراف</button><button class="btn sm" data-k="1">تأیید</button></div></div>';
+    const inp = pop.querySelector('[data-k="inp"]');
+    pop.querySelector('[data-k="0"]').onclick = () => { pop.remove(); resolve(null); };
+    pop.querySelector('[data-k="1"]').onclick = () => { const v = inp.value; pop.remove(); resolve(v); };
+    document.body.appendChild(pop);
+    setTimeout(() => { inp.focus(); inp.select(); }, 60);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') pop.querySelector('[data-k="1"]').click(); if (e.key === 'Escape') pop.querySelector('[data-k="0"]').click(); });
+  });
+}
+function uConfirm(message) {
+  return new Promise((resolve) => {
+    const pop = document.createElement('div'); pop.className = 'u-pop';
+    pop.innerHTML = '<div class="u-pop-box"><div class="u-pop-title">' + esc(message) + '</div><div class="u-pop-actions"><button class="btn sm ghost" data-k="0">انصراف</button><button class="btn sm" data-k="1">تأیید</button></div></div>';
+    pop.querySelector('[data-k="0"]').onclick = () => { pop.remove(); resolve(false); };
+    pop.querySelector('[data-k="1"]').onclick = () => { pop.remove(); resolve(true); };
+    document.body.appendChild(pop);
+  });
+}
+
 /* NEW MENU */
 function openNewMenu() {
   const pop = document.createElement('div'); pop.className = 'ctx-menu'; const btn = $('cl-new').getBoundingClientRect(); pop.style.left = btn.left + 'px'; pop.style.top = (btn.bottom + 6) + 'px';
@@ -1086,7 +1109,7 @@ function openNewMenu() {
   mk('چت خصوصی جدید', 'user-plus', startDM); mk('گروه جدید', 'users', () => startGroup()); mk('کانال جدید', 'megaphone', () => startGroup(true));
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
-function startDM() { const who = prompt('نام کاربری مقابل (مثلاً ali):'); if (!who) return; const other = who.replace('@', ''); const rid = 'dm:' + [state.me.username, other].sort().join('|'); if (state.me.isAdmin || getContacts()[other] || other === BOT_USERNAME) { openRoom(rid); } else { const c = getContacts(); c[other] = other; saveContacts(c); openRoom(rid); } }
+async function startDM() { const who = await uPrompt('نام کاربری مقابل (مثلاً ali):'); if (!who) return; const other = who.replace('@', ''); const rid = 'dm:' + [state.me.username, other].sort().join('|'); if (state.me.isAdmin || getContacts()[other] || other === BOT_USERNAME) { openRoom(rid); } else { const c = getContacts(); c[other] = other; saveContacts(c); openRoom(rid); } }
 function openDM(other) {
   if (other === state.me.username) return;
   const rid = 'dm:' + [state.me.username, other].sort().join('|');
@@ -1336,7 +1359,7 @@ function renderProfile(username) {
   const bn = viewHost.querySelector('[data-act="ban"]'); if (bn) bn.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username, banned: !u.banned }) }); toast('انجام شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
   const imp = viewHost.querySelector('[data-act="impersonate"]'); if (imp) imp.onclick = () => enterAsUser(username);
   const pm = viewHost.querySelector('[data-act="promote"]'); if (pm) pm.onclick = async () => { await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'admin' }) }); toast('کاربر به ادمین ارتقا یافت'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
-  const dm = viewHost.querySelector('[data-act="demote"]'); if (dm) dm.onclick = async () => { if (!confirm('ادمین بودن @' + username + ' حذف شود؟')) return; await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'member' }) }); toast('از ادمینی حذف شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
+  const dm = viewHost.querySelector('[data-act="demote"]'); if (dm) dm.onclick = async () => { if (!(await uConfirm('ادمین بودن @' + username + ' حذف شود؟'))) return; await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'member' }) }); toast('از ادمینی حذف شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
   if (state.me.isAdmin) {
     const sec = document.createElement('div'); sec.className = 'profile-files';
     sec.innerHTML = '<h3>' + ic('paperclip') + ' فایل‌های ارسالی</h3><div class="pf-body ph-loading">در حال بارگذاری…</div>';
@@ -1390,8 +1413,8 @@ function openGallery(dir, cb) {
     g.querySelectorAll('.gallery-item').forEach((b) => b.onclick = () => { close(); cb(b.dataset.url); });
   }).catch(() => { m.querySelector('#gallery-grid').innerHTML = '<div class="placeholder">خطا در بارگذاری گالری.</div>'; });
 }
-function enterAsUser(username) {
-  if (!confirm('وارد حساب @' + username + ' می‌شوید؟ پس از ورود می‌توانید با دکمه بازگشت به پنل ادمین برگردید.')) return;
+async function enterAsUser(username) {
+  if (!(await uConfirm('وارد حساب @' + username + ' می‌شوید؟ پس از ورود می‌توانید با دکمه بازگشت به پنل ادمین برگردید.'))) return;
   localStorage.setItem('ft_admin_token', state.token);
   api('/api/admin/impersonate', { method: 'POST', body: JSON.stringify({ username }) }).then((r) => r.json()).then((d) => { if (d.token) { localStorage.setItem('ft_token', d.token); location.reload(); } else toast(d.error || 'خطا'); });
 }
@@ -1404,14 +1427,14 @@ function showImpersonateBanner() {
   b.querySelector('#imp-back').onclick = () => { const t = localStorage.getItem('ft_admin_token'); if (t) { localStorage.setItem('ft_token', t); localStorage.removeItem('ft_admin_token'); location.reload(); } };
 }
 async function startGroup(isChannel) {
-  const name = prompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':');
+  const name = await uPrompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':');
   if (!name) return;
   const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json();
   if (!d.group || !d.group.id) { toast(d.error || 'ساخت گروه ناموفق بود'); return; }
   state.groups.push(d.group);
   if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups }));
   openRoom('group:' + d.group.id);
-  setTimeout(() => {
+  setTimeout(async () => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*'; input.style.display = 'none';
     document.body.appendChild(input);
     input.onchange = async (e) => {
@@ -1422,7 +1445,7 @@ async function startGroup(isChannel) {
       if (r.ok) { toast('آواتار گروه تنظیم شد'); const g = state.groups.find((x) => x.id === d.group.id); if (g) g.avatar = r.avatar; buildChatList(); }
       input.remove();
     };
-    if (confirm('آیا می‌خواهید آواتار برای گروه انتخاب کنید؟')) input.click(); else input.remove();
+    if (await uConfirm('آیا می‌خواهید آواتار برای گروه انتخاب کنید؟')) input.click(); else input.remove();
   }, 500);
 }
 
