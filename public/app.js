@@ -635,6 +635,29 @@ async function doSend(m) { if (!state.ws || state.ws.readyState !== 1) { toast('
 $('composer-send').onclick = sendMessage;
 $('composer-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } if (e.key === 'Escape') setReply(null); });
 $('composer-input').addEventListener('input', () => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'typing', roomId: state.room, on: true })); });
+function prepImage(f, done) {
+  const t = String(f && f.type || '');
+  if (!/^image\/(jpe?g|png|webp)$/i.test(t)) return done(f);
+  const fr = new FileReader();
+  fr.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight, MAX = 1920;
+      if (f.size <= 900 * 1024 && w <= MAX && h <= MAX) return done(f);
+      const s = Math.min(1, MAX / Math.max(w, h));
+      const cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+      const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+      const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+      ctx.drawImage(img, 0, 0, cw, ch);
+      const wantPng = t === 'image/png' && f.size <= 2 * 1024 * 1024;
+      cv.toBlob((b) => done(b || f), wantPng ? 'image/png' : 'image/jpeg', 0.85);
+    };
+    img.onerror = () => done(f);
+    img.src = fr.result;
+  };
+  fr.onerror = () => done(f);
+  fr.readAsDataURL(f);
+}
 function uploadFileFromBlob(blob, name) {
   const fd = new FormData(); fd.append('file', blob, name || 'paste.png');
   const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%';
@@ -651,7 +674,7 @@ document.addEventListener('paste', (e) => {
     if (it.kind === 'file') {
       e.preventDefault();
       const f = it.getAsFile();
-      if (f) uploadFileFromBlob(f, f.name || 'clipboard.png');
+      if (f) prepImage(f, (up) => uploadFileFromBlob(up, f.name || 'paste.png'));
       return;
     }
   }
@@ -660,12 +683,12 @@ const convEl = $('conversation');
 if (convEl) {
   convEl.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.add('drag-over'); });
   convEl.addEventListener('dragleave', (e) => { e.preventDefault(); convEl.classList.remove('drag-over'); });
-  convEl.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.remove('drag-over'); if (!state.room) return; const files = e.dataTransfer.files; if (files.length) { for (const f of files) { const isImg = f.type.startsWith('image/'); const isVid = f.type.startsWith('video/'); const fd = new FormData(); fd.append('file', f); const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%'; const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token); xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); if (!d.url) { toast(d.error || 'خطا در آپلود'); return; } doSend({ kind: isImg ? 'image' : isVid ? 'video' : 'file', src: d.url, name: f.name, size: f.size, content: '' }); } catch (err) { toast('خطا در آپلود'); } }; xhr.send(fd); } } });
+  convEl.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.remove('drag-over'); if (!state.room) return; const files = e.dataTransfer.files; if (files.length) { for (const f of files) { const isVid = f.type.startsWith('video/'); const isAud = f.type.startsWith('audio/'); prepImage(f, (up) => { const isImg = up.type.startsWith('image/'); const fd = new FormData(); fd.append('file', up, up === f ? f.name : f.name.replace(/\.[^.]+$/, '') + '.jpg'); const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%'; const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token); xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); if (!d.url) { toast(d.error || 'خطا در آپلود'); return; } doSend({ kind: isImg ? 'image' : isVid ? 'video' : isAud ? 'voice' : 'file', src: d.url, name: f.name, size: up.size, content: '' }); } catch (err) { toast('خطا در آپلود'); } }; xhr.send(fd); }); } } });
 }
 $('composer-emoji').onclick = () => { if (isMobile()) { $('emoji-pop').classList.add('hidden'); const inp = $('composer-input'); inp.focus(); if (inp.setSelectionRange) inp.setSelectionRange(inp.value.length, inp.value.length); return; } const pop = $('emoji-pop'); pop.classList.toggle('hidden'); if (pop.classList.contains('hidden')) return; if (!pop.dataset.filled) { pop.innerHTML = '<div class="emoji-picker-wrap"><div class="emoji-search-row"><input type="text" id="emoji-search" class="input" placeholder="جستجوی ایموجی..." /></div><div class="emoji-cats" id="emoji-cats"></div><div class="emoji-grid" id="emoji-grid"></div></div>'; const cats = pop.querySelector('#emoji-cats'); const grid = pop.querySelector('#emoji-grid'); const search = pop.querySelector('#emoji-search'); Object.keys(EMOJI_CATEGORIES).forEach((cat, i) => { const btn = document.createElement('button'); btn.className = 'emoji-cat-btn' + (i === 0 ? ' active' : ''); btn.textContent = cat.split(' ')[0]; btn.title = cat; btn.onclick = () => { cats.querySelectorAll('.emoji-cat-btn').forEach((b) => b.classList.remove('active')); btn.classList.add('active'); renderEmojiGrid(grid, EMOJI_CATEGORIES[cat]); search.value = ''; }; cats.appendChild(btn); }); renderEmojiGrid(grid, EMOJI_CATEGORIES[Object.keys(EMOJI_CATEGORIES)[0]]); search.addEventListener('input', (e) => { const q = e.target.value.trim().toLowerCase(); if (!q) { const active = cats.querySelector('.emoji-cat-btn.active'); const catName = Object.keys(EMOJI_CATEGORIES).find((c) => c.split(' ')[0] === active.textContent) || Object.keys(EMOJI_CATEGORIES)[0]; renderEmojiGrid(grid, EMOJI_CATEGORIES[catName]); return; } const matches = ALL_EMOJIS.filter((em) => em.includes(q)); renderEmojiGrid(grid, matches); }); pop.dataset.filled = '1'; } };
 function renderEmojiGrid(grid, emojis) { grid.innerHTML = ''; emojis.forEach((e) => { const s = document.createElement('span'); s.className = 'emoji-item'; s.textContent = e; s.onclick = () => { $('composer-input').value += e; }; grid.appendChild(s); }); }
 $('composer-attach').onclick = () => $('file-input').click();
-$('file-input').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FormData(); rd.append('file', f); const bar = $('upload-bar'); bar.classList.remove('hidden'); const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token); xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); if (!d.url) { toast(d.error || 'خطا در آپلود'); return; } const isImg = f.type.startsWith('image/'); const isVid = f.type.startsWith('video/'); doSend({ kind: isImg ? 'image' : isVid ? 'video' : f.type.startsWith('audio/') ? 'voice' : 'file', src: d.url, name: f.name, size: f.size, content: '' }); } catch (err) { toast('خطا در آپلود'); } }; xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.send(rd); };
+$('file-input').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const isVid = f.type.startsWith('video/'); const isAud = f.type.startsWith('audio/'); prepImage(f, (up) => { const isImg = up.type.startsWith('image/'); const fd = new FormData(); fd.append('file', up, up === f ? f.name : f.name.replace(/\.[^.]+$/, '') + '.jpg'); const bar = $('upload-bar'); bar.classList.remove('hidden'); const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token); xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); if (!d.url) { toast(d.error || 'خطا در آپلود'); return; } doSend({ kind: isImg ? 'image' : isVid ? 'video' : isAud ? 'voice' : 'file', src: d.url, name: f.name, size: up.size, content: '' }); } catch (err) { toast('خطا در آپلود'); } }; xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.send(fd); }); };
 /* ====== VOICE RECORDING — inline composer system ====== */
 const VO = { state: 'idle', recorder: null, stream: null, analyser: null, ac: null, timer: null, waveTimer: null, chunks: [], wave: [], waveEl: null, start: 0, startXY: [0, 0], cancel: false, locked: false, paused: false, pauseTime: 0, blob: null, dur: 0, finWave: null, abort: false, maxDur: 300, warnAt: 270 };
 function getMime() {
