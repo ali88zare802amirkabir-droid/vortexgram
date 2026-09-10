@@ -382,10 +382,14 @@ function addMessage(m) {
   if (state.me.isPremium) { meta.appendChild(reactionsEl(m)); }
   wrap.appendChild(bubble);
   const actions = document.createElement('div'); actions.className = 'msg-actions';
-  actions.innerHTML = '<button class="icon-btn" data-a="smile">' + ic('smile') + '</button><button class="icon-btn" data-a="reply">' + ic('reply') + '</button><button class="icon-btn" data-a="forward">' + ic('forward') + '</button><button class="icon-btn" data-a="more">' + ic('more-vertical') + '</button>';
+  let actionsHTML = '<button class="icon-btn" data-a="smile">' + ic('smile') + '</button><button class="icon-btn" data-a="reply">' + ic('reply') + '</button><button class="icon-btn" data-a="forward">' + ic('forward') + '</button>';
+  if (m.from === state.me.username) actionsHTML += '<button class="icon-btn danger" data-a="delete">' + ic('trash-2') + '</button>';
+  actionsHTML += '<button class="icon-btn" data-a="more">' + ic('more-vertical') + '</button>';
+  actions.innerHTML = actionsHTML;
   actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(bubble, m.id); };
   actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
   actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
+  if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = (e) => { e.stopPropagation(); if (confirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
   actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); openMsgMore(e, m); };
   wrap.appendChild(actions);
   if (m.kind === 'sticker') {
@@ -910,7 +914,7 @@ recInit();
 $('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png' }; doSend(m); };
 function setReply(m) { state.replyTo = m; if (m) $('reply-bar').innerHTML = '<div class="rb-text">پاسخ به: ' + esc(previewText(m)) + '</div><div class="rb-x" onclick="setReply(null)">' + ic('x') + '</div>'; $('reply-bar').classList.toggle('hidden', !m); luc(); }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
-document.addEventListener('touchstart', (e) => { if (e.target.closest('.msg-actions')) return; const msg = e.target.closest('.msg'); if (msg) { document.querySelectorAll('.msg-actions-active').forEach((m) => { if (m !== msg) m.classList.remove('msg-actions-active'); }); msg.classList.toggle('msg-actions-active'); } else { document.querySelectorAll('.msg-actions-active').forEach((m) => m.classList.remove('msg-actions-active')); } });
+document.addEventListener('touchstart', (e) => { if (e.target.closest('.msg-actions')) return; const msg = e.target.closest('.msg'); if (msg) { const msgId = msg.dataset.id; const m = (state.rooms[state.room] || {}).messages.find(x => x.id === msgId); if (m) { openMsgMore({clientX:0,clientY:0}, m); } } else { closeCtxMenus(); } });
 function openReactionPicker(bubble, id) { const pop = document.createElement('div'); pop.className = 'reac-pop'; ALL_EMOJIS.slice(0, 12).forEach((em) => { const s = document.createElement('span'); s.textContent = em; s.onclick = () => { toggleReaction(id, em, state.room); pop.remove(); }; pop.appendChild(s); }); document.body.appendChild(pop); const r = bubble.getBoundingClientRect(); pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + 6) + 'px'; setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 100); }
 async function toggleReaction(id, em, rid) { reactionBurst(id, em); await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId: rid }) }); }
 async function votePoll(id, opt, rid) { await api('/api/poll/vote', { method: 'POST', body: JSON.stringify({ msgId: id, option: opt, roomId: rid }) }); }
