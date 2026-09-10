@@ -2,6 +2,15 @@
 const $ = (s) => document.getElementById(s);
 const BOT_USERNAME = 'vortex_bot';
 const BOT_NAME = 'Vortex AI';
+let REACTIONS = ['👍', '❤️', '😂', '🥰', '😡', '👎', '🔥'];
+const REACTION_LABELS = { '👍': 'thumbs up', '❤️': 'heart', '😂': 'laughing face', '🥰': 'smiling face with hearts', '😡': 'angry face', '👎': 'thumbs down', '🔥': 'fire' };
+function loadReactionConfig() {
+  fetch('/api/react-config').then((r) => r.json()).then((d) => {
+    if (d && Array.isArray(d.reactions) && d.reactions.length) {
+      REACTIONS.splice(0, REACTIONS.length, ...d.reactions);
+    }
+  }).catch(() => {});
+}
 const esc = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; };
 const initial = (n) => (n || '?').trim().charAt(0).toUpperCase();
 function ic(n) { return '<i data-lucide="' + n + '" class="icon"></i>'; }
@@ -191,7 +200,7 @@ function connectWS() {
 }
 function handleWS(d) {
   switch (d.type) {
-    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; renderNav(); renderDock(); buildChatList(); fetchPreviews(); break;
+    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; loadReactionConfig(); renderNav(); renderDock(); buildChatList(); fetchPreviews(); break;
     case 'users': state.users = d.users || []; scheduleChatListRefresh(); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
     case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); refreshReadTicks(d.roomId); break;
@@ -393,14 +402,15 @@ function addMessage(m) {
   }
   bubble.appendChild(bodyEl(m));
   const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.innerHTML = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>'; bubble.appendChild(meta);
-  if (state.me.isPremium) { meta.appendChild(reactionsEl(m)); }
   wrap.appendChild(bubble);
+  const hasReactions = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions) && Object.keys(m.reactions).some((k) => (Array.isArray(m.reactions[k]) ? m.reactions[k].length > 0 : !!m.reactions[k])));
+  if (hasReactions) wrap.appendChild(reactionsEl(m));
   const actions = document.createElement('div'); actions.className = 'msg-actions';
   let actionsHTML = '<button class="icon-btn" data-a="smile">' + ic('smile') + '</button><button class="icon-btn" data-a="reply">' + ic('reply') + '</button><button class="icon-btn" data-a="forward">' + ic('forward') + '</button>';
   if (m.from === state.me.username) actionsHTML += '<button class="icon-btn danger" data-a="delete">' + ic('trash-2') + '</button>';
   actionsHTML += '<button class="icon-btn" data-a="more">' + ic('more-vertical') + '</button>';
   actions.innerHTML = actionsHTML;
-  actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(bubble, m.id); };
+  actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(m, bubble); };
   actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
   actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
   if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
@@ -622,7 +632,31 @@ function reactionBurst(msgId, emoji) {
   wrap.appendChild(b);
   setTimeout(() => b.remove(), 1100);
 }
-function reactionsEl(m) { const c = document.createElement('div'); c.className = 'reactions'; const rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {}; Object.keys(rs).forEach((emoji) => { const users = Array.isArray(rs[emoji]) ? rs[emoji] : (rs[emoji] ? [rs[emoji]] : []); if (!users.length) return; const badge = document.createElement('span'); badge.className = 'reac' + (users.includes(state.me.username) ? ' me' : ''); badge.dataset.em = emoji; badge.textContent = emoji + (users.length > 1 ? ' ' + users.length : ''); badge.onclick = () => toggleReaction(m.id, emoji, m.roomId); c.appendChild(badge); }); return c; }
+function reactionsEl(m) {
+  const c = document.createElement('div'); c.className = 'reactions';
+  if (!m) return c;
+  const rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {};
+  Object.keys(rs).forEach((emoji) => {
+    const users = Array.isArray(rs[emoji]) ? rs[emoji] : (rs[emoji] ? [rs[emoji]] : []);
+    if (!users.length) return;
+    const mine = users.includes((state.me || {}).username);
+    const badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'reac' + (mine ? ' me' : '');
+    badge.dataset.em = emoji;
+    badge.setAttribute('aria-label', (mine ? 'Remove your ' : 'Show who reacted with ') + (REACTION_LABELS[emoji] || emoji));
+    badge.title = REACTION_LABELS[emoji] || emoji;
+    badge.innerHTML = '<span class="reac-em">' + emoji + '</span><span class="reac-count">' + users.length + '</span>';
+    badge.onclick = (e) => { e.stopPropagation(); toggleReaction(m.id, emoji, m.roomId || state.room, m); };
+    badge.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showReactionsSheet(m, emoji); };
+    let lp = null;
+    badge.addEventListener('touchstart', () => { lp = setTimeout(() => { showReactionsSheet(m, emoji); }, 500); }, { passive: true });
+    badge.addEventListener('touchend', () => clearTimeout(lp), { passive: true });
+    badge.addEventListener('touchmove', () => clearTimeout(lp), { passive: true });
+    c.appendChild(badge);
+  });
+  return c;
+}
 
 /* COMPOSER */
 function sendMessage() {
@@ -957,11 +991,174 @@ document.addEventListener('touchstart', lpStart, { passive: true });
 document.addEventListener('touchmove', lpMove, { passive: true });
 document.addEventListener('touchend', lpEnd, { passive: true });
 document.addEventListener('touchcancel', lpEnd, { passive: true });
-function openReactionPicker(bubble, id) { const pop = document.createElement('div'); pop.className = 'reac-pop'; ALL_EMOJIS.slice(0, 12).forEach((em) => { const s = document.createElement('span'); s.textContent = em; s.onclick = () => { toggleReaction(id, em, state.room); pop.remove(); }; pop.appendChild(s); }); document.body.appendChild(pop); const r = bubble.getBoundingClientRect(); pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + 6) + 'px'; setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 100); }
-async function toggleReaction(id, em, rid) { reactionBurst(id, em); await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId: rid }) }); }
+const _reactSeq = new Map();
+function closeReactionPicker() { const p = document.querySelector('.react-pop'); if (p) { if (p._esc) document.removeEventListener('keydown', p._esc); p.remove(); } }
+function openReactionPicker(m, anchor) {
+  closeReactionPicker();
+  const pop = document.createElement('div');
+  pop.className = 'react-pop';
+  pop.setAttribute('role', 'toolbar');
+  pop.setAttribute('aria-label', 'Reactions');
+  const rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {};
+  let mine = '';
+  for (const ek in rs) { if ((Array.isArray(rs[ek]) ? rs[ek] : []).includes((state.me || {}).username)) { mine = ek; break; } }
+  REACTIONS.forEach((em) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rp-btn' + (em === mine ? ' me' : '');
+    b.textContent = em;
+    const label = REACTION_LABELS[em] || em;
+    b.setAttribute('aria-label', 'React with ' + label);
+    b.setAttribute('title', label);
+    b.onclick = (e) => { e.stopPropagation(); toggleReaction(m.id, em, m.roomId || state.room, m); closeReactionPicker(); };
+    pop.appendChild(b);
+  });
+  pop._esc = (e) => { if (e.key === 'Escape') closeReactionPicker(); };
+  document.addEventListener('keydown', pop._esc);
+  document.body.appendChild(pop);
+  if (isMobile()) {
+    pop.classList.add('mobile');
+  } else if (anchor) {
+    const r = anchor.getBoundingClientRect();
+    const mw = pop.offsetWidth || 260, mh = pop.offsetHeight || 46;
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - mw - 8)) + 'px';
+    let top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) top = r.top - mh - 6;
+    pop.style.top = Math.max(8, top) + 'px';
+  }
+  setTimeout(() => { const f = pop.querySelector('.rp-btn'); if (f) f.focus(); }, 30);
+  setTimeout(() => document.addEventListener('click', function h(e) { if (!pop.contains(e.target)) { document.removeEventListener('click', h); closeReactionPicker(); } }), 50);
+}
+function applyReactionLocalMap(oldMap, emoji, me) {
+  const map = {};
+  for (const [ek, arr] of Object.entries(oldMap || {})) {
+    const cleaned = (Array.isArray(arr) ? arr : []).filter((x) => x !== me);
+    if (cleaned.length) map[ek] = cleaned;
+  }
+  let prev = null;
+  for (const [ek, arr] of Object.entries(oldMap || {})) {
+    if ((Array.isArray(arr) ? arr : []).includes(me)) { prev = ek; break; }
+  }
+  if (prev !== emoji) map[emoji] = [...(map[emoji] || []), me];
+  return map;
+}
+async function toggleReaction(id, em, rid, m) {
+  const roomId = rid || (m && m.roomId) || state.room;
+  const target = m || ((state.rooms[roomId] || {}).messages || []).find((x) => x.id === id) || { id, roomId };
+  const me = (state.me || {}).username;
+  const oldMap = (target.reactions && typeof target.reactions === 'object' && !Array.isArray(target.reactions)) ? target.reactions : {};
+  const seq = (_reactSeq.get(id) || 0) + 1;
+  _reactSeq.set(id, seq);
+  const optimistic = applyReactionLocalMap(oldMap, em, me);
+  target.reactions = optimistic;
+  syncMessageReactions(id, roomId, optimistic);
+  reactionBurst(id, em);
+  try {
+    const resp = await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId }) });
+    const d = await resp.json().catch(() => ({}));
+    if (seq !== _reactSeq.get(id)) return;
+    if (d.reactions) {
+      const stored = ((state.rooms[roomId] || {}).messages || []).find((x) => x.id === id);
+      if (stored) stored.reactions = d.reactions;
+      updateMessage({ id, roomId, message: { reactions: d.reactions } });
+    } else if (resp.status >= 400) {
+      throw new Error(d.error || 'react failed');
+    }
+  } catch (e) {
+    if (seq !== _reactSeq.get(id)) return;
+    target.reactions = oldMap;
+    const stored = ((state.rooms[roomId] || {}).messages || []).find((x) => x.id === id);
+    if (stored) stored.reactions = oldMap;
+    updateMessage({ id, roomId, message: { reactions: oldMap } });
+    toast('واکنش ثبت نشد');
+  }
+}
+function syncMessageReactions(id, roomId, map) {
+  const arr = state.rooms[roomId];
+  if (arr) { const m2 = arr.messages.find((x) => x.id === id); if (m2) m2.reactions = map; }
+  updateMessage({ id, roomId, message: { reactions: map } });
+}
+let _reactsSheetEl = null;
+function closeReactionsSheet() {
+  if (_reactsSheetEl) {
+    if (_reactsSheetEl.esc) document.removeEventListener('keydown', _reactsSheetEl.esc);
+    _reactsSheetEl.ov.remove(); _reactsSheetEl.sheet.remove();
+    _reactsSheetEl = null;
+  }
+}
+function showReactionsSheet(m, emoji) {
+  if (!m || !emoji) return;
+  closeReactionsSheet();
+  const ov = document.createElement('div'); ov.className = 'reacts-overlay';
+  const sheet = document.createElement('div'); sheet.className = 'reacts-sheet';
+  sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', 'Reactions');
+  sheet.innerHTML = '<div class="rs-head"><span class="rs-emoji">' + emoji + '</span><span class="rs-title">واکنش‌ها</span><button type="button" class="icon-btn" data-rs-close>' + ic('x') + '</button></div><div class="rs-list"><div class="rs-empty">در حال بارگذاری…</div></div>';
+  applyIcons(sheet);
+  sheet.querySelector('[data-rs-close]').onclick = closeReactionsSheet;
+  ov.onclick = closeReactionsSheet;
+  const escFn = (e) => { if (e.key === 'Escape') closeReactionsSheet(); };
+  document.addEventListener('keydown', escFn);
+  document.body.appendChild(ov); document.body.appendChild(sheet);
+  _reactsSheetEl = { ov, sheet, esc: escFn };
+  const listEl = sheet.querySelector('.rs-list');
+  const roomId = m.roomId || state.room;
+  api('/api/reactions/' + encodeURIComponent(m.id) + '?roomId=' + encodeURIComponent(roomId))
+    .then((r) => r.json())
+    .then((d) => {
+      const users = (d.reactions && d.reactions[emoji]) ? d.reactions[emoji] : [];
+      if (!users.length) { listEl.innerHTML = '<div class="rs-empty">هنوز واکنشی نیست</div>'; return; }
+      listEl.innerHTML = '';
+      users.forEach((u) => {
+        const row = document.createElement('div'); row.className = 'rs-user';
+        const av = avatarEl({ displayName: u.displayName || u.username, avatar: u.avatar || null }, 'xs');
+        row.innerHTML = '<div class="rs-av">' + av.outerHTML + '</div><div class="rs-name">' + esc(u.displayName || u.username) + '</div><div class="rs-un">@' + esc(u.username) + '</div>';
+        listEl.appendChild(row);
+      });
+    })
+    .catch(() => { listEl.innerHTML = '<div class="rs-empty">خطا در دریافت لیست</div>'; });
+}
 async function votePoll(id, opt, rid) { await api('/api/poll/vote', { method: 'POST', body: JSON.stringify({ msgId: id, option: opt, roomId: rid }) }); }
 async function toggleCheck(id, idx, done, rid) { await api('/api/checklist/toggle', { method: 'POST', body: JSON.stringify({ msgId: id, index: idx, roomId: rid }) }); }
-function updateMessage(d) { const el = document.querySelector('[data-id="' + d.id + '"]'); if (!el) return; if (d.message && d.message.reactions) { const old = el.querySelector('.reactions'); const oldKeys = old ? Array.from(old.querySelectorAll('.reac')).map((x) => x.dataset.em) : []; const r = reactionsEl(d.message); const now = Date.now(); r.querySelectorAll('.reac').forEach((b) => { if (!oldKeys.includes(b.dataset.em)) { b.classList.add('new'); if (now - (_burstAt.get(d.id + '|' + b.dataset.em) || 0) > 1500) reactionBurst(d.id, b.dataset.em); } }); if (old) old.replaceWith(r); else { const body = el.querySelector('.msg-body'); if (body) body.appendChild(r); } } if (d.message && d.message.poll) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(pollEl(d.message)); } if (d.message && d.message.checklist) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(checklistEl(d.message)); } luc(); }
+function updateMessage(d) {
+  const prevFocusEl = document.activeElement;
+  if (d.message && d.message.reactions && d.roomId) {
+    const arr = state.rooms[d.roomId];
+    if (arr) { const m2 = arr.messages.find((x) => x.id === d.id); if (m2) m2.reactions = d.message.reactions; }
+  }
+  const el = document.querySelector('[data-id="' + d.id + '"]');
+  if (el && d.message && d.message.reactions && typeof d.message.reactions === 'object') {
+    const old = el.querySelector(':scope > .reactions');
+    const oldBadges = old ? Array.from(old.querySelectorAll('.reac')) : [];
+    const oldKeys = oldBadges.map((x) => x.dataset.em);
+    const r = reactionsEl({ id: d.id, roomId: d.roomId, reactions: d.message.reactions });
+    const newKeys = Array.from(r.querySelectorAll('.reac')).map((x) => x.dataset.em);
+    const now = Date.now();
+    r.querySelectorAll('.reac').forEach((b) => {
+      if (!oldKeys.includes(b.dataset.em)) {
+        b.classList.add('new');
+        if (now - (_burstAt.get(d.id + '|' + b.dataset.em) || 0) > 1500) reactionBurst(d.id, b.dataset.em);
+      }
+      const ob = oldBadges.find((x) => x.dataset.em === b.dataset.em);
+      if (ob) {
+        const oc = ob.querySelector('.reac-count'), nc = b.querySelector('.reac-count');
+        if (oc && nc && oc.textContent !== nc.textContent) { b.classList.add('bump'); setTimeout(() => b.classList.remove('bump'), 400); }
+      }
+    });
+    if (newKeys.length === 0) {
+      if (old) { oldBadges.forEach((b) => b.classList.add('leaving')); setTimeout(() => old.remove(), 160); }
+    } else if (old) {
+      oldBadges.forEach((b) => { if (!newKeys.includes(b.dataset.em)) { b.classList.add('leaving'); setTimeout(() => b.remove(), 160); } });
+      old.replaceWith(r);
+    } else {
+      const bubble = el.querySelector('.bubble');
+      if (bubble) bubble.after(r);
+    }
+  }
+  if (d.message && d.message.poll) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(pollEl(d.message)); }
+  if (d.message && d.message.checklist) { const b = el.querySelector('.msg-body'); if (b) b.replaceChildren(checklistEl(d.message)); }
+  luc();
+  if (prevFocusEl && document.body.contains(prevFocusEl)) prevFocusEl.focus();
+}
 function showTyping(d) { const sub = $('conv-sub'); if (d.roomId === state.room) sub.textContent = d.on ? (d.username === BOT_USERNAME ? 'در حال نوشتن…' : 'کاربر در حال نوشتن…') : roomOnline(state.room); }
 function markRead(rid) { if (!rid) return; if (!state.readState[rid]) state.readState[rid] = {}; state.readState[rid][state.me.username] = Date.now(); if (state.rooms[rid]) state.rooms[rid].unread = 0; scheduleChatListRefresh(120); if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'read', roomId: rid })); }
 
@@ -1028,7 +1225,6 @@ function openChatMenu(e, rid) {
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
 /* ===================== MESSAGE CONTEXT MENU ===================== */
-const CTX_REACTIONS = ['👍', '❤️', '🥰', '😡', '👎', '🔥'];
 let _ctxEl = null, _ctxMsg = null;
 function closeMsgCtx() {
   if (_ctxEl) { _ctxEl.remove(); _ctxEl = null; }
@@ -1051,11 +1247,11 @@ function openMsgCtx(m, rect) {
   var rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {};
   var myReac = '';
   for (var ek in rs) { var us = Array.isArray(rs[ek]) ? rs[ek] : []; if (us.includes(state.me.username)) { myReac = ek; break; } }
-  CTX_REACTIONS.forEach(function(em) {
+  REACTIONS.forEach(function(em) {
     var b = document.createElement('button'); b.type = 'button';
     b.className = 'ctx-reac' + (em === myReac ? ' active' : '');
-    b.textContent = em; b.setAttribute('aria-label', 'React with ' + em);
-    b.onclick = function(ev) { ev.stopPropagation(); toggleReaction(m.id, em, state.room); closeMsgCtx(); };
+    b.textContent = em; b.setAttribute('aria-label', 'React with ' + (REACTION_LABELS[em] || em));
+    b.onclick = function(ev) { ev.stopPropagation(); toggleReaction(m.id, em, state.room, m); closeMsgCtx(); };
     reacBar.appendChild(b);
   });
   el.appendChild(reacBar);

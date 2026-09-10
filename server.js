@@ -31,7 +31,6 @@ const IMG_DIRS = {
   effects: path.join(IMG_BASE, 'effects'),
 };
 Object.values(IMG_DIRS).forEach((d) => { try { fs.mkdirSync(d, { recursive: true }); } catch (e) {} });
-const DB_FILE = path.join(DATA_DIR, 'db.json');
 const MAX_MSG_LEN = 4000;
 const HISTORY_LIMIT = 200;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
@@ -46,37 +45,32 @@ function isOriginalAdmin(user) {
   return adminPhones.includes(user.phone);
 }
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-let db = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [] };
-try {
-  const raw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  db = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], ...raw };
-  if (!Array.isArray(db.groups)) db.groups = [];
-  if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
-  if (!Array.isArray(db.scheduled)) db.scheduled = [];
-  // مهاجرت اعضای قدیمی (رشته) به ساختار نقش‌دار
-  for (const g of db.groups) {
-    if (!g.type) g.type = 'group';
-    g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
-    if (!g.members.some((m) => m.username === g.owner)) g.members.push({ username: g.owner, role: 'owner' });
-  }
-} catch {}
+const dbStore = require('./db');
+const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [] };
+let db = { ...DEFAULT_DB, ...(dbStore.load() || {}) };
+if (!Array.isArray(db.groups)) db.groups = [];
+if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
+if (!Array.isArray(db.scheduled)) db.scheduled = [];
+for (const g of db.groups) {
+  if (!g.type) g.type = 'group';
+  g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
+  if (!g.members.some((m) => m.username === g.owner)) g.members.push({ username: g.owner, role: 'owner' });
+}
 
 let saveTimer = null;
 function flushDB() {
   clearTimeout(saveTimer);
-  try { db.sessions = Object.fromEntries(sessions); fs.writeFile(DB_FILE, JSON.stringify(db), () => {}); } catch (e) { console.error('save failed', e.message); }
+  try { db.sessions = Object.fromEntries(sessions); dbStore.save(db); } catch (e) { console.error('save failed', e.message); }
 }
 function saveDB() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushDB, 250);
 }
-// جلوگیری از از دست رفتن داده هنگام ری‌استارت/کشته شدن پروسه
 process.on('exit', flushDB);
 for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => { flushDB(); process.exit(0); });
+  process.on(sig, () => { flushDB(); dbStore.close().finally(() => process.exit(0)); });
 }
 
 // ---------- sessions / security ----------
@@ -597,28 +591,60 @@ app.post('/api/admin/reset-password', auth, (req, res) => {
 });
 
 // ===== واکنش به پیام (reactions) =====
+const REACTIONS = ['👍', '❤️', '😂', '🥰', '😡', '👎', '🔥'];
+const REACTIONS_SET = new Set(REACTIONS);
 function findMsg(roomId, id) {
   const arr = db.messages[roomId] || [];
   return arr.find((m) => m.id === id);
 }
+app.get('/api/react-config', (req, res) => {
+  res.json({ reactions: REACTIONS });
+});
+// قانون تک‌واکنش: هر کاربر فقط یک واکنش روی هر پیام می‌تواند داشته باشد.
+// این منطق single-thread است؛ هیچ دو درخواستی همزمان mutating نمی‌شوند (atomic).
 app.post('/api/reactions', auth, (req, res) => {
   const { roomId, msgId } = req.body || {};
   const rid = String(roomId || '');
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
   const m = findMsg(rid, String(msgId));
   if (!m) return res.status(404).json({ error: 'پیام یافت نشد' });
-  const emoji = String((req.body || {}).emoji || '').slice(0, 8);
-  if (!emoji || ['__proto__', 'constructor', 'prototype'].includes(emoji)) return res.status(400).json({ error: 'واکنش نامعتبر' });
+  const emoji = String((req.body || {}).emoji || '');
+  if (!REACTIONS_SET.has(emoji)) return res.status(400).json({ error: 'واکنش نامعتبر' });
   if (!m.reactions || typeof m.reactions !== 'object' || Array.isArray(m.reactions)) m.reactions = {};
   const u = req.user.username;
-  for (const [emojiKey, users] of Object.entries(m.reactions)) {
-    m.reactions[emojiKey] = users.filter((x) => x !== u);
-    if (!m.reactions[emojiKey].length) delete m.reactions[emojiKey];
+  // ۱) کاربر را از همه واکنش‌ها حذف کن و واکنش قبلی او را بیاب
+  let previous = null;
+  for (const [emojiKey, arr] of Object.entries(m.reactions)) {
+    const users = Array.isArray(arr) ? arr.filter((x) => x !== u) : [];
+    if (users.length) m.reactions[emojiKey] = users;
+    else delete m.reactions[emojiKey];
+    if (Array.isArray(arr) && arr.includes(u) && previous === null) previous = emojiKey;
   }
-  m.reactions[emoji] = [u];
+  // ۲) اگر واکنش یکسان بود → حذف (toggle off)؛ در غیر این صورت اضافه/جایگزین کن
+  if (previous !== emoji) {
+    const list = Array.isArray(m.reactions[emoji]) ? m.reactions[emoji] : [];
+    if (!list.includes(u)) m.reactions[emoji] = [...list, u];
+  }
   saveDB();
-  broadcast({ type: 'message-updated', roomId: rid, id: msgId, message: { reactions: m.reactions } });
+  broadcast({ type: 'message-updated', roomId: rid, id: m.id, message: { reactions: m.reactions } });
   res.json({ ok: true, reactions: m.reactions });
+});
+// لیست کاربران هر واکنش (برای نمایش «چه کسی واکنش داد») — lazy در کلاینت
+app.get('/api/reactions/:msgId', auth, (req, res) => {
+  const rid = String((req.query || {}).roomId || '');
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(rid, String(req.params.msgId || ''));
+  if (!m) return res.status(404).json({ error: 'پیام یافت نشد' });
+  const out = {};
+  for (const [emojiKey, arr] of Object.entries(m.reactions || {})) {
+    const list = Array.isArray(arr) ? arr : [];
+    if (!list.length) continue;
+    out[emojiKey] = list.map((uname) => {
+      const u = db.users.find((x) => x.username === uname);
+      return { username: uname, displayName: (u && u.displayName) || uname, avatar: (u && u.avatar) || null };
+    });
+  }
+  res.json({ reactions: out });
 });
 
 // ===== سنجاق چندگانه =====
@@ -810,6 +836,7 @@ function enrichMsg(m) {
   const u = db.users.find((x) => x.username === m.from);
   return {
     ...m,
+    reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
     fromAvatar: m.fromAvatar || (u && u.avatar) || null,
     fromPremium: m.fromPremium || !!(u && u.isPremium),
   };
