@@ -404,7 +404,7 @@ function addMessage(m) {
   actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
   actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
   if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
-  actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); openMsgMore(e, m); };
+  actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); openMsgCtx(m, e.target.closest('.icon-btn').getBoundingClientRect()); };
   wrap.appendChild(actions);
   if (m.kind === 'sticker') {
     wrap.classList.add('msg-sticker', 'emoji-enter');
@@ -953,7 +953,10 @@ recInit();
 $('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png' }; doSend(m); };
 function setReply(m) { state.replyTo = m; if (m) $('reply-bar').innerHTML = '<div class="rb-text">پاسخ به: ' + esc(previewText(m)) + '</div><div class="rb-x" onclick="setReply(null)">' + ic('x') + '</div>'; $('reply-bar').classList.toggle('hidden', !m); luc(); }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
-document.addEventListener('touchstart', (e) => { if (e.target.closest('.msg-actions') || e.target.closest('.reply-ref') || e.target.closest('.msg-sheet') || e.target.closest('.ctx-menu') || e.target.closest('.reac-pop')) return; const msg = e.target.closest('.msg'); if (msg) { const msgId = msg.dataset.id; const m = (state.rooms[state.room] || {}).messages.find(x => x.id === msgId); if (m) { if (isMobile()) openMsgSheet(m); else openMsgMore({clientX:0,clientY:0}, m); } } else { closeCtxMenus(); } });
+document.addEventListener('touchstart', lpStart, { passive: true });
+document.addEventListener('touchmove', lpMove, { passive: true });
+document.addEventListener('touchend', lpEnd, { passive: true });
+document.addEventListener('touchcancel', lpEnd, { passive: true });
 function openReactionPicker(bubble, id) { const pop = document.createElement('div'); pop.className = 'reac-pop'; ALL_EMOJIS.slice(0, 12).forEach((em) => { const s = document.createElement('span'); s.textContent = em; s.onclick = () => { toggleReaction(id, em, state.room); pop.remove(); }; pop.appendChild(s); }); document.body.appendChild(pop); const r = bubble.getBoundingClientRect(); pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + 6) + 'px'; setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 100); }
 async function toggleReaction(id, em, rid) { reactionBurst(id, em); await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId: rid }) }); }
 async function votePoll(id, opt, rid) { await api('/api/poll/vote', { method: 'POST', body: JSON.stringify({ msgId: id, option: opt, roomId: rid }) }); }
@@ -1016,7 +1019,7 @@ function renderDetails() {
 function setFlag(rid, key, val) { if (!state.chatState[rid]) state.chatState[rid] = {}; state.chatState[rid][key] = val; api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId: rid, key: key, value: val }) }); buildChatList(); }
 
 /* CHAT CONTEXT MENU */
-function closeCtxMenus() { document.querySelectorAll('.ctx-menu, .msg-sheet, .sheet-scrim').forEach((m) => m.remove()); }
+function closeCtxMenus() { document.querySelectorAll('.ctx-menu, .msg-sheet, .sheet-scrim, .msg-ctx, .ctx-scrim').forEach((m) => m.remove()); }
 function openChatMenu(e, rid) {
   closeCtxMenus();
   const pop = document.createElement('div'); pop.className = 'ctx-menu'; pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px';
@@ -1024,58 +1027,115 @@ function openChatMenu(e, rid) {
   mk('باز کردن', 'message-square', () => openRoom(rid));   mk('پین', 'pin', () => setFlag(rid, 'pinned', !chatFlags(rid).pinned)); mk('بی‌صدا', 'volume-x', () => setFlag(rid, 'muted', true)); mk('مخفی', 'eye-off', () => setFlag(rid, 'hidden', true)); mk('آرشیو', 'archive', () => setFlag(rid, 'archived', !chatFlags(rid).archived));
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
-function openMsgMore(e, m) {
-  closeCtxMenus();
-  const isM = isMobile();
-  const pop = document.createElement('div'); pop.className = 'ctx-menu';
-  if (isM) { pop.style.left = '50%'; pop.style.top = '50%'; pop.style.transform = 'translate(-50%, -50%)'; }
-  else { pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px'; }
-  const mk = (t, icn, fn) => { const r = document.createElement('div'); r.className = 'ctx-item'; r.innerHTML = ic(icn) + '<span>' + t + '</span>'; r.onclick = () => { fn(); pop.remove(); }; pop.appendChild(r); };
-  mk('واکنش', 'smile', () => openReactionPicker(document.querySelector('[data-id="' + m.id + '"] .bubble'), m.id));
-  mk('پاسخ', 'reply', () => setReply(m));
-  mk('فوروارد', 'forward', () => openForward(m.id));
-  mk('رونوشت', 'clipboard', () => { navigator.clipboard.writeText(m.content || ''); toast('کپی شد'); });
-  if (m.from === state.me.username) mk('ویرایش', 'edit-3', async () => { const t = await uPrompt('ویرایش پیام', m.content, 'متن جدید پیام'); if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); });
-  if (m.from === state.me.username) mk('حذف', 'trash-2', async () => { if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); });
-  mk('پین', 'pin', async () => { await api('/api/pin', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: m.id }) }); });
-  document.body.appendChild(pop);
-  if (isM) {
-    setTimeout(() => document.addEventListener('touchstart', () => pop.remove(), { once: true }), 50);
-  } else {
-    setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
-  }
+/* ===================== MESSAGE CONTEXT MENU ===================== */
+const CTX_REACTIONS = ['👍', '❤️', '🥰', '😡', '👎', '🔥'];
+let _ctxEl = null, _ctxMsg = null;
+function closeMsgCtx() {
+  if (_ctxEl) { _ctxEl.remove(); _ctxEl = null; }
+  _ctxMsg = null;
+  var sc = document.querySelector('.ctx-scrim'); if (sc) sc.remove();
 }
-function openMsgSheet(m) {
+function openMsgCtx(m, rect) {
+  closeMsgCtx();
   closeCtxMenus();
-  var scrim = document.createElement('div'); scrim.className = 'sheet-scrim';
-  var sheet = document.createElement('div'); sheet.className = 'msg-sheet';
-  var reacts = document.createElement('div'); reacts.className = 'sheet-reacts';
-  var QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-  QUICK.forEach(function(em) {
-    var s = document.createElement('button'); s.type = 'button'; s.className = 'sheet-reac'; s.textContent = em;
-    s.onclick = function() { toggleReaction(m.id, em, state.room); closeCtxMenus(); };
-    reacts.appendChild(s);
+  _ctxMsg = m;
+  var isM = isMobile();
+  var el = document.createElement('div');
+  el.className = isM ? 'msg-sheet' : 'msg-ctx';
+  el.setAttribute('role', 'menu');
+  el.setAttribute('aria-label', 'Message actions');
+  el.setAttribute('tabindex', '-1');
+
+  var reacBar = document.createElement('div'); reacBar.className = 'ctx-reactions';
+  reacBar.setAttribute('role', 'toolbar'); reacBar.setAttribute('aria-label', 'Quick reactions');
+  var rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {};
+  var myReac = '';
+  for (var ek in rs) { var us = Array.isArray(rs[ek]) ? rs[ek] : []; if (us.includes(state.me.username)) { myReac = ek; break; } }
+  CTX_REACTIONS.forEach(function(em) {
+    var b = document.createElement('button'); b.type = 'button';
+    b.className = 'ctx-reac' + (em === myReac ? ' active' : '');
+    b.textContent = em; b.setAttribute('aria-label', 'React with ' + em);
+    b.onclick = function(ev) { ev.stopPropagation(); toggleReaction(m.id, em, state.room); closeMsgCtx(); };
+    reacBar.appendChild(b);
   });
-  sheet.appendChild(reacts);
-  var acts = document.createElement('div'); acts.className = 'sheet-acts';
-  var mk = function(t, icn, fn, danger) {
-    var b = document.createElement('button'); b.type = 'button'; b.className = 'sheet-act' + (danger ? ' danger' : '');
-    b.innerHTML = ic(icn) + '<span>' + t + '</span>';
-    b.onclick = function() { closeCtxMenus(); fn(); };
+  el.appendChild(reacBar);
+
+  var sep = document.createElement('div'); sep.className = 'ctx-sep'; el.appendChild(sep);
+
+  var acts = document.createElement('div'); acts.className = 'ctx-actions';
+  var mk = function(label, icon, fn, show) {
+    if (show === false) return;
+    var b = document.createElement('button'); b.type = 'button';
+    b.className = 'ctx-item'; b.setAttribute('role', 'menuitem');
+    b.innerHTML = ic(icon) + '<span>' + label + '</span>';
+    b.onclick = function(ev) { ev.stopPropagation(); closeMsgCtx(); fn(); };
     acts.appendChild(b);
   };
   mk('پاسخ', 'reply', function() { setReply(m); });
-  mk('فوروارد', 'forward', function() { openForward(m.id); });
-  mk('رونوشت', 'clipboard', function() { navigator.clipboard.writeText(m.content || ''); toast('کپی شد'); });
-  if (m.from === state.me.username) mk('ویرایش', 'edit-3', function() { uPrompt('ویرایش پیام', m.content, 'متن جدید پیام').then(function(t) { if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); }); });
-  if (m.from === state.me.username) mk('حذف', 'trash-2', function() { uConfirm('حذف شود؟').then(function(y) { if (y && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); }); }, true);
   mk('پین', 'pin', function() { api('/api/pin', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: m.id }) }); });
-  sheet.appendChild(acts);
-  document.body.appendChild(scrim);
-  document.body.appendChild(sheet);
-  applyIcons(sheet);
-  scrim.onclick = function() { closeCtxMenus(); };
+  mk('رونوشت', 'clipboard', function() { navigator.clipboard.writeText(m.content || ''); toast('کپی شد'); });
+  mk('فوروارد', 'forward', function() { openForward(m.id); });
+  if (m.from === state.me.username) mk('ویرایش', 'edit-3', function() { uPrompt('ویرایش پیام', m.content, 'متن جدید پیام').then(function(t) { if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); }); });
+  mk('حذف', 'trash-2', function() { uConfirm('حذف شود؟').then(function(y) { if (y && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); }); });
+  mk('گزارش', 'shield', function() { toast('گزارش ارسال شد'); });
+  mk('انتخاب', 'check-square', function() { toggleSelectMsg(m.id); });
+  el.appendChild(acts);
+
+  if (isM) {
+    var scrim = document.createElement('div'); scrim.className = 'ctx-scrim';
+    scrim.onclick = closeMsgCtx;
+    document.body.appendChild(scrim);
+    document.body.appendChild(el);
+  } else {
+    document.body.appendChild(el);
+    positionMsgCtx(el, rect);
+  }
+  applyIcons(el);
+  _ctxEl = el;
+  setTimeout(function() { var f = el.querySelector('.ctx-reac, .ctx-item'); if (f) f.focus(); }, 30);
 }
+function positionMsgCtx(el, rect) {
+  if (!rect) return;
+  var pad = 8, vw = window.innerWidth, vh = window.innerHeight;
+  var mw = el.offsetWidth || 240, mh = el.offsetHeight || 340;
+  var top = rect.bottom + pad, left = rect.left;
+  if (top + mh + pad > vh) top = rect.top - mh - pad;
+  if (top < pad) top = pad;
+  if (left + mw + pad > vw) left = vw - mw - pad;
+  if (left < pad) left = pad;
+  el.style.top = top + 'px'; el.style.left = left + 'px';
+}
+var _selectMode = false, _selectedMsgs = new Set();
+function toggleSelectMsg(id) {
+  _selectMode = true;
+  if (_selectedMsgs.has(id)) _selectedMsgs.delete(id); else _selectedMsgs.add(id);
+  document.querySelectorAll('.msg[data-id]').forEach(function(el) { el.classList.toggle('msg-selected', _selectedMsgs.has(el.dataset.id)); });
+  if (_selectedMsgs.size === 0) { _selectMode = false; }
+  toast(_selectedMsgs.size + ' پیام انتخاب شد');
+}
+/* ===================== LONG-PRESS (MOBILE) ===================== */
+let _lpTimer = null, _lpEl = null, _lpStart = null;
+function lpStart(e) {
+  if (e.target.closest('.msg-ctx, .msg-sheet, .ctx-scrim, .msg-actions, .reply-ref, .composer, .emoji-pop, input, textarea, button, a')) return;
+  var msg = e.target.closest('.msg');
+  if (!msg) return;
+  _lpEl = msg;
+  var t = e.touches ? e.touches[0] : e;
+  _lpStart = { x: t.clientX, y: t.clientY };
+  clearTimeout(_lpTimer);
+  _lpTimer = setTimeout(function() {
+    _lpTimer = null;
+    var msgId = msg.dataset.id;
+    var m = (state.rooms[state.room] || {}).messages.find(function(x) { return x.id === msgId; });
+    if (m) openMsgCtx(m, msg.getBoundingClientRect());
+  }, 500);
+}
+function lpMove(e) {
+  if (!_lpTimer || !_lpStart) return;
+  var t = e.touches ? e.touches[0] : e;
+  if (Math.abs(t.clientX - _lpStart.x) > 10 || Math.abs(t.clientY - _lpStart.y) > 10) { clearTimeout(_lpTimer); _lpTimer = null; _lpStart = null; }
+}
+function lpEnd() { clearTimeout(_lpTimer); _lpTimer = null; _lpStart = null; }
 function openForward(id) {
   const m = (state.rooms[state.room] || {}).messages.find((x) => x.id === id); if (!m) return;
   const pop = document.createElement('div'); pop.className = 'ctx-menu'; pop.style.left = '50%'; pop.style.top = '120px'; pop.style.transform = 'translateX(50%)'; pop.style.minWidth = '240px';
@@ -1862,7 +1922,7 @@ function applyEffect(eff, color) {
 
 /* INIT */
 function closeAllOverlays() {
-  if (document.querySelector('.msg-sheet')) { closeCtxMenus(); return true; }
+  if (document.querySelector('.msg-sheet, .msg-ctx, .ctx-scrim')) { closeMsgCtx(); closeCtxMenus(); return true; }
   if ($('emoji-pop') && !$('emoji-pop').classList.contains('hidden')) { $('emoji-pop').classList.add('hidden'); return true; }
   if ($('details-panel') && !$('details-panel').classList.contains('hidden')) { $('details-panel').classList.add('hidden'); return true; }
   return false;
@@ -1870,14 +1930,28 @@ function closeAllOverlays() {
 window.addEventListener('keydown', (e) => {
   const inField = ['INPUT', 'TEXTAREA'].includes((document.activeElement && document.activeElement.tagName) || '');
   if (e.key === 'Escape') { if (closeAllOverlays()) { e.preventDefault(); e.stopPropagation(); } }
+  if (_ctxEl && !inField) {
+    var items = _ctxEl.querySelectorAll('.ctx-reac, .ctx-item');
+    var cur = document.activeElement;
+    var idx = Array.prototype.indexOf.call(items, cur);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); items[(idx + 1) % items.length].focus(); }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); items[(idx - 1 + items.length) % items.length].focus(); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cur.click(); }
+  }
 }, true);
 document.addEventListener('contextmenu', (e) => {
   const chatItem = e.target.closest('.chat-item');
   const msgWrap = e.target.closest('.msg');
-  if (chatItem || msgWrap) { e.preventDefault(); }
-  else { closeCtxMenus(); }
+  if (chatItem) { e.preventDefault(); }
+  else if (msgWrap) {
+    e.preventDefault();
+    var msgId = msgWrap.dataset.id;
+    var m = (state.rooms[state.room] || {}).messages.find(x => x.id === msgId);
+    if (m) openMsgCtx(m, msgWrap.getBoundingClientRect());
+  }
+  else { closeMsgCtx(); closeCtxMenus(); }
 });
-document.addEventListener('click', (e) => { if (!e.target.closest('.ctx-menu, .reac-pop, .msg-sheet, .sheet-scrim')) closeCtxMenus(); });
+document.addEventListener('click', (e) => { if (!e.target.closest('.ctx-menu, .reac-pop, .msg-ctx, .msg-sheet, .ctx-scrim, .sheet-scrim')) { closeMsgCtx(); closeCtxMenus(); } });
 
 /* Capacitor / Android integration */
 const isCapacitor = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
