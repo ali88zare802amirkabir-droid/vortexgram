@@ -953,7 +953,7 @@ recInit();
 $('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png' }; doSend(m); };
 function setReply(m) { state.replyTo = m; if (m) $('reply-bar').innerHTML = '<div class="rb-text">پاسخ به: ' + esc(previewText(m)) + '</div><div class="rb-x" onclick="setReply(null)">' + ic('x') + '</div>'; $('reply-bar').classList.toggle('hidden', !m); luc(); }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
-document.addEventListener('touchstart', (e) => { if (e.target.closest('.msg-actions') || e.target.closest('.reply-ref')) return; const msg = e.target.closest('.msg'); if (msg) { const msgId = msg.dataset.id; const m = (state.rooms[state.room] || {}).messages.find(x => x.id === msgId); if (m) { openMsgMore({clientX:0,clientY:0}, m); } } else { closeCtxMenus(); } });
+document.addEventListener('touchstart', (e) => { if (e.target.closest('.msg-actions') || e.target.closest('.reply-ref') || e.target.closest('.msg-sheet') || e.target.closest('.ctx-menu') || e.target.closest('.reac-pop')) return; const msg = e.target.closest('.msg'); if (msg) { const msgId = msg.dataset.id; const m = (state.rooms[state.room] || {}).messages.find(x => x.id === msgId); if (m) { if (isMobile()) openMsgSheet(m); else openMsgMore({clientX:0,clientY:0}, m); } } else { closeCtxMenus(); } });
 function openReactionPicker(bubble, id) { const pop = document.createElement('div'); pop.className = 'reac-pop'; ALL_EMOJIS.slice(0, 12).forEach((em) => { const s = document.createElement('span'); s.textContent = em; s.onclick = () => { toggleReaction(id, em, state.room); pop.remove(); }; pop.appendChild(s); }); document.body.appendChild(pop); const r = bubble.getBoundingClientRect(); pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + 6) + 'px'; setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 100); }
 async function toggleReaction(id, em, rid) { reactionBurst(id, em); await api('/api/reactions', { method: 'POST', body: JSON.stringify({ msgId: id, emoji: em, roomId: rid }) }); }
 async function votePoll(id, opt, rid) { await api('/api/poll/vote', { method: 'POST', body: JSON.stringify({ msgId: id, option: opt, roomId: rid }) }); }
@@ -1016,7 +1016,7 @@ function renderDetails() {
 function setFlag(rid, key, val) { if (!state.chatState[rid]) state.chatState[rid] = {}; state.chatState[rid][key] = val; api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId: rid, key: key, value: val }) }); buildChatList(); }
 
 /* CHAT CONTEXT MENU */
-function closeCtxMenus() { document.querySelectorAll('.ctx-menu').forEach((m) => m.remove()); }
+function closeCtxMenus() { document.querySelectorAll('.ctx-menu, .msg-sheet, .sheet-scrim').forEach((m) => m.remove()); }
 function openChatMenu(e, rid) {
   closeCtxMenus();
   const pop = document.createElement('div'); pop.className = 'ctx-menu'; pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px';
@@ -1044,6 +1044,37 @@ function openMsgMore(e, m) {
   } else {
     setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
   }
+}
+function openMsgSheet(m) {
+  closeCtxMenus();
+  var scrim = document.createElement('div'); scrim.className = 'sheet-scrim';
+  var sheet = document.createElement('div'); sheet.className = 'msg-sheet';
+  var reacts = document.createElement('div'); reacts.className = 'sheet-reacts';
+  var QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  QUICK.forEach(function(em) {
+    var s = document.createElement('button'); s.type = 'button'; s.className = 'sheet-reac'; s.textContent = em;
+    s.onclick = function() { toggleReaction(m.id, em, state.room); closeCtxMenus(); };
+    reacts.appendChild(s);
+  });
+  sheet.appendChild(reacts);
+  var acts = document.createElement('div'); acts.className = 'sheet-acts';
+  var mk = function(t, icn, fn, danger) {
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'sheet-act' + (danger ? ' danger' : '');
+    b.innerHTML = ic(icn) + '<span>' + t + '</span>';
+    b.onclick = function() { closeCtxMenus(); fn(); };
+    acts.appendChild(b);
+  };
+  mk('پاسخ', 'reply', function() { setReply(m); });
+  mk('فوروارد', 'forward', function() { openForward(m.id); });
+  mk('رونوشت', 'clipboard', function() { navigator.clipboard.writeText(m.content || ''); toast('کپی شد'); });
+  if (m.from === state.me.username) mk('ویرایش', 'edit-3', function() { uPrompt('ویرایش پیام', m.content, 'متن جدید پیام').then(function(t) { if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); }); });
+  if (m.from === state.me.username) mk('حذف', 'trash-2', function() { uConfirm('حذف شود؟').then(function(y) { if (y && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); }); }, true);
+  mk('پین', 'pin', function() { api('/api/pin', { method: 'POST', body: JSON.stringify({ roomId: state.room, msgId: m.id }) }); });
+  sheet.appendChild(acts);
+  document.body.appendChild(scrim);
+  document.body.appendChild(sheet);
+  applyIcons(sheet);
+  scrim.onclick = function() { closeCtxMenus(); };
 }
 function openForward(id) {
   const m = (state.rooms[state.room] || {}).messages.find((x) => x.id === id); if (!m) return;
@@ -1831,6 +1862,7 @@ function applyEffect(eff, color) {
 
 /* INIT */
 function closeAllOverlays() {
+  if (document.querySelector('.msg-sheet')) { closeCtxMenus(); return true; }
   if ($('emoji-pop') && !$('emoji-pop').classList.contains('hidden')) { $('emoji-pop').classList.add('hidden'); return true; }
   if ($('details-panel') && !$('details-panel').classList.contains('hidden')) { $('details-panel').classList.add('hidden'); return true; }
   return false;
@@ -1845,7 +1877,7 @@ document.addEventListener('contextmenu', (e) => {
   if (chatItem || msgWrap) { e.preventDefault(); }
   else { closeCtxMenus(); }
 });
-document.addEventListener('click', (e) => { if (!e.target.closest('.ctx-menu, .reac-pop')) closeCtxMenus(); });
+document.addEventListener('click', (e) => { if (!e.target.closest('.ctx-menu, .reac-pop, .msg-sheet, .sheet-scrim')) closeCtxMenus(); });
 
 /* Capacitor / Android integration */
 const isCapacitor = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());

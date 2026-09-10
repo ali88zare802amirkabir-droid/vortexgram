@@ -529,7 +529,7 @@ a{color:var(--primary);text-decoration:none;}
 .msg:hover .msg-actions{opacity:1;pointer-events:auto;}
 .msg-actions-active .msg-actions{opacity:1;pointer-events:auto;}
 @media(max-width:1024px){
-.msg-actions{opacity:1;pointer-events:auto;}
+.msg-actions{display:none;}
 .msg-actions .icon-btn{width:34px;height:34px;border-radius:10px;}
 .msg-actions .icon-btn.danger .icon{color:var(--danger);}
 .msg-actions .icon-btn.danger:hover{background:var(--danger-muted);}
@@ -1033,6 +1033,18 @@ a{color:var(--primary);text-decoration:none;}
 @keyframes emoji-enter{0%{transform:scale(.3);opacity:0;}60%{transform:scale(1.12);opacity:1;}100%{transform:scale(1);opacity:1;}}
 .reac-pop span{transition:transform .12s var(--ease);}
 .reac-pop span:hover{transform:scale(1.35);}
+.sheet-scrim{position:fixed;inset:0;background:rgba(0,0,0,.40);z-index:260;animation:pop .18s var(--ease);}
+.msg-sheet{position:fixed;left:0;right:0;bottom:0;z-index:261;background:var(--surface-container-highest);border-top:1px solid var(--border);border-radius:18px 18px 0 0;padding:14px 14px calc(18px + env(safe-area-inset-bottom));box-shadow:var(--shadow-lg);animation:sheetUp .22s var(--ease);overflow-y:auto;max-height:75vh;}
+.sheet-reacts{display:flex;gap:6px;justify-content:center;padding:4px 0 14px;}
+.sheet-reac{width:48px;height:48px;font-size:24px;display:grid;place-items:center;border-radius:12px;background:var(--surface-container);border:1px solid var(--border);cursor:pointer;transition:transform .12s var(--ease),background .12s;}
+.sheet-reac:active{transform:scale(1.15);background:var(--surface-container-high);}
+.sheet-acts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding-top:8px;border-top:1px solid var(--border);}
+.sheet-act{display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:12px;background:var(--surface-container);border:1px solid var(--border);font-size:14px;color:var(--on-surface-variant);cursor:pointer;transition:background .12s;}
+.sheet-act .icon{width:20px;height:20px;color:var(--outline);}
+.sheet-act:active{background:var(--surface-container-high);color:var(--on-surface);}
+.sheet-act.danger{color:var(--danger);}
+.sheet-act.danger .icon{color:var(--danger);}
+@keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
 
 /* upload/download progress in file rows */
 .file-row .progress-bar{height:3px;background:var(--surface-container-highest);border-radius:2px;overflow:hidden;margin-top:6px;width:100%;}
