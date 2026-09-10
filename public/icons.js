@@ -141,8 +141,9 @@
     return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon">' + inner + '</svg>';
   }
   window.lucide = {
-    createIcons: function () {
-      var nodes = document.querySelectorAll('i[data-lucide]');
+    createIcons: function (scope) {
+      var root = scope || document;
+      var nodes = root.querySelectorAll('i[data-lucide]');
       for (var i = 0; i < nodes.length; i++) {
         (function (el) {
           var tmp = document.createElement('div');
