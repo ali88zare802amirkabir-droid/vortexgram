@@ -49,14 +49,16 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const dbStore = require('./db');
 const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [] };
-let db = { ...DEFAULT_DB, ...(dbStore.load() || {}) };
-if (!Array.isArray(db.groups)) db.groups = [];
-if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
-if (!Array.isArray(db.scheduled)) db.scheduled = [];
-for (const g of db.groups) {
-  if (!g.type) g.type = 'group';
-  g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
-  if (!g.members.some((m) => m.username === g.owner)) g.members.push({ username: g.owner, role: 'owner' });
+let db = { ...DEFAULT_DB };
+function normalizeGroups() {
+  if (!Array.isArray(db.groups)) db.groups = [];
+  if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
+  if (!Array.isArray(db.scheduled)) db.scheduled = [];
+  for (const g of db.groups) {
+    if (!g.type) g.type = 'group';
+    g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
+    if (!g.members.some((m) => m.username === g.owner)) g.members.push({ username: g.owner, role: 'owner' });
+  }
 }
 
 let saveTimer = null;
@@ -88,8 +90,7 @@ function authRateOk(key, max, windowMs) {
   authAttempts.set(key, arr);
   return true;
 }
-// بارگذاری نشست‌های ذخیره‌شده تا لاگین پس از ری‌استارت سرور باقی بماند
-try { if (db.sessions) for (const [k, v] of Object.entries(db.sessions)) sessions.set(k, v); } catch (e) {}
+// بارگذاری نشست‌های ذخیره‌شده تا لاگین پس از ری‌استارت سرور باقی بماند (در start() پس از لود دیتابیس انجام می‌شود)
 
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
@@ -203,7 +204,8 @@ app.post('/api/register', (req, res) => {
   if (db.users.some((u) => u.username.toLowerCase() === unameLower)) return res.status(409).json({ error: 'این نام کاربری قبلا ثبت شده' });
 
   const salt = crypto.randomBytes(16).toString('hex');
-  db.users.push({ username, salt, passHash: hash(String(password), salt), displayName: username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null });
+  const phone = normalizePhone((req.body || {}).phone || '');
+  db.users.push({ username, salt, passHash: hash(String(password), salt), displayName: username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null, phone: phone || undefined });
   saveDB();
   pushUsers();
   const token = createSession(username);
@@ -499,7 +501,7 @@ app.post('/api/contacts/match', auth, (req, res) => {
   const wanted = new Set(phones.map((p) => normalizePhone(p)).filter(Boolean));
   if (!wanted.size) return res.json({ users: [] });
   const out = db.users
-    .filter((u) => u.username !== req.user.username && u.phone && wanted.has(u.phone) && !u.banned)
+    .filter((u) => u.username !== req.user.username && u.phone && wanted.has(normalizePhone(u.phone)) && !u.banned)
     .slice(0, 200)
     .map((u) => ({ username: u.username, displayName: u.displayName || u.username, avatar: u.avatar || null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, online: !!u.online }));
   res.json({ users: out });
@@ -1154,6 +1156,23 @@ app.post('/api/chats/read', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// پاک کردن کامل یک چت خصوصی (تاریخچه + سنجاق + وضعیت خواندن + تنظیمات چت)
+app.post('/api/chats/delete', auth, (req, res) => {
+  const roomId = String((req.body || {}).roomId || '').slice(0, 100);
+  if (!canAccess(roomId, req.user.username)) return res.status(403).json({ error: 'دسترسی نداری' });
+  if (!roomId.startsWith('dm:')) return res.status(400).json({ error: 'فقط چت خصوصی قابل پاک‌شدن است' });
+  delete db.messages[roomId];
+  delete db.pinned[roomId];
+  const rs = readStateOf();
+  delete rs[roomId];
+  if (db.chatState && typeof db.chatState === 'object') {
+    for (const uname of Object.keys(db.chatState)) if (db.chatState[uname] && typeof db.chatState[uname] === 'object') delete db.chatState[uname][roomId];
+  }
+  saveDB();
+  broadcast({ type: 'room-deleted', roomId });
+  res.json({ ok: true });
+});
+
 // ---------- websocket ----------
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
@@ -1595,5 +1614,18 @@ function botMsg(roomId, content) {
   };
 }
 
-server.listen(PORT, () => console.log(`vortexgram on http://localhost:${PORT}`));
-if (Number(process.env.PORT) !== 3000 && process.env.VX_MIRROR === '1') server2.listen(3000, () => console.log('vortexgram mirrored on http://localhost:3000'));
+async function start() {
+  try {
+    const loaded = await dbStore.load();
+    if (loaded) {
+      db = { ...DEFAULT_DB, ...loaded };
+      normalizeGroups();
+      try { if (db.sessions) for (const [k, v] of Object.entries(db.sessions)) sessions.set(k, v); } catch (e) {}
+    }
+  } catch (e) {
+    console.error('DB load failed:', e.message);
+  }
+  server.listen(PORT, () => console.log(`vortexgram on http://localhost:${PORT}`));
+  if (Number(process.env.PORT) !== 3000 && process.env.VX_MIRROR === '1') server2.listen(3000, () => console.log('vortexgram mirrored on http://localhost:3000'));
+}
+start();

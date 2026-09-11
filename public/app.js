@@ -210,6 +210,21 @@ function handleWS(d) {
     case 'message-edited': { const el = document.querySelector('[data-id="' + d.id + '"] .msg-body'); if (el) { el.textContent = d.content; const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; el.appendChild(t); } break; }
     case 'message-deleted': { const el = document.querySelector('[data-id="' + d.id + '"]'); if (el) el.remove(); break; }
     case 'pinned-updated': state.pinned[d.roomId] = d.ids; renderDetails(); break;
+    case 'room-deleted': {
+      delete state.rooms[d.roomId];
+      delete state.chatState[d.roomId];
+      delete state.readState[d.roomId];
+      delete state.pinned[d.roomId];
+      if (state.dmRooms) state.dmRooms = state.dmRooms.filter((r) => r !== d.roomId);
+      if (state.room === d.roomId) {
+        state.room = null;
+        const m = $('messages'); if (m) m.innerHTML = '';
+        const dp = $('details-panel'); if (dp) { dp.classList.add('hidden'); dp.classList.remove('open'); }
+        showScrim(false);
+      }
+      buildChatList();
+      break;
+    }
     case 'typing': showTyping(d); break;
     case 'error': toast(d.text); break;
     case 'auth-failed': logout(true); break;
@@ -1185,7 +1200,8 @@ function renderDetails() {
   const pins = (state.pinned[rid] || []); if (pins.length) { const sec = document.createElement('div'); sec.className = 'dp-sec'; sec.innerHTML = '<div class="dp-sec-title">' + ic('pin') + ' پیام‌های پین‌شده</div>'; pins.forEach((id) => { const msg = (state.rooms[rid] || {}).messages.find((x) => x.id === id); if (!msg) return; const it = document.createElement('div'); it.className = 'dp-pin'; it.innerHTML = '<span>' + esc(previewText(msg)) + '</span>'; it.onclick = () => { const el = document.querySelector('[data-id="' + id + '"]'); if (el) el.scrollIntoView(); }; sec.appendChild(it); }); p.appendChild(sec); }
   const act = document.createElement('div'); act.className = 'dp-sec'; act.innerHTML = '<div class="dp-sec-title">عملیات</div>';
   const mk = (label, icon, fn) => { const r = document.createElement('div'); r.className = 'dp-act'; r.innerHTML = ic(icon) + '<span>' + label + '</span>'; r.onclick = fn; return r; };
-  act.appendChild(mk('پاک کردن تاریخچه', 'trash-2', async () => { if (await uConfirm('پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; } }));
+  if (rid.startsWith('dm:')) act.appendChild(mk('پاک کردن چت', 'trash-2', () => deleteChat(rid)));
+  else act.appendChild(mk('پاک کردن تاریخچه', 'trash-2', async () => { if (await uConfirm('پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; } }));
   if (rid.startsWith('group:')) {
     const g = state.groups.find((x) => 'group:' + x.id === rid);
     if (g) {
@@ -1210,21 +1226,36 @@ function renderDetails() {
     const other = rid.slice(3).split('|').find((p) => p !== state.me.username);
     if (other && other !== BOT_USERNAME) {
       const isBlocked = state.me.blocked && state.me.blocked.includes(other);
-      act.appendChild(mk(isBlocked ? 'آنبلاک کردن' : 'مسدود کردن', isBlocked ? 'user-check' : 'user-x', async () => {
-        if (isBlocked) {
-          const res = await api('/api/unblock', { method: 'POST', body: JSON.stringify({ username: other }) });
-          const d = await res.json();
-          if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); renderDetails(); }
-        } else {
-          if (!(await uConfirm('آیا می‌خواهید این کاربر را مسدود کنید؟'))) return;
-          const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
-          const d = await res.json();
-          if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
-        }
-      }));
+      act.appendChild(mk(isBlocked ? 'آنبلاک کردن' : 'مسدود کردن', isBlocked ? 'user-check' : 'user-x', () => toggleBlock(other)));
     }
   }
   p.appendChild(act); luc();
+}
+async function toggleBlock(other) {
+  if (!other) return;
+  const isBlocked = state.me.blocked && state.me.blocked.includes(other);
+  if (isBlocked) {
+    const res = await api('/api/unblock', { method: 'POST', body: JSON.stringify({ username: other }) });
+    const d = await res.json();
+    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); renderDetails(); }
+    else toast(d.error || 'خطا در آنبلاک');
+  } else {
+    if (!(await uConfirm('آیا می‌خواهید این کاربر را مسدود کنید؟'))) return;
+    const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
+    const d = await res.json();
+    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
+    else toast(d.error || 'خطا در مسدودسازی');
+  }
+}
+async function deleteChat(rid) {
+  if (!rid || !rid.startsWith('dm:')) return;
+  if (!(await uConfirm('چت به‌طور کامل حذف شود؟ تاریخچه برای هر دو طرف پاک می‌شود.'))) return;
+  try {
+    const res = await api('/api/chats/delete', { method: 'POST', body: JSON.stringify({ roomId: rid }) });
+    const d = await res.json();
+    if (d.ok) { toast('چت پاک شد'); }
+    else toast(d.error || 'خطا در پاک‌کردن چت');
+  } catch (e) { toast('خطا در پاک‌کردن چت'); }
 }
 function setFlag(rid, key, val) { if (!state.chatState[rid]) state.chatState[rid] = {}; state.chatState[rid][key] = val; api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId: rid, key: key, value: val }) }); buildChatList(); }
 
@@ -1235,6 +1266,14 @@ function openChatMenu(e, rid) {
   const pop = document.createElement('div'); pop.className = 'ctx-menu'; pop.style.left = e.clientX + 'px'; pop.style.top = e.clientY + 'px';
   const mk = (t, icn, fn) => { const r = document.createElement('div'); r.className = 'ctx-item'; r.innerHTML = ic(icn) + '<span>' + t + '</span>'; r.onclick = () => { fn(); pop.remove(); }; pop.appendChild(r); };
   mk('باز کردن', 'message-square', () => openRoom(rid));   mk('پین', 'pin', () => setFlag(rid, 'pinned', !chatFlags(rid).pinned)); mk('بی‌صدا', 'volume-x', () => setFlag(rid, 'muted', true)); mk('مخفی', 'eye-off', () => setFlag(rid, 'hidden', true)); mk('آرشیو', 'archive', () => setFlag(rid, 'archived', !chatFlags(rid).archived));
+  if (rid.startsWith('dm:')) {
+    const other = rid.slice(3).split('|').find((p) => p !== state.me.username);
+    if (other && other !== BOT_USERNAME) {
+      const isBlocked = state.me.blocked && state.me.blocked.includes(other);
+      mk(isBlocked ? 'آنبلاک کردن' : 'مسدود کردن', isBlocked ? 'user-check' : 'user-x', () => toggleBlock(other));
+      mk('پاک کردن چت', 'trash-2', () => deleteChat(rid));
+    }
+  }
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
 /* ===================== MESSAGE CONTEXT MENU ===================== */
@@ -1492,10 +1531,10 @@ async function syncPhoneContacts() {
     if (navigator.contacts && navigator.contacts.select) {
       try { const props = await navigator.contacts.select(['name', 'tel'], { multiple: true }); return props.flatMap((c) => c.tel || []); } catch (e) { if (e && e.name === 'NotAllowedError') { toast('دسترسی به مخاطبین رد شد'); return null; } }
     }
-    return prompt('شماره‌های تلفن مخاطبین را با کاما جدا کن (مثلاً ۰۹۱۲...، ۰۹۳۵...):', '');
+    return uPrompt('شماره‌های تلفن مخاطبین را بفرست (با کاما جدا کن)', '', '۰۹۱۲۳۴۵۶۷۸۹، ۰۹۳۵۴۳۲۱۰۹۸');
   };
   const raw = await pickPhones();
-  if (raw === null) return;
+  if (!raw) return;
   const phones = (Array.isArray(raw) ? raw : String(raw).split(/[،,;]+/)).map((p) => String(p).trim()).filter(Boolean);
   if (!phones.length) return;
   const uniq = [...new Set(phones)];
