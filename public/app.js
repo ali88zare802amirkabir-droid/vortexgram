@@ -200,7 +200,7 @@ function connectWS() {
 }
 function handleWS(d) {
   switch (d.type) {
-    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; loadReactionConfig(); renderNav(); renderDock(); buildChatList(); fetchPreviews(); break;
+    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; loadReactionConfig(); renderNav(); renderDock(); buildChatList(); fetchPreviews(); handleInviteFollow(); break;
     case 'users': state.users = d.users || []; scheduleChatListRefresh(); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
     case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); refreshReadTicks(d.roomId); break;
@@ -229,11 +229,23 @@ function allRoomIds() {
   ids.add('dm:' + [state.me.username, BOT_USERNAME].sort().join('|'));
   if (state.me.isAdmin) state.users.filter((u) => u.username !== state.me.username).forEach((u) => ids.add(dmRoom(u)));
   else Object.keys(getContacts()).forEach((u) => ids.add(dmRoom({ username: u })));
+  Object.keys(state.rooms).forEach((rid) => { if (state.rooms[rid] && state.rooms[rid].messages && state.rooms[rid].messages.length > 0) ids.add(rid); });
+  (state.dmRooms || []).forEach((rid) => ids.add(rid));
   return [...ids];
 }
 function contactsKey() { return 'vx_contacts_' + state.me.username; }
 function getContacts() { try { return JSON.parse(localStorage.getItem(contactsKey()) || '{}'); } catch { return {}; } }
 function saveContacts(c) { localStorage.setItem(contactsKey(), JSON.stringify(c)); }
+function handleInviteFollow() {
+  const inviter = localStorage.getItem('vx_inviter');
+  if (!inviter || !state.me || inviter === state.me.username) return;
+  localStorage.removeItem('vx_inviter');
+  const c = getContacts(); c[inviter] = inviter; saveContacts(c);
+  const cur = state.users.find((u) => u.username === inviter); if (cur && !(cur.displayName)) { cur.displayName = inviter; }
+  toast('با @' + inviter + ' از لینک دعوت آشنا شدی');
+  const rid = 'dm:' + [state.me.username, inviter].sort().join('|');
+  setTimeout(() => openRoom(rid), 400);
+}
 function cachePreview(rid, msgs) { const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.messages = msgs; r.last = msgs[msgs.length - 1] || null; }
 function fetchPreviews() { allRoomIds().forEach((rid, i) => setTimeout(() => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'history', roomId: rid })); }, i * 60)); }
 
@@ -358,6 +370,7 @@ function searchChatMessages(q) {
 
 function onNewMessage(m) {
   const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.messages.push(m); r.last = m;
+  if (rid.startsWith('dm:') && m.from !== state.me.username && !getContacts()[m.from] && m.from !== BOT_USERNAME) { const c = getContacts(); const u = state.users.find((x) => x.username === m.from); c[m.from] = u ? (u.displayName || m.from) : m.from; saveContacts(c); }
   if (rid === state.room) { addMessage(m); if (m.from === state.me.username || isNearBottom()) scrollBottom(); markRead(rid); }
   else { r.unread = computeUnread(rid, r); beep(); pushNotification(m); }
   scheduleChatListRefresh(rid === state.room ? 120 : 250);
@@ -1427,9 +1440,11 @@ function openDM(other) {
   switchNav('chats'); openRoom(rid);
 }
 function renderContacts(wrap) {
-  wrap.innerHTML = '<div class="contact-search"><input id="ct-search" class="inp" placeholder="جستجوی آیدی یا نام کاربر…"><div id="ct-results" class="ct-results"></div></div><div id="ct-list"></div>';
+  wrap.innerHTML = '<div class="ct-toolbar"><button class="btn sm" id="ct-sync"><i data-lucide="smartphone" class="icon"></i>' + ic('smartphone') + ' همگام‌سازی مخاطبین گوشی</button><button class="btn sm ghost" id="ct-invite">' + ic('share') + ' دعوت با لینک</button></div><div class="contact-search"><input id="ct-search" class="inp" placeholder="جستجوی آیدی یا نام کاربر…"><div id="ct-results" class="ct-results"></div></div><div id="ct-list"></div>';
   const listEl = wrap.querySelector('#ct-list');
   const resultsEl = wrap.querySelector('#ct-results');
+  wrap.querySelector('#ct-sync').onclick = syncPhoneContacts;
+  wrap.querySelector('#ct-invite').onclick = showInviteLink;
   const draw = (list) => {
     list = (list || []).filter((u) => u.username !== state.me.username);
     if (!list.length) { listEl.innerHTML = '<div class="contact-empty">هنوز مخاطبی ثبت نشده است. از دکمه + یک چت جدید شروع کن یا بالا جستجو کن.</div>'; return; }
@@ -1471,6 +1486,45 @@ function renderContacts(wrap) {
     api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; draw(state.users); } }).catch(() => {});
   }
   draw(list);
+}
+async function syncPhoneContacts() {
+  const pickPhones = async () => {
+    if (navigator.contacts && navigator.contacts.select) {
+      try { const props = await navigator.contacts.select(['name', 'tel'], { multiple: true }); return props.flatMap((c) => c.tel || []); } catch (e) { if (e && e.name === 'NotAllowedError') { toast('دسترسی به مخاطبین رد شد'); return null; } }
+    }
+    return prompt('شماره‌های تلفن مخاطبین را با کاما جدا کن (مثلاً ۰۹۱۲...، ۰۹۳۵...):', '');
+  };
+  const raw = await pickPhones();
+  if (raw === null) return;
+  const phones = (Array.isArray(raw) ? raw : String(raw).split(/[،,;]+/)).map((p) => String(p).trim()).filter(Boolean);
+  if (!phones.length) return;
+  const uniq = [...new Set(phones)];
+  toast('در حال جستجوی مخاطبین…');
+  api('/api/contacts/match', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phones: uniq }) })
+    .then((r) => r.json())
+    .then((d) => {
+      const us = d.users || [];
+      if (!us.length) { toast('هیچ‌کدام از مخاطبین شما در وی‌ورتگرام نیستند'); return; }
+      const c = getContacts();
+      us.forEach((u) => { if (!c[u.username]) c[u.username] = u.displayName || u.username; });
+      saveContacts(c);
+      state.users = state.users || [];
+      us.forEach((u) => { if (!state.users.some((x) => x.username === u.username)) state.users.push(u); });
+      toast(us.length + ' مخاطب از دفتر تلفن شما پیدا شد');
+      renderView('contacts');
+    })
+    .catch(() => { toast('خطا در همگام‌سازی مخاطبین'); });
+}
+function showInviteLink() {
+  const base = location.origin;
+  const code = (state.me && state.me.username) ? encodeURIComponent(state.me.username) : '';
+  const url = base + '/invite?ref=' + code;
+  const m = document.createElement('div'); m.className = 'skin-preview-modal' + (isMobile() ? ' mobile' : '');
+  m.innerHTML = '<div class="spm-backdrop"></div><div class="spm-card"><div class="spm-head"><b>' + ic('share') + ' دعوت دوستان</b></div><div class="spm-desc">این لینک را برای دوستانت بفرست — اگر هنوز وی‌ورتگرام ندارند، با این لینک ثبت‌نام می‌کنند و مستقیم با تو چت می‌شوند.</div><input class="inp" id="invite-url" readonly value="' + esc(url) + '" style="width:100%;text-align:center;direction:ltr"><div class="spm-actions"><button class="btn sm ghost" id="invite-copy">' + ic('copy') + ' کپی لینک</button><button class="btn sm primary" id="invite-close">بستن</button></div></div>';
+  document.body.appendChild(m);
+  m.querySelector('.spm-backdrop').onclick = () => m.remove();
+  m.querySelector('#invite-close').onclick = () => m.remove();
+  m.querySelector('#invite-copy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('لینک دعوت کپی شد'); } catch (e) { toast(url); } };
 }
 async function renderUsers(wrap) {
   wrap.innerHTML = '<div class="ph-loading">در حال بارگذاری کاربران…</div>';
@@ -1996,8 +2050,7 @@ function hexToRgb(h) { h = (h || '#3b82f6').replace('#', ''); if (h.length === 3
 function shade(hex, p) { const [r, g, b] = hexToRgb(hex); const f = (c) => Math.max(0, Math.min(255, Math.round(c + (p / 100) * 255))); return '#' + [f(r), f(g), f(b)].map((c) => c.toString(16).padStart(2, '0')).join(''); }
 function glow(hex, a) { const [r, g, b] = hexToRgb(hex); return 'rgba(' + r + ',' + g + ',' + b + ',' + (a == null ? .35 : a) + ')'; }
 function renderSkinsSub(body) {
-  if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">این بخش فقط برای کاربران پرمیوم در دسترس است. برای خرید پرمیوم با ادمین تماس بگیرید.</div></div>'; return; }
-  // کاربر پرمیوم همه اسکین‌ها را دارد
+  // همه کاربران می‌توانند تم استفاده کنند
   const allIds = SKINS.map((s) => s.id);
   localStorage.setItem('vx_owned_skins', JSON.stringify(allIds));
   const owned = allIds;
@@ -2056,7 +2109,6 @@ function openSkinPreview(s) {
   m.querySelector('#spm-apply').onclick = () => close(true);
 }
 function renderEffectsSub(body) {
-  if (!state.me.isPremium && !state.me.isAdmin) { body.innerHTML = '<div class="settings-sec"><h3>' + ic('lock') + ' فقط پرمیوم</h3><div class="placeholder">بخش افکت‌های حاله و بال فقط برای کاربران پرمیوم است. برای فعال‌سازی با ادمین تماس بگیرید.</div></div>'; return; }
   const cur = state.me.profileEffect || 'off';
   // Parse current effect — handle canvas- prefix
   let curFam = '', curCol = '';

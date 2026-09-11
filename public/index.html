@@ -15,8 +15,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=110" />
-  <script src="icons.js?v=84"></script>
+  <link rel="stylesheet" href="style.css?v=111" />
+  <script src="icons.js?v=85"></script>
 </head>
 <body>
   <div id="auth-screen">
@@ -124,9 +124,12 @@
 
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=112"></script>
+  <script src="app.js?v=114"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
+  var q = new URLSearchParams(location.search);
+  var inv = q.get('invite') || '';
+  if (inv) { localStorage.setItem('vx_inviter', inv.replace('@', '').toLowerCase().slice(0, 50)); history.replaceState(null, '', location.pathname); }
   var def = null;
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault(); def = e;

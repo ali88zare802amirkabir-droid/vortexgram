@@ -856,6 +856,8 @@ a{color:var(--primary);text-decoration:none;}
 
 
 /* ===================== CONTACTS ===================== */
+.ct-toolbar{display:flex;gap:8px;padding:12px 12px 0;}
+.ct-toolbar .btn{flex:1;white-space:nowrap;}
 .contact-search{padding:12px 12px 0;}
 .contact-search .inp{width:100%;}
 .ct-results{margin-top:10px;display:flex;flex-direction:column;gap:6px;}

@@ -182,6 +182,18 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
 
+// ---------- invite landing ----------
+function invitePage(refName, ref) {
+  const e = String(refName == null ? '' : refName).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  const href = ref ? '/?invite=' + encodeURIComponent(ref) : '/';
+  return '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>دعوت به VORTEXGRAM</title><style>body{margin:0;font-family:Vazirmatn,Tahoma,sans-serif;background:#0a0e1a;color:#e8ecf6;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}*{box-sizing:border-box}.card{background:#12182a;border:1px solid #1f2a44;border-radius:20px;padding:42px 32px;max-width:400px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}.mark{font-size:44px;font-weight:800}.mark b{color:#6ea8fe}h1{font-size:20px;margin:14px 0 6px}p{color:#9aa8c7;font-size:14px;line-height:1.9;margin:0 0 24px;direction:rtl}a.btn{display:inline-block;background:#6ea8fe;color:#002e5c;padding:13px 30px;border-radius:12px;font-weight:800;text-decoration:none;font-size:15px}.sub{font-size:11px;color:#5b6b8f;margin-top:18px}</style></head><body><div class="card"><div class="mark">V<b>ORTEX</b></div><h1>فقط ' + e + ' مونده!</h1><p>' + e + ' شما را به <b>VORTEXGRAM</b> دعوت کرده تا باهم چت کنید. با یک کلیک وارد شو و گفتگو رو شروع کن.</p><a class="btn" href="' + href + '">ورود به VORTEXGRAM</a><div class="sub">پیام‌رسان گیمینگ — سریع، امن و رایگان</div></div></body></html>';
+}
+app.get('/invite', (req, res) => {
+  const ref = String(req.query.ref || '').slice(0, 50).replace('@', '').toLowerCase();
+  const u = ref ? db.users.find((x) => x.username.toLowerCase() === ref) : null;
+  res.send(invitePage(u ? u.displayName : 'رفیقت', u ? u.username : null));
+});
+
 // ---------- auth api ----------
 app.post('/api/register', (req, res) => {
   const { username, password } = req.body || {};
@@ -479,6 +491,20 @@ app.get('/api/admin/users', auth, (req, res) => {
 });
 
 // جستجوی کاربران بر اساس آیدی/نام (برای شروع چت و پیدا کردن افراد)
+// جستجوی مخاطبین با شماره تلفن (همگام‌سازی مخاطبین گوشی)
+app.post('/api/contacts/match', auth, (req, res) => {
+  if (!authRateOk('contacts-match:' + req.user.username, 12, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  const phones = Array.isArray(req.body?.phones) ? req.body.phones : [];
+  if (!phones.length) return res.json({ users: [] });
+  const wanted = new Set(phones.map((p) => normalizePhone(p)).filter(Boolean));
+  if (!wanted.size) return res.json({ users: [] });
+  const out = db.users
+    .filter((u) => u.username !== req.user.username && u.phone && wanted.has(u.phone) && !u.banned)
+    .slice(0, 200)
+    .map((u) => ({ username: u.username, displayName: u.displayName || u.username, avatar: u.avatar || null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, online: !!u.online }));
+  res.json({ users: out });
+});
+
 app.get('/api/users/search', auth, (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   if (q.length < 1) return res.json({ users: [] });
@@ -1188,6 +1214,7 @@ wss.on('connection', (ws) => {
       wsSend(ws, {
         type: 'ready', me: publicUser(user), groups: publicGroups(username),
         chatState: chatStateOf(username), readState: myReadState, pinned: db.pinned,
+        dmRooms: Object.keys(db.messages).filter((rid) => rid.startsWith('dm:') && rid.slice(3).split('|').includes(username)).slice(0, 200),
       });
       pushUsers();
       broadcastGroups();
