@@ -323,6 +323,23 @@ app.post('/api/profile/bio', auth, (req, res) => {
   res.json({ ok: true, me: publicUser(req.user) });
 });
 
+// ---------- profile settings (theme/accent/font/pin/devices) ----------
+app.post('/api/profile/settings', auth, (req, res) => {
+  const b = req.body || {};
+  if (b.theme !== undefined) req.user.theme = String(b.theme).trim();
+  if (b.accent !== undefined) req.user.accent = String(b.accent).trim();
+  if (b.fontKey !== undefined) req.user.fontKey = String(b.fontKey).trim();
+  if (b.fontScale !== undefined) req.user.fontScale = Number(b.fontScale);
+  if (b.pinHash !== undefined) req.user.pinHash = String(b.pinHash).trim();
+  saveDB();
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
+app.get('/api/profile/devices', auth, (req, res) => {
+  const d = req.user.devices || [];
+  res.json({ devices: d.map((dev) => ({ ip: dev.ip, region: dev.region, device: dev.device, lastLogin: dev.lastLogin })) });
+});
+
 // ذخیره تم/اسکین فعال کاربر (برای جلوه‌های پروفایل دیسکوردی)
 app.post('/api/skin', auth, (req, res) => {
   const skin = String((req.body || {}).skin || '').trim();

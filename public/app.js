@@ -201,7 +201,107 @@ function enterApp() {
     api('/api/admin/requests').then((r) => r.json()).then((d) => { const list = (d.requests || []).filter((s) => s.status === 'pending'); state.signupCount = list.length; renderNav(); }).catch(() => {});
   }
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
+  if (pinIsSet()) pinShow('login');
 }
+
+/* ═══════════ PIN LOCK ═══════════ */
+const PIN_LS = 'vx_pin';
+const PIN_LEN = 6;
+let _pinBuf = '';
+let _pinMode = 'login';
+let _pinErrTimer = null;
+function pinIsSet() { return !!localStorage.getItem(PIN_LS); }
+async function pinHash(pin) {
+  if (window.crypto && crypto.subtle && crypto.subtle.digest) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return pin;
+}
+async function pinVerify(pin) {
+  const h = await pinHash(pin);
+  const stored = localStorage.getItem(PIN_LS);
+  return h === stored;
+}
+function pinClearErr() {
+  const err = document.getElementById('pin-err'); if (err) err.textContent = '';
+  document.querySelectorAll('.pin-dots span.err').forEach((s) => s.classList.remove('err'));
+}
+function pinUpdateDots() {
+  const dots = document.querySelectorAll('#pin-screen .pin-dots span');
+  dots.forEach((d, i) => { d.classList.toggle('on', i < _pinBuf.length); });
+}
+function pinCreateScreen() {
+  if ($('pin-screen')) return;
+  const pin = document.createElement('div'); pin.id = 'pin-screen'; pin.className = 'hidden';
+  pin.innerHTML = '<div class="pin-backdrop"></div>' +
+    '<div class="pin-card">' +
+    '<div class="pin-title" id="pin-title">یک PIN وارد کنید</div>' +
+    '<div class="pin-sub">برای ورود به VORTEX</div>' +
+    '<div class="pin-dots"></div>' +
+    '<div class="pin-err" id="pin-err"></div>' +
+    '<div class="pin-keypad"></div>' +
+    '<div class="pin-forgot" id="pin-forgot">فراموشی PIN؟</div>' +
+    '</div>';
+  document.body.appendChild(pin);
+  const pad = pin.querySelector('.pin-keypad');
+  const layout = ['1','2','3','4','5','6','7','8','9','—','0','←'];
+  layout.forEach((n) => {
+    const b = document.createElement('button'); b.className = 'pin-key';
+    if (n === '—') { b.className += ' empty'; }
+    else if (n === '←') { b.innerHTML = ic('delete'); b.className += ' back'; }
+    else b.textContent = n;
+    if (n !== '—') {
+      b.onclick = () => {
+        if (n === '←') pinBackspace(); else pinInput(n);
+      };
+    }
+    pad.appendChild(b);
+  });
+  pin.querySelector('.pin-backdrop').onclick = () => { /* don't close by click */ };
+  $('pin-forgot').onclick = () => { pinHide(); $('auth-screen').classList.remove('hidden'); $('app').classList.add('hidden'); };
+  for (let i = 0; i < PIN_LEN; i++) { const s = document.createElement('span'); pin.querySelector('.pin-dots').appendChild(s); }
+}
+function pinShow(mode) {
+  pinCreateScreen();
+  _pinMode = mode; _pinBuf = ''; pinClearErr(); pinUpdateDots();
+  const title = $('pin-title');
+  if (mode === 'set') { title.textContent = 'تنظیم PIN'; $('pin-sub').textContent = 'یک PIN ۶ رقمی انتخاب کنید'; }
+  else if (mode === 'change') { title.textContent = 'تغییر PIN'; $('pin-sub').textContent = 'PIN جدید را وارد کنید'; }
+  else { title.textContent = 'PIN وارد کنید'; $('pin-sub').textContent = 'برای ورود به VORTEX'; }
+  $('pin-screen').classList.remove('hidden');
+}
+function pinHide() { const s = $('pin-screen'); if (s) s.classList.add('hidden'); }
+function pinInput(digit) {
+  if (_pinBuf.length >= PIN_LEN) return;
+  _pinBuf += digit; pinUpdateDots(); pinClearErr();
+  if (_pinBuf.length === PIN_LEN) {
+    if (_pinMode === 'login') pinLogin();
+    else pinSet();
+  }
+}
+function pinBackspace() {
+  if (!_pinBuf.length) return;
+  _pinBuf = _pinBuf.slice(0, -1); pinUpdateDots(); pinClearErr();
+}
+async function pinLogin() {
+  const ok = await pinVerify(_pinBuf);
+  if (ok) { _pinBuf = ''; pinUpdateDots(); pinHide(); }
+  else { pinShakeErr('PIN اشتباه است'); }
+}
+async function pinSet() {
+  const h = await pinHash(_pinBuf);
+  localStorage.setItem(PIN_LS, h);
+  try { api('/api/profile/settings', { method: 'POST', body: JSON.stringify({ pinHash: h }) }); } catch (e) {}
+  _pinBuf = ''; pinUpdateDots(); pinHide(); toast('PIN ذخیره شد');
+}
+function pinShakeErr(msg) {
+  const err = $('pin-err'); if (err) err.textContent = msg;
+  document.querySelectorAll('#pin-screen .pin-dots span').forEach((s) => s.classList.add('err'));
+  clearTimeout(_pinErrTimer);
+  _pinErrTimer = setTimeout(pinClearErr, 1200);
+}
+pinCreateScreen(); // ready before any login
 
 /* NAV */
 const NAV = [
@@ -1078,7 +1178,7 @@ function attachImageTransfer(holder, im, src) {
   };
   ov.onclick = (e) => { e.stopPropagation(); if (ring.classList.contains('err')) begin(); };
   ring._refill.onclick = (e) => { e.stopPropagation(); begin(); };
-  dlLazy(holder, begin);
+  begin(); // دانلود فوری وقتی دریافت شد
 }
 
 // دانلود/استریم فیلم با حلقه؛ امکان پخش همزمان با دانلود
@@ -1153,7 +1253,7 @@ function attachVideoTransfer(holder, v, src) {
     } else { try { v.pause(); } catch (e2) {} }
   };
   ring._refill.onclick = (e) => { e.stopPropagation(); begin(); };
-  dlLazy(holder, begin);
+  begin(); // دانلود فوری وقتی دریافت شد
 }
 
 /* آپلود: بابل موقت با حلقه، سپس وقتی کامل شد message واقعی ارسال می‌شود */
@@ -2720,6 +2820,7 @@ function renderProfile(username) {
     h += '<button class="btn sm ghost" data-act="av-up">تغییر عکس</button>';
     h += '<button class="btn sm ghost" data-act="bg-up">پس‌زمینه</button>';
     h += '<button class="btn sm ghost" data-act="bg-gallery">گالری پینترست</button>';
+    h += '<button class="btn sm ghost" data-act="pin-toggle">' + (pinIsSet() ? 'غیرفعال کردن PIN' : 'قفل PIN') + '</button>';
     h += '</div>';
     h += '<input type="file" id="prof-file" accept="image/*" style="display:none" data-target="avatar">';
   }
@@ -2768,6 +2869,10 @@ function renderProfile(username) {
   const bgGal = viewHost.querySelector('[data-act="bg-gallery"]'); if (bgGal) bgGal.onclick = () => openGallery('backgrounds', (url) => {
     api('/api/profile/background/url', { method: 'POST', body: JSON.stringify({ url }) }).then((r) => r.json()).then((d) => { if (d.me) state.me = d.me; toast('پس‌زمینه از گالری تنظیم شد'); renderProfile(username); }).catch(() => toast('خطا در تنظیم پس‌زمینه'));
   });
+  const pinT = viewHost.querySelector('[data-act="pin-toggle"]'); if (pinT) pinT.onclick = () => {
+    if (pinIsSet()) { localStorage.removeItem(PIN_LS); toast('PIN غیرفعال شد'); }
+    else { pinShow('set'); }
+  };
   luc();
 }
 function uploadProfileFile(blob, name, target, onDone) {
