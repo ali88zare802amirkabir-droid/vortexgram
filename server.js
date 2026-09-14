@@ -63,9 +63,39 @@ function normalizeGroups() {
 }
 
 let saveTimer = null;
+let lastGitSync = 0;
+let gitSyncInProgress = false;
+
+function autoGitSync() {
+  if (gitSyncInProgress) return;
+  gitSyncInProgress = true;
+  exec('git diff --quiet data/db.json', (err) => {
+    if (err) {
+      exec('git add data/db.json && git commit -m "auto: db.json sync update" && git push origin master', (gitErr) => {
+        gitSyncInProgress = false;
+        if (gitErr) {
+          exec('git commit -m "auto: db.json sync update" --allow-empty', () => {});
+        }
+      });
+    } else {
+      gitSyncInProgress = false;
+    }
+  });
+}
+
 function flushDB() {
   clearTimeout(saveTimer);
-  try { db.sessions = Object.fromEntries(sessions); dbStore.save(db); } catch (e) { console.error('save failed', e.message); }
+  try {
+    db.sessions = Object.fromEntries(sessions);
+    dbStore.save(db);
+    const now = Date.now();
+    if (now - lastGitSync > 5000) {
+      lastGitSync = now;
+      autoGitSync();
+    }
+  } catch (e) {
+    console.error('save failed', e.message);
+  }
 }
 function saveDB() {
   clearTimeout(saveTimer);
