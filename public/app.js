@@ -653,49 +653,74 @@ function bodyEl(m) {
   else b.textContent = m.content || '';
   return b;
 }
+function mediaEl(m) {
+  const d = document.createElement('div'); d.className = 'media';
+  const u = m.src || m.url;
+  if (m.kind === 'video') {
+    const v = document.createElement('video');
+    v.controls = true; v.preload = 'none'; v.playsInline = true;
+    attachVideoTransfer(d, v, u);
+    v.onclick = () => { if (v.src) openViewer(u, 'video'); };
+    d.appendChild(v);
+  } else {
+    const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
+    attachImageTransfer(d, im, u);
+    d.appendChild(im);
+  }
+  if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
+  return d;
+}
 function albumEl(m) {
   const d = document.createElement('div'); d.className = 'album-grid';
   const urls = m.album || m.urls || (m.src ? [m.src] : m.url ? [m.url] : []);
   urls.forEach((url, i) => {
     const item = document.createElement('div'); item.className = 'album-item';
     const isVid = /\.(mp4|webm|ogg)$/i.test(url);
-    if (isVid) { const v = document.createElement('video'); v.src = url; v.loading = 'lazy'; v.controls = false; v.onclick = () => openViewer(url, 'video'); item.appendChild(v); }
-    else { const im = document.createElement('img'); im.src = url; im.loading = 'lazy'; im.onclick = () => openViewer(url, 'image'); item.appendChild(im); }
+    if (isVid) {
+      const v = document.createElement('video'); v.loading = 'lazy'; v.playsInline = true;
+      attachVideoTransfer(item, v, url);
+      v.onclick = () => { if (v.src) openViewer(url, 'video'); };
+      item.appendChild(v);
+    } else {
+      const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
+      attachImageTransfer(item, im, url);
+      item.appendChild(im);
+    }
     d.appendChild(item);
   });
   if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
   return d;
 }
-function mediaEl(m) { const d = document.createElement('div'); d.className = 'media'; const u = m.src || m.url; if (m.kind === 'video') { const v = document.createElement('video'); v.src = u; v.controls = true; v.preload = 'metadata'; v.onclick = () => openViewer(u, 'video'); d.appendChild(v); } else { const im = document.createElement('img'); im.src = u; im.loading = 'lazy'; im.onclick = () => openViewer(u, m.kind); d.appendChild(im); } if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); } return d; }
 function fileEl(m) {
   const d = document.createElement('div'); d.className = 'file-row';
-  d.innerHTML = ic('file') + '<div class="file-info"><div class="file-name">' + esc(m.name || 'فایل') + '</div><div class="file-size">' + (m.size ? Math.round(m.size / 1024) + ' KB' : '') + '</div></div><button class="file-dl">' + ic('download') + '</button><div class="progress-bar hidden"><div class="progress-fill"></div></div>';
-  const btn = d.querySelector('.file-dl');
-  btn.onclick = async () => {
-    const bar = d.querySelector('.progress-bar'); const fill = d.querySelector('.progress-fill');
-    bar.classList.remove('hidden'); fill.style.width = '0%';
-    try {
-      const res = await fetch(m.src || m.url);
-      if (!res.ok) throw new Error('Download failed');
-      const total = Number(res.headers.get('Content-Length')) || 0;
-      const reader = res.body.getReader();
-      const chunks = []; let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value); received += value.length;
-        if (total) fill.style.width = Math.round((received / total) * 100) + '%';
-      }
-      const blob = new Blob(chunks);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = m.name || 'file'; a.click();
-      URL.revokeObjectURL(url);
-      setTimeout(() => { bar.classList.add('hidden'); fill.style.width = '0%'; }, 1000);
-    } catch (e) {
-      toast('خطا در دانلود: ' + e.message);
-      bar.classList.add('hidden'); fill.style.width = '0%';
-    }
-  };
+  d.innerHTML = '<span class="file-ic">' + ic('file') + '</span><div class="file-info"><div class="file-name">' + esc(m.name || 'فایل') + '</div><div class="file-size">' + (m.size ? fmtBytes(m.size) : '') + '</div></div>';
+  const btn = document.createElement('button'); btn.className = 'file-dl'; btn.title = 'دانلود'; btn.innerHTML = ic('download');
+  d.appendChild(btn);
+  const startSize = (m.size ? fmtBytes(m.size) : '');
+  const sizeEl = d.querySelector('.file-size');
+  const stop = () => { btn.innerHTML = ic('download'); btn.onclick = start; };
+  function start() {
+    const ring = dlRing(30);
+    btn.innerHTML = ''; btn.appendChild(ring);
+    sizeEl.classList.remove('err-txt');
+    sizeEl.textContent = startSize;
+    const ok = (blb) => {
+      dlSet(ring, 100);
+      const url = URL.createObjectURL(blb);
+      const a = document.createElement('a'); a.href = url; a.download = m.name || 'file';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 2000);
+      setTimeout(stop, 900);
+    };
+    const fail = () => {
+      dlErr(ring);
+      sizeEl.classList.add('err-txt'); sizeEl.textContent = 'خطا — دوباره تلاش';
+      btn.innerHTML = ic('refresh-cw');
+      btn.onclick = () => { sizeEl.classList.remove('err-txt'); sizeEl.textContent = startSize; start(); };
+    };
+    fetchMediaStream(m.src || m.url, (p) => dlSet(ring, p), ok, fail);
+  }
+  btn.onclick = start;
   return d;
 }
 function voiceEl(m) {
@@ -912,14 +937,7 @@ function prepImage(f, done) {
   fr.onerror = () => done(f);
   fr.readAsDataURL(f);
 }
-function uploadFileFromBlob(blob, name) {
-  const fd = new FormData(); fd.append('file', blob, name || 'paste.png');
-  const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%';
-  const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
-  xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; };
-  xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); const isImg = blob.type.startsWith('image/'); const isVid = blob.type.startsWith('video/'); doSend({ kind: isImg ? 'image' : isVid ? 'video' : 'file', src: d.url, name: name || 'paste', size: blob.size, content: '' }); } catch (e) { toast('خطا در آپلود'); } };
-  xhr.send(fd);
-}
+function uploadFileFromBlob(blob, name) { sendFileMessage(blob, name || 'paste.png'); }
 document.addEventListener('paste', (e) => {
   if (!state.room) return;
   const items = (e.clipboardData || e.originalEvent && e.originalEvent.clipboardData || {}).items;
@@ -928,7 +946,7 @@ document.addEventListener('paste', (e) => {
     if (it.kind === 'file') {
       e.preventDefault();
       const f = it.getAsFile();
-      if (f) prepImage(f, (up) => uploadFileFromBlob(up, f.name || 'paste.png'));
+      if (f) sendFileMessage(f, f.name || 'paste.png');
       return;
     }
   }
@@ -937,7 +955,261 @@ const convEl = $('conversation');
 if (convEl) {
   convEl.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.add('drag-over'); });
   convEl.addEventListener('dragleave', (e) => { e.preventDefault(); convEl.classList.remove('drag-over'); });
-  convEl.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.remove('drag-over'); if (!state.room) return; const files = e.dataTransfer.files; if (files.length) { for (const f of files) { const isVid = f.type.startsWith('video/'); const isAud = f.type.startsWith('audio/'); prepImage(f, (up) => { const isImg = up.type.startsWith('image/'); const fd = new FormData(); fd.append('file', up, up === f ? f.name : f.name.replace(/\.[^.]+$/, '') + '.jpg'); const bar = $('upload-bar'); bar.classList.remove('hidden'); $('upload-fill').style.width = '0%'; const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token); xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); if (!d.url) { toast(d.error || 'خطا در آپلود'); return; } doSend({ kind: isImg ? 'image' : isVid ? 'video' : isAud ? 'voice' : 'file', src: d.url, name: f.name, size: up.size, content: '' }); } catch (err) { toast('خطا در آپلود'); } }; xhr.send(fd); }); } } });
+  convEl.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); convEl.classList.remove('drag-over'); if (!state.room) return; const files = e.dataTransfer.files; if (files.length) { for (const f of files) sendFileMessage(f, f.name || 'file'); } });
+}
+
+/* ====== MEDIA TRANSFER — حلقه‌ی پیشرفت آپلود/دانلود داخل خود چت (مثل تلگرام) ====== */
+const __memCache = new Map();          // url -> blob URL (برای عدم دانلود دوباره در همان نشست)
+function memCacheSet(k, v) {
+  if (__memCache.size >= 80) { const first = __memCache.keys().next().value; try { URL.revokeObjectURL(first); } catch (e) {} __memCache.delete(first); }
+  __memCache.set(k, v);
+}
+const DL_C = 100.53;                    // محیط حلقه (2πr برای r=16 در viewBox 36)
+
+function dlRing(size) {
+  const r = document.createElement('div');
+  r.className = 'dl-ring' + ((size || 64) <= 40 ? ' sm' : '');
+  r.style.setProperty('--r-sz', (size || 64) + 'px');
+  r.setAttribute('role', 'progressbar');
+  r.setAttribute('aria-valuemin', '0'); r.setAttribute('aria-valuemax', '100'); r.setAttribute('aria-valuenow', '0');
+  const d = 'M18 2a16 16 0 1 1 0 32 16 16 0 0 1 0-32';
+  r.innerHTML = '<svg viewBox="0 0 36 36" class="dl-svg"><path class="dl-bg" d="' + d + '" stroke-width="3.4"/><path class="dl-fg" d="' + d + '" stroke-width="3.4"/></svg>'
+    + '<div class="dl-num">0%</div>'
+    + '<button class="dl-x" aria-label="لغو">' + ic('x') + '</button>'
+    + '<button class="dl-refill" aria-label="تلاش دوباره">' + ic('refresh-cw') + '</button>';
+  r._fg = r.querySelector('.dl-fg'); r._num = r.querySelector('.dl-num');
+  r._x = r.querySelector('.dl-x'); r._refill = r.querySelector('.dl-refill');
+  return r;
+}
+function dlSet(r, pct) {
+  if (!r) return; pct = Math.max(0, Math.min(100, pct));
+  if (r._fg) r._fg.style.strokeDashoffset = (DL_C * (1 - pct / 100)).toFixed(2);
+  if (r._num) r._num.textContent = (pct >= 100 ? '' : Math.round(pct) + '%');
+  r.setAttribute('aria-valuenow', Math.round(pct));
+}
+function dlErr(r) { if (r) r.classList.add('err'); }
+function dlOk(r) { if (r) r.classList.remove('err'); }
+let _dlIO = null;
+function dlIO() {
+  if (_dlIO) return _dlIO;
+  try {
+    _dlIO = new IntersectionObserver((es) => {
+      for (const en of es) {
+        const el = en.target;
+        if (en.isIntersecting && el._dlStart) { const fn = el._dlStart; el._dlStart = null; _dlIO.unobserve(el); fn(); }
+      }
+    }, { rootMargin: '500px' });
+    return _dlIO;
+  } catch (e) { return null; }
+}
+function dlLazy(el, fn) {
+  if (el._dlStart) return;
+  el._dlStart = fn;
+  const io = dlIO();
+  if (io) io.observe(el); else fn();
+}
+function fmtBytes(n) {
+  if (!n) return '';
+  const x = n / 1024;
+  if (x < 1024) return Math.round(x) + ' KB';
+  return (x / 1024).toFixed(1) + ' MB';
+}
+function fetchMediaStream(url, onPct, onDone, onErr) {
+  const ctl = new AbortController();
+  fetch(url, { signal: ctl.signal }).then(async (res) => {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const total = Number(res.headers.get('Content-Length')) || 0;
+    const ctype = res.headers.get('Content-Type') || '';
+    const reader = res.body.getReader();
+    const chunks = []; let rcvd = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value); rcvd += value.length;
+      if (onPct && total) onPct(Math.round(rcvd / total * 100));
+    }
+    onDone && onDone(new Blob(chunks, { type: ctype }), rcvd, total);
+  }).catch((e) => { if (e && e.name !== 'AbortError') onErr && onErr(e); });
+  return ctl;
+}
+
+// دانلود عکس با حلقه؛ لغو → دکمه دستی
+function attachImageTransfer(holder, im, src) {
+  const cached = __memCache.get(src);
+  if (cached) { im.src = cached; im.onclick = () => openViewer(src, 'image'); return; }
+  holder.classList.add('dl-loading');
+  const ov = document.createElement('div'); ov.className = 'dl-overlay';
+  const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
+  ov.appendChild(ring);
+  holder.appendChild(ov);
+  let ctl = null, started = false;
+  const begin = () => {
+    if (started && ctl && !ctl.signal.aborted) return;
+    started = true;
+    dlOk(ring);
+    ctl = fetchMediaStream(src, (p) => dlSet(ring, p), (blb) => {
+      const burl = URL.createObjectURL(blb);
+      memCacheSet(src, burl);
+      im.src = burl;
+      holder.classList.remove('dl-loading');
+      ov.remove();
+      im.onclick = () => openViewer(src, 'image');
+      im.classList.add('loaded');
+    }, () => dlErr(ring));
+    ring._x.onclick = (e) => {
+      e.stopPropagation();
+      try { if (ctl) ctl.abort(); } catch (e2) {}
+      ov.innerHTML = '<button class="dl-manual" aria-label="دانلود">' + ic('download') + '</button>';
+      applyIcons(ov);
+      ov.onclick = (ev) => { ev.stopPropagation(); ov.innerHTML = ''; ov.appendChild(ring); ov.onclick = null; begin(); };
+    };
+  };
+  ov.onclick = (e) => { e.stopPropagation(); if (ring.classList.contains('err')) begin(); };
+  ring._refill.onclick = (e) => { e.stopPropagation(); begin(); };
+  dlLazy(holder, begin);
+}
+
+// دانلود/استریم فیلم با حلقه؛ امکان پخش همزمان با دانلود
+function attachVideoTransfer(holder, v, src) {
+  const cached = __memCache.get(src);
+  if (cached) { v.src = cached; return; }
+  holder.classList.add('dl-loading');
+  const ov = document.createElement('div'); ov.className = 'dl-overlay';
+  const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
+  ov.appendChild(ring);
+  const hint = document.createElement('div'); hint.className = 'dl-playhint';
+  hint.innerHTML = ic('play') + '<span>پخش همزمان با دانلود</span>';
+  ov.appendChild(hint);
+  holder.appendChild(ov);
+  const st = { chunks: [], rcvd: 0, total: 0, done: false, playing: false, lastSwap: 0, ctl: null, wantPlay: false };
+  const swap = () => {
+    const old = v.src;
+    const nu = URL.createObjectURL(new Blob(st.chunks));
+    v.src = nu;
+    if (old && old.startsWith('blob:')) { try { URL.revokeObjectURL(old); } catch (e) {} }
+    if (st.wantPlay) { st.wantPlay = false; try { v.play().catch(() => {}); } catch (e) {} }
+  };
+  v.addEventListener('play', () => { st.playing = true; });
+  const pauseH = () => { st.playing = false; if (!st.done && st.chunks.length) swap(); };
+  v.addEventListener('pause', pauseH);
+  v.addEventListener('seeked', () => { if (v.paused && !st.done && st.chunks.length) swap(); });
+  v.addEventListener('error', () => { if (!st.done && st.chunks.length) swap(); });
+  const begin = () => {
+    if (st.started && st.ctl && !st.ctl.signal.aborted) return;
+    st.started = true;
+    dlOk(ring);
+    st.ctl = new AbortController();
+    fetch(src, { signal: st.ctl.signal }).then(async (res) => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      st.total = Number(res.headers.get('Content-Length')) || 0;
+      const ct = res.headers.get('Content-Type') || '';
+      const reader = res.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        st.chunks.push(value); st.rcvd += value.length;
+        if (st.total) dlSet(ring, st.rcvd / st.total * 100);
+        const now = Date.now();
+        if (now - st.lastSwap > 600 && !st.playing) { swap(); st.lastSwap = now; }
+      }
+      st.done = true;
+      const nu = URL.createObjectURL(new Blob(st.chunks, { type: ct }));
+      v.src = nu;
+      memCacheSet(src, nu);
+      holder.classList.remove('dl-loading');
+      ov.remove();
+      if (st.playing) { try { v.play().catch(() => {}); } catch (e) {} }
+    }).catch((e) => { if (e && e.name !== 'AbortError') dlErr(ring); });
+    ring._x.onclick = (e) => {
+      e.stopPropagation();
+      try { if (st.ctl) st.ctl.abort(); } catch (e2) {}
+      st.wantPlay = false;
+      ov.innerHTML = '<button class="dl-manual" aria-label="دانلود مجدد">' + ic('download') + '</button>';
+      applyIcons(ov);
+      ov.onclick = (ev) => { ev.stopPropagation(); ov.innerHTML = ''; ov.appendChild(ring); ov.appendChild(hint); ov.onclick = null; begin(); };
+    };
+  };
+  ov.onclick = (e) => {
+    e.stopPropagation();
+    if (ring.classList.contains('err')) { begin(); return; }
+    if (st.done) return;
+    if (!st.playing) {
+      if (!st.chunks.length) { st.wantPlay = true; begin(); }
+      else { st.wantPlay = true; swap(); }
+    } else { try { v.pause(); } catch (e2) {} }
+  };
+  ring._refill.onclick = (e) => { e.stopPropagation(); begin(); };
+  dlLazy(holder, begin);
+}
+
+/* آپلود: بابل موقت با حلقه، سپس وقتی کامل شد message واقعی ارسال می‌شود */
+function addUploadBubble(kind, blob, name) {
+  const msgs = $('messages');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg mine'; wrap.dataset.tempId = 'u' + Date.now() + '-' + Math.floor(Math.random() * 9999);
+  const av = showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '';
+  const prevUrl = URL.createObjectURL(blob);
+  let inner;
+  if (kind === 'image') inner = '<div class="media dl-loading"><img src="' + prevUrl + '" alt=""></div>';
+  else if (kind === 'video') inner = '<div class="media dl-loading"><video muted playsinline></video></div>';
+  else inner = '<div class="file-row"><span class="file-ic">' + ic('file') + '</span><div class="file-info"><div class="file-name">' + esc(name || 'فایل') + '</div><div class="file-size">در حال ارسال…</div></div></div>';
+  wrap.innerHTML = av + '<div class="bubble">' + inner + '<div class="msg-meta"><span class="msg-time">در حال ارسال…</span></div></div>';
+  msgs.appendChild(wrap);
+  scrollBottom();
+  const metaT = wrap.querySelector('.msg-meta .msg-time');
+  const sizeEl = wrap.querySelector('.file-size');
+  const ring = (kind === 'image' || kind === 'video') ? dlRing(64) : dlRing(30);
+  const mediaBox = wrap.querySelector('.media');
+  if (mediaBox) { const o = document.createElement('div'); o.className = 'dl-overlay'; o.appendChild(ring); mediaBox.appendChild(o); }
+  else { const btn = document.createElement('span'); btn.className = 'file-dl'; btn.style.display = 'grid'; btn.appendChild(ring); wrap.querySelector('.file-row').appendChild(btn); }
+  wrap._ring = ring; wrap._meta = metaT; wrap._sizeEl = sizeEl; wrap._prev = prevUrl;
+  applyIcons(wrap);
+  return wrap;
+}
+function uploadPct(wrap, pct) {
+  dlSet(wrap._ring, Math.round(pct));
+  if (wrap._meta) wrap._meta.textContent = ic('loader') + ' ' + Math.round(pct) + '%';
+}
+function uploadFail(wrap) {
+  dlErr(wrap._ring);
+  if (wrap._ring._refill) wrap._ring._refill.style.display = 'none';
+  if (wrap._ring._x) { wrap._ring._x.style.display = 'grid'; wrap._ring._x.onclick = (e) => { e.stopPropagation(); dropUploadBubble(wrap, false); }; }
+  if (wrap._meta) wrap._meta.innerHTML = '<span style="color:var(--danger)">' + ic('alert-triangle') + ' ناموفق — تلاش دوباره</span>';
+  if (wrap._sizeEl) wrap._sizeEl.textContent = 'خطا در ارسال';
+}
+function dropUploadBubble(wrap, keepBlobUrl) {
+  if (wrap._prev && !keepBlobUrl) { try { URL.revokeObjectURL(wrap._prev); } catch (e) {} }
+  wrap.remove();
+}
+function sendFileMessage(blob, name) {
+  if (!blob || !blob.size) { toast('فایل خالی است'); return; }
+  name = name || 'file';
+  prepImage(blob, (up) => {
+    const t = String(up.type || '');
+    const isImg = t.startsWith('image/');
+    const isVid = t.startsWith('video/');
+    const isAud = t.startsWith('audio/');
+    const kind = isImg ? 'image' : isVid ? 'video' : isAud ? 'voice' : 'file';
+    const upName = up === blob ? name : name.replace(/\.[^.]+$/, '') + '.jpg';
+    const wrap = addUploadBubble(kind === 'image' ? 'image' : kind === 'video' ? 'video' : 'file', up, upName);
+    const fd = new FormData(); fd.append('file', up, upName);
+    const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
+    if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+    xhr.upload.onprogress = (p) => { if (p.lengthComputable) uploadPct(wrap, p.loaded / p.total * 100); };
+    xhr.onload = () => {
+      try {
+        const d = JSON.parse(xhr.responseText);
+        if (!d.url) { uploadFail(wrap); toast(d.error || 'خطا در آپلود'); return; }
+        memCacheSet(d.url, wrap._prev);     // بابل بعدی که از سرور برمی‌گردد همین بلاب را می‌گیرد
+        dropUploadBubble(wrap, true);
+        doSend({ kind, src: d.url, name, size: up.size, content: '' });
+      } catch (e) { uploadFail(wrap); toast('خطا در آپلود'); }
+    };
+    xhr.onerror = () => { uploadFail(wrap); toast('خطای شبکه در آپلود'); };
+    xhr.onabort = () => { toast('ارسال لغو شد'); };
+    wrap._ring._x.onclick = (e) => { e.stopPropagation(); try { xhr.abort(); } catch (e2) {} dropUploadBubble(wrap, false); };
+    xhr.send(fd);
+  });
 }
 /* EMOJI PICKER — پیکر ایموجی شناور (PC قابل پین) و برگهٔ موبایل */
 const EMOJI_PIN_KEY = 'vx_emoji_pinned';
@@ -1046,7 +1318,7 @@ function renderEmojiGrid(grid, emojis) {
   });
 }
 $('composer-attach').onclick = () => $('file-input').click();
-$('file-input').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const isVid = f.type.startsWith('video/'); const isAud = f.type.startsWith('audio/'); prepImage(f, (up) => { const isImg = up.type.startsWith('image/'); const fd = new FormData(); fd.append('file', up, up === f ? f.name : f.name.replace(/\.[^.]+$/, '') + '.jpg'); const bar = $('upload-bar'); bar.classList.remove('hidden'); const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload'); if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token); xhr.onload = () => { bar.classList.add('hidden'); try { const d = JSON.parse(xhr.responseText); if (!d.url) { toast(d.error || 'خطا در آپلود'); return; } doSend({ kind: isImg ? 'image' : isVid ? 'video' : isAud ? 'voice' : 'file', src: d.url, name: f.name, size: up.size, content: '' }); } catch (err) { toast('خطا در آپلود'); } }; xhr.upload.onprogress = (p) => { if (p.lengthComputable) $('upload-fill').style.width = Math.round((p.loaded / p.total) * 100) + '%'; }; xhr.send(fd); }); };
+$('file-input').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; sendFileMessage(f, f.name || 'file'); };
 /* ====== VOICE RECORDING — inline composer system ====== */
 const VO = { state: 'idle', recorder: null, stream: null, analyser: null, ac: null, timer: null, waveTimer: null, chunks: [], wave: [], waveEl: null, start: 0, startXY: [0, 0], cancel: false, locked: false, paused: false, pauseTime: 0, blob: null, dur: 0, finWave: null, abort: false, maxDur: 300, warnAt: 270 };
 function getMime() {
