@@ -1145,20 +1145,26 @@ function fetchMediaStream(url, onPct, onDone, onErr) {
   return ctl;
 }
 
-// دانلود عکس با حلقه؛ لغو → دکمه دستی
+// دانلود دستی عکس: دکمه «دانلود» → حلقه → نمایش؛ لغو → دکمه دوباره (بدون دانلود خودکار)
 function attachImageTransfer(holder, im, src) {
   const cached = __memCache.get(src);
   if (cached) { im.src = cached; im.onclick = () => openViewer(src, 'image'); return; }
   holder.classList.add('dl-loading');
   const ov = document.createElement('div'); ov.className = 'dl-overlay';
   const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
-  ov.appendChild(ring);
   holder.appendChild(ov);
   let ctl = null, started = false;
+  const showManual = () => {
+    ov.innerHTML = '<button class="dl-manual" aria-label="دانلود">' + ic('download') + '</button>';
+    applyIcons(ov);
+  };
+  showManual();
   const begin = () => {
-    if (started && ctl && !ctl.signal.aborted) return;
+    if (started && ctl && !ctl.signal.aborted && !ring.classList.contains('err')) return;
     started = true;
     dlOk(ring);
+    ov.innerHTML = '';
+    ov.appendChild(ring);
     ctl = fetchMediaStream(src, (p) => dlSet(ring, p), (blb) => {
       const burl = URL.createObjectURL(blb);
       memCacheSet(src, burl);
@@ -1171,29 +1177,25 @@ function attachImageTransfer(holder, im, src) {
     ring._x.onclick = (e) => {
       e.stopPropagation();
       try { if (ctl) ctl.abort(); } catch (e2) {}
-      ov.innerHTML = '<button class="dl-manual" aria-label="دانلود">' + ic('download') + '</button>';
-      applyIcons(ov);
-      ov.onclick = (ev) => { ev.stopPropagation(); ov.innerHTML = ''; ov.appendChild(ring); ov.onclick = null; begin(); };
+      started = false;
+      showManual();
     };
   };
-  ov.onclick = (e) => { e.stopPropagation(); if (ring.classList.contains('err')) begin(); };
+  ov.onclick = (e) => { e.stopPropagation(); if (!started || ring.classList.contains('err')) begin(); };
   ring._refill.onclick = (e) => { e.stopPropagation(); begin(); };
-  begin(); // دانلود فوری وقتی دریافت شد
 }
 
-// دانلود/استریم فیلم با حلقه؛ امکان پخش همزمان با دانلود
+// دانلود دستی فیلم: دکمه «دانلود» → حلقه → پخش؛ بدون دانلود خودکار
 function attachVideoTransfer(holder, v, src) {
   const cached = __memCache.get(src);
   if (cached) { v.src = cached; return; }
   holder.classList.add('dl-loading');
   const ov = document.createElement('div'); ov.className = 'dl-overlay';
   const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
-  ov.appendChild(ring);
   const hint = document.createElement('div'); hint.className = 'dl-playhint';
   hint.innerHTML = ic('play') + '<span>پخش همزمان با دانلود</span>';
-  ov.appendChild(hint);
   holder.appendChild(ov);
-  const st = { chunks: [], rcvd: 0, total: 0, done: false, playing: false, lastSwap: 0, ctl: null, wantPlay: false };
+  const st = { chunks: [], rcvd: 0, total: 0, done: false, playing: false, lastSwap: 0, ctl: null, wantPlay: false, started: false };
   const swap = () => {
     const old = v.src;
     const nu = URL.createObjectURL(new Blob(st.chunks));
@@ -1206,10 +1208,18 @@ function attachVideoTransfer(holder, v, src) {
   v.addEventListener('pause', pauseH);
   v.addEventListener('seeked', () => { if (v.paused && !st.done && st.chunks.length) swap(); });
   v.addEventListener('error', () => { if (!st.done && st.chunks.length) swap(); });
+  const showManual = () => {
+    ov.innerHTML = '<button class="dl-manual" aria-label="دانلود">' + ic('download') + '</button>';
+    applyIcons(ov);
+  };
+  showManual();
   const begin = () => {
-    if (st.started && st.ctl && !st.ctl.signal.aborted) return;
+    if (st.started && st.ctl && !st.ctl.signal.aborted && !ring.classList.contains('err')) return;
     st.started = true;
     dlOk(ring);
+    ov.innerHTML = '';
+    ov.appendChild(ring);
+    ov.appendChild(hint);
     st.ctl = new AbortController();
     fetch(src, { signal: st.ctl.signal }).then(async (res) => {
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1238,22 +1248,21 @@ function attachVideoTransfer(holder, v, src) {
       e.stopPropagation();
       try { if (st.ctl) st.ctl.abort(); } catch (e2) {}
       st.wantPlay = false;
-      ov.innerHTML = '<button class="dl-manual" aria-label="دانلود مجدد">' + ic('download') + '</button>';
-      applyIcons(ov);
-      ov.onclick = (ev) => { ev.stopPropagation(); ov.innerHTML = ''; ov.appendChild(ring); ov.appendChild(hint); ov.onclick = null; begin(); };
+      st.chunks = []; st.rcvd = 0; st.total = 0; st.done = false; st.started = false;
+      showManual();
     };
   };
   ov.onclick = (e) => {
     e.stopPropagation();
     if (ring.classList.contains('err')) { begin(); return; }
     if (st.done) return;
+    if (!st.started) { st.wantPlay = true; begin(); return; }
     if (!st.playing) {
       if (!st.chunks.length) { st.wantPlay = true; begin(); }
       else { st.wantPlay = true; swap(); }
     } else { try { v.pause(); } catch (e2) {} }
   };
   ring._refill.onclick = (e) => { e.stopPropagation(); begin(); };
-  begin(); // دانلود فوری وقتی دریافت شد
 }
 
 /* آپلود: بابل موقت با حلقه، سپس وقتی کامل شد message واقعی ارسال می‌شود */
