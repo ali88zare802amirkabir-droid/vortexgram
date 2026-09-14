@@ -51,6 +51,18 @@ function avatarEl(u, size) {
 }
 const IS_TOUCH = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 function isMobile() { return window.innerWidth <= 1024 || IS_TOUCH; }
+function detectLowEnd() {
+  let s = 0;
+  if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) s++;
+  if (navigator.deviceMemory && navigator.deviceMemory <= 4) s++;
+  if (navigator.connection && navigator.connection.effectiveType) {
+    if (navigator.connection.effectiveType === '2g' || navigator.connection.effectiveType === 'slow-2g') s += 2;
+  }
+  if (window.innerWidth <= 420) s++;
+  return s >= 2;
+}
+const LOW_END = detectLowEnd();
+if (LOW_END && document.documentElement) document.documentElement.setAttribute('data-lowend', '1');
 function showScrim(v) { const s = $('scrim'); if (s) s.classList.toggle('hidden', !v); }
 function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); $('details-panel').classList.remove('open'); showScrim(false); }
 
@@ -961,7 +973,7 @@ if (convEl) {
 /* ====== MEDIA TRANSFER — حلقه‌ی پیشرفت آپلود/دانلود داخل خود چت (مثل تلگرام) ====== */
 const __memCache = new Map();          // url -> blob URL (برای عدم دانلود دوباره در همان نشست)
 function memCacheSet(k, v) {
-  if (__memCache.size >= 80) { const first = __memCache.keys().next().value; try { URL.revokeObjectURL(first); } catch (e) {} __memCache.delete(first); }
+  if (__memCache.size >= (LOW_END ? 20 : 80)) { const first = __memCache.keys().next().value; try { URL.revokeObjectURL(first); } catch (e) {} __memCache.delete(first); }
   __memCache.set(k, v);
 }
 const DL_C = 100.53;                    // محیط حلقه (2πr برای r=16 در viewBox 36)
@@ -998,7 +1010,7 @@ function dlIO() {
         const el = en.target;
         if (en.isIntersecting && el._dlStart) { const fn = el._dlStart; el._dlStart = null; _dlIO.unobserve(el); fn(); }
       }
-    }, { rootMargin: '500px' });
+    }, { rootMargin: (LOW_END ? 200 : 500) + 'px' });
     return _dlIO;
   } catch (e) { return null; }
 }
@@ -1109,8 +1121,10 @@ function attachVideoTransfer(holder, v, src) {
         if (done) break;
         st.chunks.push(value); st.rcvd += value.length;
         if (st.total) dlSet(ring, st.rcvd / st.total * 100);
-        const now = Date.now();
-        if (now - st.lastSwap > 600 && !st.playing) { swap(); st.lastSwap = now; }
+        if (!LOW_END) {
+          const now = Date.now();
+          if (now - st.lastSwap > 600 && !st.playing) { swap(); st.lastSwap = now; }
+        }
       }
       st.done = true;
       const nu = URL.createObjectURL(new Blob(st.chunks, { type: ct }));
@@ -1168,7 +1182,7 @@ function addUploadBubble(kind, blob, name) {
 }
 function uploadPct(wrap, pct) {
   dlSet(wrap._ring, Math.round(pct));
-  if (wrap._meta) wrap._meta.textContent = ic('loader') + ' ' + Math.round(pct) + '%';
+  if (wrap._meta) wrap._meta.innerHTML = '<span style="color:var(--primary)">' + ic('loader') + '</span> ' + Math.round(pct) + '%';
 }
 function uploadFail(wrap) {
   dlErr(wrap._ring);
