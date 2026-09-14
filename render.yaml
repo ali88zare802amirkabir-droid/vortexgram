@@ -5,6 +5,3 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
-    envVars:
-      - key: PORT
-        value: 1458

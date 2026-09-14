@@ -1,0 +1,24 @@
+# Render blueprint for the Vortex v2 PHP API (Docker).
+# In Render: New -> Blueprint -> select this repo. Then set the env vars below.
+services:
+  - type: web
+    name: vortex-v2-api
+    runtime: docker
+    dockerfilePath: v2/Dockerfile
+    dockerContext: v2
+    healthCheckPath: /api/health
+    # دیسک دائمی برای SQLite + آپلودها — روی Render Free بدون این دیسک، دیتابیس
+    # هنگام sleep/redeploy پاک می‌شود (توکن‌ها و پیام‌ها می‌پرند). یک نمونه‌ی web کافی است.
+    disk:
+      name: vortex-sqlite
+      mountPath: /var/www/storage
+      sizeGB: 1
+    envVars:
+      - key: ADMIN_PHONES
+        value: 09942313116
+      - key: FRONTEND_ORIGIN
+        value: https://your-frontend.vercel.app
+      - key: APP_DEBUG
+        value: "0"
+      - key: GROQ_API_KEY
+        sync: false

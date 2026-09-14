@@ -48,12 +48,13 @@ function isOriginalAdmin(user) {
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const dbStore = require('./db');
-const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [] };
+const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], reports: [] };
 let db = { ...DEFAULT_DB };
 function normalizeGroups() {
   if (!Array.isArray(db.groups)) db.groups = [];
   if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
   if (!Array.isArray(db.scheduled)) db.scheduled = [];
+  if (!Array.isArray(db.reports)) db.reports = [];
   for (const g of db.groups) {
     if (!g.type) g.type = 'group';
     g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
@@ -318,6 +319,7 @@ app.post('/api/profile/bio', auth, (req, res) => {
   req.user.bio = bio;
   saveDB();
   pushUsers();
+  broadcastProfile(req.user.username);
   res.json({ ok: true, me: publicUser(req.user) });
 });
 
@@ -356,6 +358,7 @@ app.post('/api/profile/avatar', auth, avatarUpload.single('file'), (req, res) =>
   req.user.avatar = '/uploads/' + req.file.filename;
   saveDB();
   pushUsers();
+  broadcastProfile(req.user.username);
   res.json({ ok: true, avatar: req.user.avatar, me: publicUser(req.user) });
 });
 app.post('/api/profile/background', auth, avatarUpload.single('file'), (req, res) => {
@@ -365,6 +368,7 @@ app.post('/api/profile/background', auth, avatarUpload.single('file'), (req, res
   }
   req.user.profileBg = '/uploads/' + req.file.filename;
   saveDB(); pushUsers();
+  broadcastProfile(req.user.username);
   res.json({ ok: true, profileBg: req.user.profileBg, me: publicUser(req.user) });
 });
 function setProfileBgSafe(url) {
@@ -378,6 +382,7 @@ app.post('/api/profile/background/url', auth, (req, res) => {
   if (!url) return res.status(400).json({ error: 'لینک تصویر معتبر نیست' });
   req.user.profileBg = url;
   saveDB(); pushUsers();
+  broadcastProfile(req.user.username);
   res.json({ ok: true, profileBg: req.user.profileBg, me: publicUser(req.user) });
 });
 app.post('/api/profile/avatar/url', auth, (req, res) => {
@@ -385,6 +390,7 @@ app.post('/api/profile/avatar/url', auth, (req, res) => {
   if (!url) return res.status(400).json({ error: 'لینک تصویر معتبر نیست' });
   req.user.avatar = url;
   saveDB(); pushUsers();
+  broadcastProfile(req.user.username);
   res.json({ ok: true, avatar: req.user.avatar, me: publicUser(req.user) });
 });
 
@@ -411,6 +417,7 @@ app.post('/api/admin/displayname', auth, (req, res) => {
   target.displayName = newName;
   saveDB();
   pushUsers();
+  broadcastProfile(target.username);
   res.json({ ok: true, user: publicUser(target) });
 });
 
@@ -421,6 +428,7 @@ app.post('/api/rename', auth, (req, res) => {
     req.user.displayName = newName;
     saveDB();
     pushUsers();
+    broadcastProfile(req.user.username);
     return res.json({ ok: true, applied: true, me: publicUser(req.user) });
   }
   if (db.renameRequests.some((r) => r.username === req.user.username && r.status === 'pending')) return res.status(409).json({ error: 'درخواست قبلی هنوز در انتظار تایید است' });
@@ -446,6 +454,7 @@ app.post('/api/admin/requests/:id', auth, (req, res) => {
   }
   saveDB();
   pushUsers();
+  if (approve) broadcastProfile(item.username);
   notifyUser(item.username, { type: 'rename-result', approved: approve, displayName: approve ? item.newName : undefined });
 });
 
@@ -673,6 +682,98 @@ app.get('/api/reactions/:msgId', auth, (req, res) => {
     });
   }
   res.json({ reactions: out });
+});
+
+// ===== گزارش پیام =====
+app.post('/api/report', auth, (req, res) => {
+  const { roomId, msgId, reason } = req.body || {};
+  const rid = String(roomId || '').slice(0, 100);
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(rid, String(msgId || ''));
+  if (!m) return res.status(404).json({ error: 'پیام یافت نشد' });
+  const row = {
+    id: crypto.randomUUID(), roomId: rid, msgId: String(m.id),
+    from: String(req.user.username), reason: String(reason || '').slice(0, 240),
+    time: Date.now(),
+  };
+  db.reports = db.reports || [];
+  db.reports.push(row);
+  saveDB();
+  res.json({ ok: true });
+});
+
+// ===== فوروارد گروهی پیام =====
+// همه‌چیز سمت سرور بررسی می‌شود: دسترسی به مبدأ، دسترسی به مقصد، و تعلقِ هر
+// شناسه به اتاق مبدأ. شناسه‌های دلخواه کلاینت قبول نمی‌شوند.
+const FORWARD_LIMIT = parseInt(process.env.FORWARD_LIMIT || '50', 10) || 50;
+function buildForwardCopy(src, destRoomId, fromUser) {
+  const copy = {
+    id: crypto.randomUUID(), roomId: destRoomId, from: fromUser.username, fromName: fromUser.displayName,
+    kind: src.kind || 'text', time: Date.now(), reactions: {}, silent: false,
+    fromAvatar: fromUser.avatar || undefined, fromPremium: !!fromUser.isPremium,
+  };
+  if (src.content != null) copy.content = String(src.content).slice(0, MAX_MSG_LEN);
+  if (String(src.sticker || '')) copy.sticker = String(src.sticker).slice(0, 300);
+  if (typeof src.url === 'string') copy.url = src.url;
+  if (typeof src.src === 'string') copy.src = src.src;
+  if (typeof src.mime === 'string') copy.mime = src.mime.slice(0, 60);
+  if (typeof src.name === 'string') copy.name = src.name.slice(0, 80);
+  if (typeof src.size === 'number' && src.size > 0) copy.size = src.size;
+  if (typeof src.duration === 'number' && src.duration > 0) copy.duration = Math.min(3600, src.duration);
+  if (Array.isArray(src.wave)) copy.wave = src.wave.map((v) => Number(v)).filter((v) => Number.isFinite(v)).map((v) => Math.max(0, Math.min(1, v))).slice(0, 100);
+  if (Array.isArray(src.album)) copy.album = src.album.slice(0, 10);
+  if (src.poll && typeof src.poll === 'object') copy.poll = JSON.parse(JSON.stringify(src.poll));
+  if (src.checklist && typeof src.checklist === 'object') copy.checklist = JSON.parse(JSON.stringify(src.checklist));
+  copy.fwdFrom = String(src.fwdFrom || src.from || fromUser.username).slice(0, 40);
+  // ارجاع ریپلای: به پیامِ اتاقِ مبدأ اشاره می‌کند، در مقصد معتبر نیست؛
+  // فقط نام و متن بریده‌شده نگه داشته می‌شود (بدون id تا jump به مکانِ غلط نرود).
+  if (src.replyTo && typeof src.replyTo === 'object') {
+    copy.replyTo = { id: '', name: String(src.replyTo.name || '').slice(0, 40), snippet: String(src.replyTo.snippet || '').slice(0, 120) };
+  }
+  return copy;
+}
+app.post('/api/forward', auth, (req, res) => {
+  const body = req.body || {};
+  const src = String(body.sourceRoomId || '').slice(0, 100);
+  const dst = String(body.destinationRoomId || '').slice(0, 100);
+  if (!src || !dst) return res.status(400).json({ error: 'اتاق مبدأ و مقصد الزامی است' });
+  if (!canAccess(src, req.user.username)) return res.status(403).json({ error: 'دسترسی به اتاق مبدأ ندارید' });
+  if (!canAccess(dst, req.user.username)) return res.status(403).json({ error: 'دسترسی به اتاق مقصد ندارید' });
+  if (!canPost(dst, req.user.username)) return res.status(403).json({ error: 'در این اتاق اجازه‌ی ارسال ندارید' });
+  if (!Array.isArray(body.messageIds)) return res.status(400).json({ error: 'messageIds باید آرایه باشد' });
+  if (!body.messageIds.length) return res.status(400).json({ error: 'هیچ پیامی انتخاب نشده' });
+  if (body.messageIds.length > FORWARD_LIMIT) return res.status(400).json({ error: 'حداکثر ' + FORWARD_LIMIT + ' پیام در یک فوروارد' });
+  // حذف تکراری‌ها (اولین رخدادِ هر شناسه)
+  const ids = [];
+  const seen = new Set();
+  for (const raw of body.messageIds) {
+    const id = String(raw || '').slice(0, 60);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (!ids.length) return res.status(400).json({ error: 'شناسه‌های پیام نامعتبر است' });
+  const srcArr = db.messages[src] || [];
+  const byId = new Map(srcArr.map((m) => [m.id, m]));
+  const found = [];
+  for (const id of ids) {
+    const m = byId.get(id);
+    if (!m) return res.status(404).json({ error: 'یکی از پیام‌ها در اتاق مبدأ یافت نشد' });
+    found.push(m);
+  }
+  // ترتیب زمانیِ اصلی (همیشه، و نه ترتیبِ کلیک کاربر) را حفظ می‌کند.
+  const ordered = found
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => ((a.m.time || 0) - (b.m.time || 0)) || (a.i - b.i))
+    .map((x) => x.m);
+  if (!db.messages[dst]) db.messages[dst] = [];
+  const created = ordered.map((m) => buildForwardCopy(m, dst, req.user));
+  db.messages[dst].push(...created);
+  if (db.messages[dst].length > HISTORY_LIMIT) db.messages[dst] = db.messages[dst].slice(-HISTORY_LIMIT);
+  saveDB();
+  // هر پیام با همان رویدادِ realtime موجود پخش می‌شود (بدون کانال دوم)
+  for (const m of created) broadcast({ type: 'message', message: m });
+  res.json({ ok: true, count: created.length, ids: created.map((m) => m.id) });
 });
 
 // ===== سنجاق چندگانه =====
@@ -1126,6 +1227,23 @@ function readStateOf() {
   if (!db.readState) db.readState = {};
   return db.readState;
 }
+function previewsFor(username) {
+  const out = {};
+  const rsAll = readStateOf();
+  for (const [rid, arr] of Object.entries(db.messages || {})) {
+    if (!rid || !canAccess(rid, username)) continue;
+    const last = arr[arr.length - 1];
+    if (!last) continue;
+    const read = (rsAll[rid] || {})[username] || 0;
+    let unread = 0;
+    for (const m of arr) { if (m.from !== username && m.time > read) unread++; }
+    out[rid] = {
+      id: last.id, from: last.from, fromName: last.fromName, kind: last.kind,
+      content: last.content, name: last.name, time: last.time, unread,
+    };
+  }
+  return out;
+}
 
 app.post('/api/chats/state', auth, (req, res) => {
   const roomId = String((req.body || {}).roomId || '').slice(0, 100);
@@ -1184,9 +1302,20 @@ server.on('upgrade', onUpgrade);
 function wsSend(ws, obj) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
+function broadcastRoomOf(obj) {
+  if (obj && typeof obj === 'object') {
+    if (typeof obj.roomId === 'string') return obj.roomId;
+    if (obj.message && typeof obj.message === 'object' && typeof obj.message.roomId === 'string') return obj.message.roomId;
+  }
+  return null;
+}
 function broadcast(obj, exceptWs) {
+  // حریم خصوصی: فقط کلاینت‌هایی که به اتاق دسترسی دارند باید رویداد را دریافت کنند
+  const roomId = broadcastRoomOf(obj);
   for (const [, info] of online) {
-    if (info.ws !== exceptWs) wsSend(info.ws, obj);
+    if (info.ws === exceptWs) continue;
+    if (roomId !== null && !canAccess(roomId, info.pub.username)) continue;
+    wsSend(info.ws, obj);
   }
 }
 function pushUsers() {
@@ -1201,6 +1330,14 @@ function pushUsers() {
       wsSend(info.ws, { type: 'users', users: [] });
     }
   }
+}
+// پخش به‌روزرسانی پروفایل (عکس، نام، بیو) به همه‌ی کاربران آنلاین — بدون نیاز به رفرش
+function broadcastProfile(username) {
+  const user = db.users.find((u) => u.username === username);
+  if (!user) return;
+  const pub = publicUser(user);
+  const obj = { type: 'profile-updated', username, user: pub };
+  for (const [, info] of online) wsSend(info.ws, obj);
 }
 function kickUser(username) {
   const info = online.get(username);
@@ -1230,9 +1367,14 @@ wss.on('connection', (ws) => {
       for (const [rid, readers] of Object.entries(rsAll)) {
         if (canAccess(rid, username)) myReadState[rid] = readers;
       }
+      const myPinned = {};
+      for (const [rid, ids] of Object.entries(db.pinned || {})) {
+        if (canAccess(rid, username)) myPinned[rid] = ids;
+      }
       wsSend(ws, {
         type: 'ready', me: publicUser(user), groups: publicGroups(username),
-        chatState: chatStateOf(username), readState: myReadState, pinned: db.pinned,
+        chatState: chatStateOf(username), readState: myReadState, pinned: myPinned,
+        previews: previewsFor(username),
         dmRooms: Object.keys(db.messages).filter((rid) => rid.startsWith('dm:') && rid.slice(3).split('|').includes(username)).slice(0, 200),
       });
       pushUsers();
@@ -1272,7 +1414,10 @@ wss.on('connection', (ws) => {
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
       if (roomId.startsWith('dm:')) {
-        const other = roomId.slice(3).split('|').find((p) => p !== username);
+        const parts = roomId.slice(3).split('|');
+        const other = parts.find((p) => p !== username);
+        if (!other || other === username) return wsSend(ws, { type: 'error', text: 'اتاق نامعتبر' });
+        if (other !== BOT_USERNAME && !db.users.some((u) => u.username === other)) return wsSend(ws, { type: 'error', text: 'کاربر مقابل یافت نشد' });
         const otherUser = db.users.find((u) => u.username === other);
         if (otherUser && Array.isArray(otherUser.blocked) && otherUser.blocked.includes(username)) return wsSend(ws, { type: 'error', text: 'شما توسط این کاربر مسدود شده‌اید' });
         if (user.blocked && Array.isArray(user.blocked) && user.blocked.includes(other)) return wsSend(ws, { type: 'error', text: 'شما این کاربر را مسدود کرده‌اید' });
@@ -1312,14 +1457,19 @@ wss.on('connection', (ws) => {
         if (!/^\/uploads\/[\w.-]+$/.test(mUrl)) return;
       }
 
-      // نقل قول (ریپلای)
+      // نقل قول (ریپلای) — ارجاع فقط به پیامی از همین گفتگو پذیرفته می‌شود (جلوگیری از reply فراتشکلی)
       let replyTo;
       if (data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.id === 'string') {
-        replyTo = {
-          id: data.replyTo.id.slice(0, 40),
-          name: String(data.replyTo.name || '').slice(0, 40),
-          snippet: String(data.replyTo.snippet || '').slice(0, 120),
-        };
+        const targetId = data.replyTo.id.slice(0, 40);
+        const targetArr = db.messages[roomId] || [];
+        const targetExists = targetArr.some((x) => x.id === targetId);
+        if (targetExists) {
+          replyTo = {
+            id: targetId,
+            name: String(data.replyTo.name || '').slice(0, 40),
+            snippet: String(data.replyTo.snippet || '').slice(0, 120),
+          };
+        }
       }
 
       const mediaUrl = (kind === 'image' || kind === 'gif' || kind === 'video' || kind === 'audio' || kind === 'voice' || kind === 'file') ? (typeof data.url === 'string' ? data.url : typeof data.src === 'string' ? data.src : '') : '';
@@ -1383,8 +1533,10 @@ wss.on('connection', (ws) => {
     }
 
     if (data.type === 'typing') {
+      const typRoom = String(data.roomId || '').slice(0, 100);
+      if (!canAccess(typRoom, username)) return;
       const user = db.users.find((u) => u.username === username);
-      broadcast({ type: 'typing', roomId: String(data.roomId || '').slice(0, 100), name: user ? user.displayName : username }, ws);
+      broadcast({ type: 'typing', roomId: typRoom, username, name: user ? user.displayName : username, on: data.on !== false }, ws);
     }
   });
 
@@ -1626,6 +1778,9 @@ async function start() {
     console.error('DB load failed:', e.message);
   }
   server.listen(PORT, () => console.log(`vortexgram on http://localhost:${PORT}`));
-  if (Number(process.env.PORT) !== 3000 && process.env.VX_MIRROR === '1') server2.listen(3000, () => console.log('vortexgram mirrored on http://localhost:3000'));
+  if (Number(process.env.PORT) !== 3000 && process.env.VX_MIRROR === '1') {
+    const server2 = http.createServer(app);
+    server2.listen(3000, () => console.log('vortexgram mirrored on http://localhost:3000'));
+  }
 }
 start();

@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg0: #0b0f1a;
+  --bg1: #111827;
+  --card: rgba(255, 255, 255, 0.04);
+  --line: rgba(255, 255, 255, 0.08);
+  --acc: #7c3aed;
+  --acc2: #06b6d4;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: radial-gradient(1200px 600px at 80% -10%, rgba(124, 58, 237, 0.25), transparent),
+    radial-gradient(1000px 500px at 0% 110%, rgba(6, 182, 212, 0.18), transparent),
+    var(--bg0);
+  color: #e5e7eb;
+  font-family: Vazirmatn, Tahoma, sans-serif;
+}
+
+.glass {
+  background: var(--card);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+
+.btn-acc {
+  background: linear-gradient(135deg, var(--acc), var(--acc2));
+  color: white;
+  font-weight: 700;
+  border-radius: 12px;
+  padding: 10px 16px;
+  transition: opacity 0.15s ease;
+}
+.btn-acc:disabled { opacity: 0.5; }
+
+.input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: #e5e7eb;
+  outline: none;
+}
+.input:focus { border-color: var(--acc); }
+
+.scroll-thin::-webkit-scrollbar { width: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 6px; }
+
+.bubble-mine {
+  background: linear-gradient(135deg, #6d28d9, #0891b2);
+  color: #fff;
+}
+.bubble-theirs {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--line);
+}

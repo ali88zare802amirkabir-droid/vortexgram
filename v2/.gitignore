@@ -1,0 +1,18 @@
+# Node
+node_modules/
+
+# Next.js build cache
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+frontend/next-env.d.ts
+
+# Test / runtime data
+**/storage/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Env files (keep only the examples)
+.env
+.env.local
+.env.production

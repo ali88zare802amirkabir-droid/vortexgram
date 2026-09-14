@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>VORTEX Messenger</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#031427" />
@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=111" />
+  <link rel="stylesheet" href="style.css?v=115" />
   <script src="icons.js?v=85"></script>
 </head>
 <body>
@@ -84,6 +84,13 @@
             <button class="icon-btn" id="conv-info" title="اطلاعات" aria-label="اطلاعات چت"><i data-lucide="info" class="icon"></i></button>
             <button class="icon-btn" id="conv-ai" title="هوش مصنوعی" aria-label="دستیار هوش مصنوعی"><i data-lucide="sparkles" class="icon"></i></button>
           </div>
+          <div id="sel-toolbar" class="sel-toolbar hidden" role="toolbar" aria-label="انتخاب پیام">
+            <button class="icon-btn" id="sel-close" title="انصراف" aria-label="لغو انتخاب"><i data-lucide="x" class="icon"></i></button>
+            <span class="sel-count" id="sel-count"></span>
+            <span class="sel-spacer"></span>
+            <button class="icon-btn" id="sel-delete" title="حذف انتخاب‌شده‌ها" aria-label="حذف پیام‌های انتخاب‌شده" hidden><i data-lucide="trash-2" class="icon"></i></button>
+            <button class="sel-fwd" id="sel-forward" title="فوروارد همگی"><span class="sel-fwd-ic"><i data-lucide="forward" class="icon"></i></span><span class="sel-fwd-tx">فوروارد</span></button>
+          </div>
         </div>
         <div id="conv-searchbox" class="hidden" style="padding:8px 14px;border-bottom:1px solid var(--border)"><input id="conv-search-input" class="input" placeholder="جستجو در این چت..." /></div>
         <div id="messages"></div>
@@ -110,7 +117,7 @@
             <button class="rec-inline-btn rec-inline-pause hidden" id="rec-inline-pause" title="مکث"><i data-lucide="pause" class="icon"></i></button>
           </div>
           <span id="rec-badge" class="rec-badge hidden"></span>
-          <div id="emoji-pop" class="hidden"></div>
+          <div id="emoji-pop" class="emoji-pop hidden"></div>
         </div>
         <div id="upload-bar" class="hidden" style="height:4px;background:var(--surface)"><div id="upload-fill" style="height:100%;width:0;background:var(--accent)"></div></div>
       </div>
@@ -124,7 +131,7 @@
 
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=115"></script>
+  <script src="app.js?v=119"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
   var q = new URLSearchParams(location.search);

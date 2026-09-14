@@ -5,7 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node --test tests/db.test.js tests/forward.test.js",
+    "db:migrate": "node server/db/migrate.js up",
+    "db:migrate:down": "node server/db/migrate.js down",
+    "db:status": "node server/db/migrate.js status",
+    "db:seed": "node migrate-pg.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
@@ -15,5 +20,8 @@
     "multer": "^2.0.1",
     "pg": "^8.13.1",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17"
   }
 }

@@ -1,0 +1,13 @@
+{
+  "name": "vortex-v2-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ابزارهای تست بک‌اند v2 بدون نصب PHP (PHP-WASM)",
+  "scripts": {
+    "smoke": "node smoke-phpwasm.mjs"
+  },
+  "dependencies": {
+    "@php-wasm/node": "3.1.53",
+    "@php-wasm/universal": "3.1.53"
+  }
+}
