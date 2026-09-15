@@ -11,7 +11,7 @@ const dns = require('dns');
 try {
   for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('\n')) {
     const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
   }
 } catch (e) { console.warn('.env not found, using environment variables only'); }
 
@@ -20,6 +20,15 @@ const prompts = require('./ai/prompts');
 
 process.on('uncaughtException', (e) => console.error('UNCAUGHT:', e));
 process.on('unhandledRejection', (e) => console.error('UNHANDLED:', e));
+
+// محیط اجرا و پروکسی
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PROD = NODE_ENV === 'production';
+// کد ورود (OTP) فقط خارج از production برمی‌گردد؛ در production پیامک غیرفعال است و
+// اپراتور باید SMS واقعی را وصل کند (نکته در گزارش deploy).
+const devCodeEnabled = !IS_PROD;
+// پشت پراکسی (مثل Render) تنها وقتی TRUST_PROXY ست شود X-Forwarded-For بکار می‌رود.
+const TRUST_PROXY = String(process.env.TRUST_PROXY || '0');
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
@@ -34,6 +43,17 @@ Object.values(IMG_DIRS).forEach((d) => { try { fs.mkdirSync(d, { recursive: true
 const MAX_MSG_LEN = 4000;
 const HISTORY_LIMIT = 200;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
+
+const EXT_BY_MIME = {
+  'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
+  'video/mp4': '.mp4', 'video/webm': '.webm',
+  'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg', 'audio/webm': '.weba',
+  'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.aac', 'audio/x-matroska': '.mka',
+  'application/pdf': '.pdf', 'application/zip': '.zip', 'text/plain': '.txt',
+};
+const MIME_BY_EXT = {};
+for (const [k, v] of Object.entries(EXT_BY_MIME)) MIME_BY_EXT[v] = k;
+function cleanMime(m) { return String(m || '').split(';')[0].trim(); }
 
 const BOT_USERNAME = 'vortex_bot';
 const BOT_NAME = 'Vortex AI';
@@ -63,36 +83,17 @@ function normalizeGroups() {
 }
 
 let saveTimer = null;
-let lastGitSync = 0;
-let gitSyncInProgress = false;
-
-function autoGitSync() {
-  if (gitSyncInProgress) return;
-  gitSyncInProgress = true;
-  exec('git diff --quiet data/db.json', (err) => {
-    if (err) {
-      exec('git add data/db.json && git commit -m "auto: db.json sync update" && git push origin master', (gitErr) => {
-        gitSyncInProgress = false;
-        if (gitErr) {
-          exec('git commit -m "auto: db.json sync update" --allow-empty', () => {});
-        }
-      });
-    } else {
-      gitSyncInProgress = false;
-    }
-  });
-}
+// NOTE (security): auto-commit/push of data/db.json حذف شد —
+//  - کد قبلی به `exec` تعریف‌نشده (child_process هرگز require نشده) ارجاع می‌داد و در عمل
+//    هرگز اجرا نمی‌شد؛ dead code بود.
+//  - حتی اگر کار می‌کرد، کل تاریخچه چت + توکن‌های نشست را به تاریخچه git push می‌کرد.
+// پشتیبان‌گیری manual با `git add data/db.json` همچنان توسط اپراتور ممکن است.
 
 function flushDB() {
   clearTimeout(saveTimer);
   try {
     db.sessions = Object.fromEntries(sessions);
     dbStore.save(db);
-    const now = Date.now();
-    if (now - lastGitSync > 5000) {
-      lastGitSync = now;
-      autoGitSync();
-    }
   } catch (e) {
     console.error('save failed', e.message);
   }
@@ -110,6 +111,17 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
 const sessions = new Map();
 const online = new Map();
 const msgTimestamps = new Map();
+const wsRateLimits = new Map(); // username -> { key: [timestamps] } برای درخواست‌های WS
+function wsRateOk(username, key, max, windowMs) {
+  const now = Date.now();
+  const per = wsRateLimits.get(username) || {};
+  const arr = (per[key] || []).filter((t) => now - t < windowMs);
+  if (arr.length >= max) { per[key] = arr; wsRateLimits.set(username, per); return false; }
+  arr.push(now);
+  per[key] = arr;
+  wsRateLimits.set(username, per);
+  return true;
+}
 const pendingCodes = new Map(); // phone -> { code, exp }
 // rate-limit ساده ضد بروت‌فورس برای اندپوینت‌های احراز هویت (حافظه‌ای، هر پروسه)
 const authAttempts = new Map(); // key -> [timestamps]
@@ -137,11 +149,21 @@ function getSession(token) {
   if (!s || s.exp < Date.now()) return null;
   return s.username;
 }
+// IP واقعی کلاینت: فقط وقتی پشت پراکسی قابل اعتماد (TRUST_PROXY) باشیم X-Forwarded-For
+// بکار می‌رود؛ در غیر این صورت از آدرس سوکت استفاده می‌شود تا کلاینت نتواند با
+// هدر جعلی rate-limit / دستگاه را دور بزند.
+function clientIp(req) {
+  if (TRUST_PROXY !== '0' && req && req.headers && req.headers['x-forwarded-for']) {
+    const parts = String(req.headers['x-forwarded-for']).split(',');
+    return String(parts[parts.length - 1] || '').trim().replace(/^::ffff:/, '').slice(0, 60) || '?';
+  }
+  const ip = (req && (req.ip || (req.socket && req.socket.remoteAddress))) || '?';
+  return String(ip).replace(/^::ffff:/, '').slice(0, 60) || '?';
+}
 // دستگاه متصل کاربر را تشخیص و در db.users.devices ثبت می‌کند (ip/device/lastLogin)
 function clientDevice(req) {
   const ua = String((req && req.headers && req.headers['user-agent']) || 'Unknown').slice(0, 120);
-  const fwd = req && req.headers && req.headers['x-forwarded-for'];
-  const ip = String(fwd ? String(fwd).split(',')[0].trim() : (req && (req.ip || (req.socket && req.socket.remoteAddress)))).replace(/^::ffff:/, '').slice(0, 60) || '?';
+  const ip = clientIp(req);
   let device = 'مرورگر';
   if (/Tablet|iPad/i.test(ua)) device = 'تبلت';
   else if (/Mobile|Android|iPhone|iOS/i.test(ua)) device = 'موبایل';
@@ -149,6 +171,29 @@ function clientDevice(req) {
   else if (/Mac|iPhone OS|Darwin/i.test(ua)) device = 'مک';
   else if (/Linux/i.test(ua)) device = 'لینوکس';
   return { ip, region: (ip === '?' ? '' : ''), device };
+}
+// توکن از هدر Authorization یا کوکی نشست خوانده می‌شود (برای سرو فایل‌های خصوصی).
+function requestToken(req) {
+  const h = req.headers.authorization || '';
+  if (h.startsWith('Bearer ')) return h.slice(7) || null;
+  const c = req.headers.cookie || '';
+  for (const part of c.split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === 'ft_sess') { try { return decodeURIComponent(v.join('=')); } catch { return null; } }
+  }
+  return null;
+}
+function currentUser(req) {
+  const uname = getSession(requestToken(req));
+  const user = uname && db.users.find((u) => u.username === uname);
+  return (user && !user.banned) ? user : null;
+}
+function setSessionCookie(res, token) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', 'ft_sess=' + encodeURIComponent(token) + '; Path=/; HttpOnly; SameSite=Strict; Max-Age=' + Math.floor(SESSION_TTL / 1000) + secure);
+}
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', 'ft_sess=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
 }
 function noteDevice(user, req) {
   if (!user) return;
@@ -164,6 +209,28 @@ function noteDevice(user, req) {
 }
 function hash(pw, salt) {
   return crypto.createHash('sha256').update(salt + ':' + pw).digest('hex');
+}
+// امنیت: هش رمز از SHA-256 (سریع/قابل بروت‌فورس) به scrypt ارتقا یافت — بدون شکستن
+// سازگاری: هش‌های قدیمی SHA-256 همچنان در verifyPassword پشتیبانی می‌شوند و هر بار
+// که رمز جدید ساخته/تغییر کند، از scrypt استفاده می‌شود.
+function setPassword(user, plain) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(String(plain), salt, 32, { N: 16384, r: 8, p: 1 });
+  user.salt = salt;
+  user.passHash = 'scrypt$' + derived.toString('base64');
+  return user.passHash;
+}
+function verifyPassword(user, plain) {
+  if (!user || !user.salt) return false;
+  const p = String(plain);
+  if (typeof user.passHash === 'string' && user.passHash.startsWith('scrypt$')) {
+    try {
+      const derived = crypto.scryptSync(p, user.salt, 32, { N: 16384, r: 8, p: 1 });
+      const expected = Buffer.from(user.passHash.slice('scrypt$'.length), 'base64');
+      return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
+    } catch { return false; }
+  }
+  return user.passHash !== null && user.passHash === hash(p, user.salt);
 }
 function normalizePhone(p) {
   p = String(p || '').replace(/[\s\-()]/g, '');
@@ -184,12 +251,31 @@ function sendSMS(phone, text) {
 function publicUser(u) {
   return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
 }
+// نمای عمومیِ امن برای پخش همگانی: بدون شماره، بدون لیست مسدودشده و بدون flag رمز
+function publicSafe(u) {
+  const pub = publicUser(u);
+  delete pub.phone;
+  delete pub.blocked;
+  delete pub.hasPassword;
+  return pub;
+}
 const LIMITS = {
   normalUploadMB: 30,
   premiumUploadMB: 100,
   normalBio: 80,
   premiumBio: 200,
 };
+// سقف نرخ و حجم آپلود در یک بازه یک‌ساعته (خنثی‌سازی مصرف بی‌محدود دیسک)
+const uploadUsage = new Map(); // username -> { winStart, count, bytes }
+function uploadQuotaOk(username, bytes) {
+  const now = Date.now();
+  let rec = uploadUsage.get(username);
+  if (!rec || now - rec.winStart > 3600 * 1000) { rec = { winStart: now, count: 0, bytes: 0 }; uploadUsage.set(username, rec); }
+  if (rec.count >= 60) return false;
+  if (rec.bytes + bytes > 400 * 1024 * 1024) return false;
+  rec.count += 1; rec.bytes += bytes;
+  return true;
+}
 function isDmAllowed(roomId, username) {
   if (typeof roomId !== 'string' || !roomId.startsWith('dm:')) return false;
   return roomId.slice(3).split('|').includes(username);
@@ -220,23 +306,52 @@ function canPost(roomId, username) {
   }
   return true;
 }
+// گفتگوی مجاز بین دو کاربر برای تماس: هر دو موجود/غیرمسدود باشند، یکدیگر را
+// بلاک نکرده باشند و یک گفتگوی مشترک (DM موجود یا گروه مشترک) داشته باشند.
+// از تماسِ اسپم به غریبه‌ها و جاسوسیِ وضعیت آنلاین جلوگیری می‌کند.
+function canInteract(aName, bName) {
+  if (!aName || !bName || aName === bName) return false;
+  const a = db.users.find((u) => u.username === aName);
+  const b = db.users.find((u) => u.username === bName);
+  if (!a || !b || a.banned || b.banned) return false;
+  if ((Array.isArray(a.blocked) && a.blocked.includes(bName)) || (Array.isArray(b.blocked) && b.blocked.includes(aName))) return false;
+  if (db.messages['dm:' + [aName, bName].sort().join('|')]) return true;
+  return db.groups.some((g) => memberOf(g, aName) && memberOf(g, bName));
+}
 
 const app = express();
+if (TRUST_PROXY !== '0') app.set('trust proxy', TRUST_PROXY === '1' ? 1 : TRUST_PROXY);
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  next();
-});
-app.use(express.json({ limit: '1mb' }));
-app.use((req, res, next) => {
-  if (req.path === '/api/swtest' && req.method === 'POST') {
-    try { fs.writeFileSync(path.join(__dirname, 'swtest-result.txt'), JSON.stringify(req.body)); } catch (e) {}
-    return res.json({ ok: true });
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   next();
 });
+app.use(express.json({ limit: '1mb' }));
+
+// فایل‌های خصوصی (پیوست/آواتار/پس‌زمینه) فقط با نشست معتبر سرو می‌شوند.
+// این میدلور قبل از استاتیک ریشه ثبت شده و تمام مسیر /uploads/* را می‌بلعد؛
+// بدون auth → 401 و هرگز fallback به استاتیک ریشه نمی‌شود.
+const uploadsStatic = express.static(UPLOAD_DIR, {
+  setHeaders: (res, p) => {
+    const ext = p.slice(p.lastIndexOf('.'));
+    if (MIME_BY_EXT[ext]) res.setHeader('Content-Type', MIME_BY_EXT[ext]);
+    res.setHeader('Cache-Control', 'no-store');
+  },
+});
+app.use('/uploads', (req, res) => {
+  if (!currentUser(req)) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
+  uploadsStatic(req, res, (err) => {
+    if (err) return res.status(500).json({ error: 'خطای داخلی سرور' });
+    res.status(404).json({ error: 'پیدا نشد' });
+  });
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
 
 // ---------- invite landing ----------
@@ -253,35 +368,48 @@ app.get('/invite', (req, res) => {
 
 // ---------- auth api ----------
 app.post('/api/register', (req, res) => {
+  if (!authRateOk('register:' + clientIp(req), 8, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const { username, password } = req.body || {};
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ error: 'نام کاربری: ۳ تا ۲۰ حرف انگلیسی/عدد/_ ' });
-  if (!password || String(password).length < 4) return res.status(400).json({ error: 'رمز حداقل ۴ کاراکتر' });
+  if (!password || String(password).length < 6) return res.status(400).json({ error: 'رمز حداقل ۶ کاراکتر' });
   const unameLower = username.toLowerCase();
   if (db.users.some((u) => u.username.toLowerCase() === unameLower)) return res.status(409).json({ error: 'این نام کاربری قبلا ثبت شده' });
 
-  const salt = crypto.randomBytes(16).toString('hex');
   const phone = normalizePhone((req.body || {}).phone || '');
   const displayName = String((req.body || {}).displayName || '').trim().slice(0, 25) || username;
-  db.users.push({ username, salt, passHash: hash(String(password), salt), displayName, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null, phone: phone || undefined });
+  const user = { username, displayName, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null, phone: phone || undefined };
+  setPassword(user, String(password));
+  db.users.push(user);
   saveDB();
   pushUsers();
   const token = createSession(username);
-  const user = db.users.find((u) => u.username === username);
+  setSessionCookie(res, token);
   noteDevice(user, req);
   res.json({ ok: true, token, me: publicUser(user) });
 });
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
-  if (!authRateOk('login:' + (req.ip || '?'), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — یک دقیقه صبر کن' });
+  if (!authRateOk('login:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — یک دقیقه صبر کن' });
   const user = db.users.find((u) => u.username.toLowerCase() === String(username || '').toLowerCase());
-  if (!user || user.passHash !== hash(String(password || ''), user.salt)) {
+  if (!user || !verifyPassword(user, String(password || ''))) {
     return res.status(401).json({ error: 'نام کاربری یا رمز اشتباه است' });
   }
   if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
   const token = createSession(user.username);
+  setSessionCookie(res, token);
   noteDevice(user, req);
   res.json({ token, me: publicUser(user) });
+});
+
+// خروج از حساب: توکن نشست در سمت سرور باطل می‌شود (نه فقط حذف localStorage)
+app.post('/api/logout', auth, (req, res) => {
+  const h = req.headers.authorization || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  if (token) sessions.delete(token);
+  saveDB();
+  clearSessionCookie(res);
+  res.json({ ok: true });
 });
 
 // ---------- phone + code (Telegram-style) ----------
@@ -291,11 +419,13 @@ app.post('/api/send-code', async (req, res) => {
   const phone = normalizePhone((req.body || {}).phone);
   if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
   if (!authRateOk('send-code:' + phone, 5, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
+  if (!authRateOk('send-code-ip:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const code = genCode();
   pendingCodes.set(phone, { code, exp: Date.now() + 2 * 60 * 1000 });
   const sms = await sendSMS(phone, `کد ورود VORTEXGRAM: ${code}`);
   const out = { ok: true };
-  if (sms.dev) out.devCode = code;
+  // امنیت: کد تأیید فقط خارج از production به کلاینت برمی‌گردد (پیامک فعلاً غیرفعال است).
+  if (sms.dev && devCodeEnabled) out.devCode = code;
   if (sms.smsError) out.note = 'ارسال پیامک با خطا مواجه شد — کد در کنسول سرور چاپ شد';
   res.json(out);
 });
@@ -305,6 +435,7 @@ app.post('/api/verify-code', (req, res) => {
   const code = String((req.body || {}).code || '');
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
   if (!authRateOk('verify-code:' + phone, 10, 5 * 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — چند دقیقه صبر کن' });
+  if (!authRateOk('verify-ip:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const rec = pendingCodes.get(phone);
   if (!rec || rec.exp < Date.now()) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
   if (rec.code !== code) return res.status(401).json({ error: 'کد اشتباه است' });
@@ -313,6 +444,7 @@ app.post('/api/verify-code', (req, res) => {
     pendingCodes.delete(phone);
     if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
     const token = createSession(user.username);
+    setSessionCookie(res, token);
     noteDevice(user, req);
     return res.json({ token, me: publicUser(user) });
   }
@@ -320,6 +452,7 @@ app.post('/api/verify-code', (req, res) => {
 });
 
 app.post('/api/complete-register', (req, res) => {
+  if (!authRateOk('comp-register:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const phone = normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '');
   const displayName = String((req.body || {}).displayName || '').trim();
@@ -332,6 +465,7 @@ app.post('/api/complete-register', (req, res) => {
     pendingCodes.delete(phone);
     if (existing.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
     const token = createSession(existing.username);
+    setSessionCookie(res, token);
     noteDevice(existing, req);
     return res.json({ token, me: publicUser(existing) });
   }
@@ -353,6 +487,7 @@ app.post('/api/complete-register', (req, res) => {
   saveDB();
   pushUsers();
   const token = createSession(user.username);
+  setSessionCookie(res, token);
   noteDevice(user, req);
   return res.json({ ok: true, token, me: publicUser(user), message: isAdmin ? 'حساب ادمین ساخته شد ✅' : 'حساب ساخته شد ✅' });
 });
@@ -363,6 +498,7 @@ function auth(req, res, next) {
   const username = getSession(token);
   const user = username && db.users.find((u) => u.username === username);
   if (!user || user.banned) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
+  setSessionCookie(res, token);
   req.user = user;
   next();
 }
@@ -376,12 +512,11 @@ app.get('/api/me', auth, (req, res) => {
 // کاربر از داخل اپ رمز عبور می‌سازد یا تغییر می‌دهد (اگر حساب پیامکی ساخته شده باشد salt/passHash خالی است)
 app.post('/api/password-change', auth, (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'رمز جدید حداقل ۴ کاراکتر باشد' });
+  if (!newPassword || String(newPassword).length < 6) return res.status(400).json({ error: 'رمز جدید حداقل ۶ کاراکتر باشد' });
   if (req.user.passHash) {
-    if (!currentPassword || req.user.passHash !== hash(String(currentPassword || ''), req.user.salt)) return res.status(403).json({ error: 'رمز فعلی اشتباه است' });
+    if (!currentPassword || !verifyPassword(req.user, String(currentPassword || ''))) return res.status(403).json({ error: 'رمز فعلی اشتباه است' });
   }
-  req.user.salt = crypto.randomBytes(16).toString('hex');
-  req.user.passHash = hash(String(newPassword), req.user.salt);
+  setPassword(req.user, String(newPassword));
   saveDB();
   res.json({ ok: true });
 });
@@ -401,11 +536,20 @@ app.post('/api/profile/bio', auth, (req, res) => {
 // ---------- profile settings (theme/accent/font/pin/devices) ----------
 app.post('/api/profile/settings', auth, (req, res) => {
   const b = req.body || {};
-  if (b.theme !== undefined) req.user.theme = String(b.theme).trim();
-  if (b.accent !== undefined) req.user.accent = String(b.accent).trim();
-  if (b.fontKey !== undefined) req.user.fontKey = String(b.fontKey).trim();
-  if (b.fontScale !== undefined) req.user.fontScale = Number(b.fontScale);
-  if (b.pinHash !== undefined) req.user.pinHash = String(b.pinHash).trim();
+  if (typeof b.theme === 'string') req.user.theme = b.theme.trim().slice(0, 20);
+  if (typeof b.accent === 'string') {
+    const ac = b.accent.trim().slice(0, 30);
+    if (/^[a-zA-Z0-9#_-]+$/.test(ac)) req.user.accent = ac;
+  }
+  if (typeof b.fontKey === 'string') {
+    const fk = b.fontKey.trim().slice(0, 30);
+    if (/^[a-zA-Z0-9_-]*$/.test(fk)) req.user.fontKey = fk;
+  }
+  if (b.fontScale !== undefined) {
+    const fs = Number(b.fontScale);
+    if (Number.isFinite(fs)) req.user.fontScale = Math.max(11, Math.min(30, fs));
+  }
+  if (typeof b.pinHash === 'string') req.user.pinHash = b.pinHash.trim().slice(0, 100);
   saveDB();
   res.json({ ok: true, me: publicUser(req.user) });
 });
@@ -417,7 +561,7 @@ app.get('/api/profile/devices', auth, (req, res) => {
 
 // ذخیره تم/اسکین فعال کاربر (برای جلوه‌های پروفایل دیسکوردی)
 app.post('/api/skin', auth, (req, res) => {
-  const skin = String((req.body || {}).skin || '').trim();
+  const skin = String((req.body || {}).skin || '').trim().slice(0, 30);
   req.user.activeSkin = skin || 'default';
   saveDB();
   res.json({ ok: true, me: publicUser(req.user) });
@@ -425,8 +569,9 @@ app.post('/api/skin', auth, (req, res) => {
 
 // ذخیره افکت حاله/بال پروفایل (بخش مجزا)
 app.post('/api/profile-effect', auth, (req, res) => {
-  const effect = String((req.body || {}).effect || 'off').trim();
-  const color = (req.body || {}).color ? String(req.body.color).trim() : (req.user.profileEffectColor || null);
+  const effect = String((req.body || {}).effect || 'off').trim().slice(0, 30) || 'off';
+  const rawColor = (req.body || {}).color ? String(req.body.color).trim().slice(0, 20) : (req.user.profileEffectColor || null);
+  const color = rawColor && /^#[0-9a-fA-F]{3,8}$/.test(rawColor) ? rawColor : null;
   req.user.profileEffect = effect;
   req.user.profileEffectColor = effect === 'off' ? null : color;
   saveDB();
@@ -609,12 +754,15 @@ app.post('/api/contacts/match', auth, (req, res) => {
 });
 
 app.get('/api/users/search', auth, (req, res) => {
+  if (!authRateOk('search:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const q = String(req.query.q || '').trim().toLowerCase();
   if (q.length < 1) return res.json({ users: [] });
+  // ادمین وضعیت banned را می‌بیند؛ بقیه کاربران، کاربرانِ مسدود اصلاً در نتایج نمی‌آیند
+  const isAdmin = !!req.user.isAdmin;
   const out = db.users
-    .filter((u) => u.username.toLowerCase().includes(q) || (u.displayName || '').toLowerCase().includes(q))
+    .filter((u) => (isAdmin || !u.banned) && (u.username.toLowerCase().includes(q) || (u.displayName || '').toLowerCase().includes(q)))
     .slice(0, 25)
-    .map((u) => ({ username: u.username, displayName: u.displayName || u.username, avatar: u.avatar || null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, banned: !!u.banned, online: !!u.online }));
+    .map((u) => ({ username: u.username, displayName: u.displayName || u.username, avatar: u.avatar || null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, online: !!u.online, ...(isAdmin ? { banned: !!u.banned } : {}) }));
   res.json({ users: out });
 });
 
@@ -623,8 +771,13 @@ app.get('/api/user/:username', auth, (req, res) => {
   const uname = String(req.params.username || '').replace('@', '');
   const target = db.users.find((u) => u.username === uname);
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
+  const isSelfOrAdmin = req.user.username === target.username || req.user.isAdmin;
   const pu = publicUser(target);
-  delete pu.phone;
+  if (!isSelfOrAdmin) {
+    delete pu.phone;
+    delete pu.blocked;
+    delete pu.hasPassword;
+  }
   res.json({ u: pu });
 });
 
@@ -637,6 +790,7 @@ app.post('/api/admin/impersonate', auth, (req, res) => {
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
   if (target.banned) return res.status(400).json({ error: 'کاربر مسدود است' });
   const token = createSession(target.username);
+  setSessionCookie(res, token);
   saveDB();
   res.json({ ok: true, token, username: target.username });
 });
@@ -648,9 +802,7 @@ app.post('/api/admin/promote', auth, (req, res) => {
   const { username, scope, role } = req.body || {};
   const target = db.users.find((u) => u.username === String(username).replace('@', ''));
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
-  if (target.isAdmin && !isOriginalAdmin(target)) {
-    // ادمین اصلی نمی‌تونه ادمین اصلی دیگه‌ای رو حذف کنه
-  }
+  if ((!scope || scope === 'global') && isOriginalAdmin(target)) return res.status(400).json({ error: 'ادمین اصلی در حالت global قابل تغییر نیست' });
   if (scope && scope !== 'global') {
     const g = db.groups.find((x) => x.id === String(scope).replace('group:', ''));
     if (!g) return res.status(404).json({ error: 'گروه یافت نشد' });
@@ -710,9 +862,8 @@ app.post('/api/admin/reset-password', auth, (req, res) => {
   const target = db.users.find((u) => u.username === username);
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
   if (target.isAdmin && !isOriginalAdmin(req.user)) return res.status(403).json({ error: 'برای تغییر رمز ادمین‌ها فقط ادمین اصلی اجازه دارد' });
-  if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'رمز جدید حداقل ۴ کاراکتر باشد' });
-  target.salt = crypto.randomBytes(16).toString('hex');
-  target.passHash = hash(String(newPassword), target.salt);
+  if (!newPassword || String(newPassword).length < 6) return res.status(400).json({ error: 'رمز جدید حداقل ۶ کاراکتر باشد' });
+  setPassword(target, String(newPassword));
   saveDB();
   kickUser(target.username);
   notifyUser(target.username, { type: 'password-reset' });
@@ -732,6 +883,7 @@ app.get('/api/react-config', (req, res) => {
 // قانون تک‌واکنش: هر کاربر فقط یک واکنش روی هر پیام می‌تواند داشته باشد.
 // این منطق single-thread است؛ هیچ دو درخواستی همزمان mutating نمی‌شوند (atomic).
 app.post('/api/reactions', auth, (req, res) => {
+  if (!authRateOk('react:' + req.user.username, 120, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const { roomId, msgId } = req.body || {};
   const rid = String(roomId || '');
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
@@ -778,6 +930,7 @@ app.get('/api/reactions/:msgId', auth, (req, res) => {
 
 // ===== گزارش پیام =====
 app.post('/api/report', auth, (req, res) => {
+  if (!authRateOk('report:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const { roomId, msgId, reason } = req.body || {};
   const rid = String(roomId || '').slice(0, 100);
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
@@ -825,6 +978,7 @@ function buildForwardCopy(src, destRoomId, fromUser) {
   return copy;
 }
 app.post('/api/forward', auth, (req, res) => {
+  if (!authRateOk('forward:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'فوروارد زیاد — کمی صبر کن' });
   const body = req.body || {};
   const src = String(body.sourceRoomId || '').slice(0, 100);
   const dst = String(body.destinationRoomId || '').slice(0, 100);
@@ -870,13 +1024,17 @@ app.post('/api/forward', auth, (req, res) => {
 
 // ===== سنجاق چندگانه =====
 app.post('/api/pin', auth, (req, res) => {
+  if (!authRateOk('pin:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const { roomId, msgId } = req.body || {};
   const rid = String(roomId || '');
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
   if (!db.pinned[rid]) db.pinned[rid] = [];
-  const i = db.pinned[rid].indexOf(String(msgId));
+  const mid = String(msgId || '') || '';
+  // سنجاق فقط برای پیام‌های موجود در همان اتاق پذیرفته می‌شود (unpin پیامِ حذف‌شده مجاز است)
+  if (db.pinned[rid].indexOf(mid) === -1 && !(db.messages[rid] || []).some((m) => m.id === mid)) return res.status(404).json({ error: 'پیام یافت نشد' });
+  const i = db.pinned[rid].indexOf(mid);
   if (i >= 0) db.pinned[rid].splice(i, 1);
-  else db.pinned[rid].push(String(msgId));
+  else db.pinned[rid].push(mid);
   saveDB();
   broadcast({ type: 'pinned-updated', roomId: rid, ids: db.pinned[rid] });
   res.json({ ok: true, ids: db.pinned[rid] });
@@ -884,6 +1042,7 @@ app.post('/api/pin', auth, (req, res) => {
 
 // ===== رای دادن به نظرسنجی =====
 app.post('/api/poll/vote', auth, (req, res) => {
+  if (!authRateOk('poll:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const { roomId, msgId, option } = req.body || {};
   const rid = String(roomId || '');
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
@@ -899,6 +1058,7 @@ app.post('/api/poll/vote', auth, (req, res) => {
 
 // ===== تیک زدن آیتم چک‌لیست =====
 app.post('/api/checklist/toggle', auth, (req, res) => {
+  if (!authRateOk('check:' + req.user.username, 60, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const { roomId, msgId, index } = req.body || {};
   const rid = String(roomId || '');
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
@@ -917,6 +1077,7 @@ app.post('/api/schedule', auth, (req, res) => {
   const { roomId, kind, content, url, name, mime, at, replyTo } = req.body || {};
   const rid = String(roomId || '').slice(0, 100);
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  if (!canPost(rid, req.user.username)) return res.status(403).json({ error: 'در این اتاق اجازه ارسال ندارید' });
   const atTs = Number(at);
   if (!atTs || atTs < Date.now()) return res.status(400).json({ error: 'زمان نامعتبر' });
   const k = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'file'].includes(kind) ? kind : 'text';
@@ -968,6 +1129,7 @@ function fetchWithRedirects(url, opts, maxRedirects = 3) {
   });
 }
 app.get('/api/link-preview', auth, async (req, res) => {
+  if (!authRateOk('link-preview:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const raw = String(req.query.url || '');
   let u;
   try { u = new urlMod.URL(raw); } catch { return res.status(400).json({ error: 'لینک نامعتبر' }); }
@@ -998,6 +1160,7 @@ app.get('/api/link-preview', auth, async (req, res) => {
 
 // ===== AI داخلی (دستورات و پنل) =====
 app.post('/api/ai', auth, async (req, res) => {
+  if (!authRateOk('ai:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   if (!process.env.GROQ_API_KEYS_STR) return res.status(503).json({ error: 'AI تنظیم نشده' });
   const { action, roomId, text, tone } = req.body || {};
   const a = String(action || '');
@@ -1030,7 +1193,12 @@ function processScheduled() {
   if (!due.length) return;
   db.scheduled = db.scheduled.filter((s) => s.at > now);
   for (const s of due) {
+    // امنیت: در زمانِ ارسال دوباره بررسی می‌شود — کاربر حذف/مسدود شده یا دسترسی/حق
+    // ارسالش را از دست داده باشد، پیام تحویل داده نمی‌شود.
     const user = db.users.find((u) => u.username === s.from);
+    if (!user || user.banned) continue;
+    if (!canAccess(s.roomId, user.username)) continue;
+    if (!canPost(s.roomId, user.username)) continue;
     const msg = {
       id: crypto.randomUUID(), roomId: s.roomId, from: s.from, fromName: user ? user.displayName : s.from, kind: s.kind,
       content: s.content || '', url: s.url, mime: s.mime, name: s.name, time: now,
@@ -1099,14 +1267,6 @@ app.get('/api/admin/room/messages', auth, (req, res) => {
 });
 
 // ---------- uploads ----------
-const EXT_BY_MIME = {
-  'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
-  'video/mp4': '.mp4', 'video/webm': '.webm',
-  'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg', 'audio/webm': '.weba',
-  'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.aac', 'audio/x-matroska': '.mka',
-  'application/pdf': '.pdf', 'application/zip': '.zip', 'text/plain': '.txt',
-};
-function cleanMime(m) { return String(m || '').split(';')[0].trim(); }
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -1118,26 +1278,27 @@ const upload = multer({
     cb(null, true);
   },
 });
-app.post('/api/upload', auth, upload.single('file'), (req, res) => {
+app.post('/api/upload', auth, (req, res, next) => {
+  if (!authRateOk('upload-rate:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'آپلود زیاد — کمی صبر کن' });
+  next();
+}, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'فایل مجاز نیست یا حجمش زیاد است' });
   const maxMB = req.user.isPremium ? LIMITS.premiumUploadMB : LIMITS.normalUploadMB;
   if (req.file.size > maxMB * 1024 * 1024) {
     fs.unlink(req.file.path, () => {});
     return res.status(400).json({ error: `حداکثر ${maxMB} مگابایت` + (req.user.isPremium ? '' : ' — با پرمیوم تا ۱۰۰ مگ') });
   }
+  if (!uploadQuotaOk(req.user.username, req.file.size)) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(429).json({ error: 'سقف آپلود رسید — یک ساعت دیگر تلاش کن' });
+  }
   const m = cleanMime(req.file.mimetype);
   const kind = m.startsWith('image/') ? (m === 'image/gif' ? 'gif' : 'image') : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : 'file';
   res.json({ url: '/uploads/' + req.file.filename, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
 });
-const MIME_BY_EXT = {};
-for (const [k, v] of Object.entries(EXT_BY_MIME)) MIME_BY_EXT[v] = k;
-app.use('/uploads', express.static(UPLOAD_DIR, {
-  setHeaders: (res, p) => {
-    const ext = p.slice(p.lastIndexOf('.'));
-    if (MIME_BY_EXT[ext]) res.setHeader('Content-Type', MIME_BY_EXT[ext]);
-    res.setHeader('Cache-Control', 'no-store');
-  },
-}));
+
+// فایل‌های خصوصی (`/uploads/*`) دیگر استاتیکِ باز نیستند؛ سرو آن توسط
+// «uploads gate»ِ ثبت‌شده قبل از استاتیک ریشه انجام می‌شود (بالای فایل).
 
 // ---------- image gallery (public/img) ----------
 const IMG_SUBDIRS = { profiles: 'profiles', backgrounds: 'backgrounds', effects: 'effects' };
@@ -1178,6 +1339,7 @@ function isGroupAdmin(g, username) {
 }
 
 app.post('/api/groups', auth, (req, res) => {
+  if (!authRateOk('group-create:' + req.user.username, 10, 60 * 1000)) return res.status(429).json({ error: 'ساخت زیاد — کمی صبر کن' });
   const name = String((req.body || {}).name || '').trim();
   const type = (req.body || {}).type === 'channel' ? 'channel' : 'group';
   if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'نام باید ۲ تا ۳۰ کاراکتر باشد' });
@@ -1344,7 +1506,8 @@ app.post('/api/chats/state', auth, (req, res) => {
   const cur = st[roomId] || {};
   const body = req.body || {};
   if (body.key && 'value' in body) {
-    cur[body.key] = !!body.value;
+    const key = String(body.key).slice(0, 60);
+    if (key && /^[a-zA-Z0-9._-]+$/.test(key)) cur[key] = !!body.value;
   } else {
     if ('archived' in body) cur.archived = !!body.archived;
     if ('pinned' in body) cur.pinned = !!body.pinned;
@@ -1386,8 +1549,44 @@ app.post('/api/chats/delete', auth, (req, res) => {
 // ---------- websocket ----------
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
+wss.maxPayload = 512 * 1024; // جلوگیری از پیام‌های غول‌پیکر (پیش‌فرض ws ~100MB است)
+
+// سخت‌گیری در برقراری اتصال WS: مبدأ (Origin) باید مجاز باشد و هر IP سقف تعداد
+// اتصال/نرخ اتصال دارد (خنثی‌سازی مسدودسازی/سواریِ اینفریود).
+const wsConnTimes = new Map(); // ip -> [timestamps]
+const wsConnCount = new Map(); // ip -> تعداد اتصال باز
+const extraOrigins = new Set(String(process.env.VX_ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean));
+const MAX_WS_CONNS_PER_IP = 12;
+const MAX_USER_SOCKETS = 5;
+
+function originAllowed(req) {
+  const origin = req && req.headers && (req.headers.origin || req.headers['sec-websocket-origin']);
+  if (!origin) return true; // کلاینت‌های native (Capacitor) Origin نمی‌فرستند
+  let host = null;
+  try { host = new URL(origin).host; } catch { return false; }
+  const allowed = new Set([req.headers.host].filter(Boolean).concat([...extraOrigins]));
+  return allowed.has(host);
+}
+function wsIpAllowed(req) {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const arr = (wsConnTimes.get(ip) || []).filter((t) => now - t < 10000);
+  if (arr.length >= 8) { wsConnTimes.set(ip, arr); return false; }
+  arr.push(now);
+  wsConnTimes.set(ip, arr);
+  if ((wsConnCount.get(ip) || 0) >= MAX_WS_CONNS_PER_IP) return false;
+  return true;
+}
+
 const onUpgrade = (req, socket, head) => {
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  if (!originAllowed(req)) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
+  if (!wsIpAllowed(req)) { socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n'); socket.destroy(); return; }
+  const ip = clientIp(req);
+  wsConnCount.set(ip, (wsConnCount.get(ip) || 0) + 1);
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    ws.__ip = ip;
+    wss.emit('connection', ws, req);
+  });
 };
 server.on('upgrade', onUpgrade);
 
@@ -1423,12 +1622,12 @@ function pushUsers() {
     }
   }
 }
-// پخش به‌روزرسانی پروفایل (عکس، نام، بیو) به همه‌ی کاربران آنلاین — بدون نیاز به رفرش
+// پخش به‌روزرسانی پروفایل (عکس، نام، بیو) به همه‌ی کاربران آنلاین — بدون نیاز به رفرش.
+// فقط داده‌ی امنِ ‌publicSafe ارسال می‌شود (شماره/لیست مسدودی/flag رمز لو نرفته).
 function broadcastProfile(username) {
   const user = db.users.find((u) => u.username === username);
   if (!user) return;
-  const pub = publicUser(user);
-  const obj = { type: 'profile-updated', username, user: pub };
+  const obj = { type: 'profile-updated', username, user: publicSafe(user) };
   for (const [, info] of online) wsSend(info.ws, obj);
 }
 function kickUser(username) {
@@ -1451,7 +1650,12 @@ wss.on('connection', (ws, req) => {
       const uname = getSession(data.token);
       const user = uname && db.users.find((u) => u.username === uname);
       if (!user || user.banned) return wsSend(ws, { type: 'auth-failed' });
+      // سقف تعداد سوکت همزمان برای هر کاربر؛ و جایگزینی سوکت قبلیِ همان کاربر
+      const liveSockets = [...online.values()].filter((i) => i.pub.username === uname).length;
+      if (liveSockets >= MAX_USER_SOCKETS) return wsSend(ws, { type: 'auth-failed' });
       username = user.username;
+      const prev = online.get(username);
+      if (prev && prev.ws !== ws) { try { prev.ws.close(); } catch (e) {} }
       online.set(username, { ws, pub: publicUser(user) });
       user.lastSeen = Date.now();
       noteDevice(user, req);
@@ -1477,6 +1681,7 @@ wss.on('connection', (ws, req) => {
     if (!username) return;
 
     if (data.type === 'history') {
+      if (!wsRateOk(username, 'history', 30, 60 * 1000)) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
       const msgs = (db.messages[roomId] || []).slice(-100).map(enrichMsg);
@@ -1485,6 +1690,7 @@ wss.on('connection', (ws, req) => {
     }
 
     if (data.type === 'read') {
+      if (!wsRateOk(username, 'read', 120, 60 * 1000)) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
       const rs = readStateOf();
@@ -1619,8 +1825,15 @@ wss.on('connection', (ws, req) => {
     }
 
     // ---- call signaling relay ----
+    // حریم خصوصی: سیگنال تماس فقط بین کاربرانی که گفتگوی/گروه مشترک دارند و
+    // هیچ‌کدام طرف مقابل را مسدود نکرده است relay می‌شود.
     if (['call-offer', 'call-answer', 'call-ice', 'call-end'].includes(data.type)) {
-      const target = online.get(String(data.to || ''));
+      const targetName = String(data.to || '');
+      if (!canInteract(username, targetName)) {
+        if (data.type === 'call-offer') wsSend(ws, { type: 'error', text: 'کاربر آنلاین نیست' });
+        return;
+      }
+      const target = online.get(targetName);
       if (!target) {
         if (data.type === 'call-offer') wsSend(ws, { type: 'error', text: 'کاربر آنلاین نیست' });
         return;
@@ -1638,6 +1851,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    if (ws.__ip) wsConnCount.set(ws.__ip, Math.max(0, (wsConnCount.get(ws.__ip) || 1) - 1));
     if (username) {
       const stored = online.get(username);
       if (stored && stored.ws === ws) {
@@ -1862,6 +2076,16 @@ function botMsg(roomId, content) {
     kind: 'text', content, time: Date.now(),
   };
 }
+
+// ---------- 404 / error به‌صورت JSON ----------
+// جلوگیری از لو رفتن stack-trace (پیش‌فرض Express) و پاسخِ HTML به مصرف‌کننده‌ی API
+app.use('/api', (req, res) => res.status(404).json({ error: 'پیدا نشد' }));
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = Number(err.status || err.statusCode) || (err.type === 'entity.too.large' ? 413 : (err.name === 'MulterError' ? 400 : 500));
+  if (status >= 500) console.error('Unhandled error:', err.message);
+  res.status(status).json({ error: status >= 500 ? 'خطای داخلی سرور' : (err.message || 'درخواست نامعتبر') });
+});
 
 async function start() {
   try {

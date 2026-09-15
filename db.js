@@ -165,17 +165,40 @@ async function close() {
 // ---------------------------------------------------------------------------
 // Local JSON file backend (fallback when DATABASE_URL is not set)
 // ---------------------------------------------------------------------------
+// امنیت: توکن‌های نشست در data/db.json ذخیره نمی‌شوند (چون این فایل در git می‌رود و
+// کل تاریخچه چت را شامل می‌شود). نشست‌ها در فایلِ جداگانه و gitignored
+// (data/db.sessions.json) نگهداری می‌شوند تا «لاگین پس از ری‌استارت» حفظ شود.
+function _sessionsFile() {
+  return (process.env.SESSIONS_FILE || '').trim() || DB_FILE.replace(/\.json$/i, '') + '.sessions.json';
+}
 function _writeFileData(data) {
   fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
   const tmp = DB_FILE + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data));
+  const out = { ...data };
+  delete out.sessions;
+  fs.writeFileSync(tmp, JSON.stringify(out));
   fs.renameSync(tmp, DB_FILE);
+  if (data.sessions && typeof data.sessions === 'object' && Object.keys(data.sessions).length) {
+    try {
+      const sf = _sessionsFile();
+      fs.mkdirSync(path.dirname(sf), { recursive: true });
+      const stmp = sf + '.' + process.pid + '.tmp';
+      fs.writeFileSync(stmp, JSON.stringify(data.sessions));
+      fs.renameSync(stmp, sf);
+    } catch (e) { console.error('sessions file save failed:', e.message); }
+  }
 }
 
 function _loadFromFile() {
   try {
     const raw = fs.readFileSync(DB_FILE, 'utf8');
     const obj = JSON.parse(raw);
+    // نشست‌ها از فایل جداگانه (در صورت وجود) خوانده می‌شوند؛
+    // برای سازگاری با db.json قدیمی، fallback به فیلد sessions همان فایل هم کار می‌کند.
+    try {
+      const sess = JSON.parse(fs.readFileSync(_sessionsFile(), 'utf8'));
+      if (sess && typeof sess === 'object' && !Array.isArray(sess)) obj.sessions = sess;
+    } catch (e) {}
     const nMsg = Object.values(obj.messages || {}).reduce((a, x) => a + x.length, 0);
     console.log('DB loaded from ' + DB_FILE + ' (' + (Array.isArray(obj.users) ? obj.users.length : 0) + ' users, ' + nMsg + ' messages)');
     return obj;

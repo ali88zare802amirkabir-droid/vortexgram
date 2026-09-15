@@ -2,6 +2,7 @@ node_modules/
 .env
 data/*
 !data/db.json
+*.sessions.json
 public/uploads/
 
 # Logs

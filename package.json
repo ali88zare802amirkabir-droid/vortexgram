@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test tests/db.test.js tests/forward.test.js",
+    "test": "node --test tests/db.test.js tests/forward.test.js tests/security.test.js",
     "db:migrate": "node server/db/migrate.js up",
     "db:migrate:down": "node server/db/migrate.js down",
     "db:status": "node server/db/migrate.js status",

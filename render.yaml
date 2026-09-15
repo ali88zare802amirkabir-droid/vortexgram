@@ -5,3 +5,18 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ADMIN_PHONES
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEYS_STR
+        sync: false
+      - key: KAVENEGAR_KEY
+        sync: false
+      - key: VX_ALLOWED_ORIGIN
+        sync: false

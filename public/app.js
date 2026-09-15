@@ -1017,7 +1017,7 @@ function reactionsEl(m) {
     badge.dataset.em = emoji;
     badge.setAttribute('aria-label', (mine ? 'Remove your ' : 'Show who reacted with ') + (REACTION_LABELS[emoji] || emoji));
     badge.title = REACTION_LABELS[emoji] || emoji;
-    badge.innerHTML = '<span class="reac-em">' + emoji + '</span><span class="reac-count">' + users.length + '</span>';
+    badge.innerHTML = '<span class="reac-em">' + esc(emoji) + '</span><span class="reac-count">' + esc(String(users.length)) + '</span>';
     badge.onclick = (e) => { e.stopPropagation(); badge.classList.add('tap'); setTimeout(() => badge.classList.remove('tap'), 320); toggleReaction(m.id, emoji, m.roomId || state.room, m); };
     badge.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showReactionsSheet(m, emoji); };
     let lp = null;
@@ -1870,7 +1870,7 @@ function showReactionsSheet(m, emoji) {
   const ov = document.createElement('div'); ov.className = 'reacts-overlay';
   const sheet = document.createElement('div'); sheet.className = 'reacts-sheet';
   sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', 'Reactions');
-  sheet.innerHTML = '<div class="rs-head"><span class="rs-emoji">' + emoji + '</span><span class="rs-title">واکنش‌ها</span><button type="button" class="icon-btn" data-rs-close>' + ic('x') + '</button></div><div class="rs-list"><div class="rs-empty">در حال بارگذاری…</div></div>';
+  sheet.innerHTML = '<div class="rs-head"><span class="rs-emoji">' + esc(emoji) + '</span><span class="rs-title">واکنش‌ها</span><button type="button" class="icon-btn" data-rs-close>' + ic('x') + '</button></div><div class="rs-list"><div class="rs-empty">در حال بارگذاری…</div></div>';
   applyIcons(sheet);
   sheet.querySelector('[data-rs-close]').onclick = closeReactionsSheet;
   ov.onclick = closeReactionsSheet;
@@ -2511,7 +2511,7 @@ function beep() {
     o.start(); o.stop(_beepCtx.currentTime + 0.12);
   } catch (e) {}
 }
-async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; localStorage.removeItem('ft_token'); location.reload(); }
+async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; try { if (state.token) await fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token } }); } catch (e) {} try { if (state.ws) state.ws.close(); } catch (e) {} localStorage.removeItem('ft_token'); location.reload(); }
 $('auth-logout').onclick = logout;
 function showAuth() {
   $('auth-screen').classList.remove('hidden');
@@ -2827,7 +2827,7 @@ function renderProfile(username) {
   const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
   let h = '<div class="profile-view"' + sa + '>';
   h += '<button class="btn sm ghost" data-act="back">← بازگشت</button>';
-  if (u.profileBg) h += '<div class="profile-bg" style="background-image:url(\'' + u.profileBg + '\')"></div>';
+  if (u.profileBg) h += '<div class="profile-bg" style="background-image:url(\'' + esc(u.profileBg) + '\')"></div>';
   h += '<div class="profile-hero">';
   h += '<div class="profile-av">' + avatarEl(u, 'xl').outerHTML + '</div>';
   h += '<div class="profile-name">' + esc(u.displayName || u.username) + badge + '</div>';
