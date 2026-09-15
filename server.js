@@ -48,7 +48,7 @@ function isOriginalAdmin(user) {
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const dbStore = require('./db');
-const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], reports: [] };
+const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], reports: [], messageDeletions: [] };
 let db = { ...DEFAULT_DB };
 function normalizeGroups() {
   if (!Array.isArray(db.groups)) db.groups = [];
@@ -136,6 +136,31 @@ function getSession(token) {
   const s = token && sessions.get(token);
   if (!s || s.exp < Date.now()) return null;
   return s.username;
+}
+// دستگاه متصل کاربر را تشخیص و در db.users.devices ثبت می‌کند (ip/device/lastLogin)
+function clientDevice(req) {
+  const ua = String((req && req.headers && req.headers['user-agent']) || 'Unknown').slice(0, 120);
+  const fwd = req && req.headers && req.headers['x-forwarded-for'];
+  const ip = String(fwd ? String(fwd).split(',')[0].trim() : (req && (req.ip || (req.socket && req.socket.remoteAddress)))).replace(/^::ffff:/, '').slice(0, 60) || '?';
+  let device = 'مرورگر';
+  if (/Tablet|iPad/i.test(ua)) device = 'تبلت';
+  else if (/Mobile|Android|iPhone|iOS/i.test(ua)) device = 'موبایل';
+  else if (/Windows/i.test(ua)) device = 'ویندوز';
+  else if (/Mac|iPhone OS|Darwin/i.test(ua)) device = 'مک';
+  else if (/Linux/i.test(ua)) device = 'لینوکس';
+  return { ip, region: (ip === '?' ? '' : ''), device };
+}
+function noteDevice(user, req) {
+  if (!user) return;
+  const d = clientDevice(req);
+  const now = Date.now();
+  user.devices = Array.isArray(user.devices) ? user.devices : [];
+  const existing = user.devices.find((x) => x && x.ip === d.ip && x.device === d.device);
+  if (existing) existing.lastLogin = now;
+  else { user.devices.push({ ip: d.ip, region: d.region, device: d.device, lastLogin: now }); }
+  if (user.devices.length > 12) user.devices = user.devices.slice(-12);
+  user.lastLogin = now;
+  saveDB();
 }
 function hash(pw, salt) {
   return crypto.createHash('sha256').update(salt + ':' + pw).digest('hex');
@@ -241,6 +266,7 @@ app.post('/api/register', (req, res) => {
   pushUsers();
   const token = createSession(username);
   const user = db.users.find((u) => u.username === username);
+  noteDevice(user, req);
   res.json({ ok: true, token, me: publicUser(user) });
 });
 
@@ -253,6 +279,7 @@ app.post('/api/login', (req, res) => {
   }
   if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
   const token = createSession(user.username);
+  noteDevice(user, req);
   res.json({ token, me: publicUser(user) });
 });
 
@@ -285,6 +312,7 @@ app.post('/api/verify-code', (req, res) => {
     pendingCodes.delete(phone);
     if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
     const token = createSession(user.username);
+    noteDevice(user, req);
     return res.json({ token, me: publicUser(user) });
   }
   return res.json({ needsName: true });
@@ -303,6 +331,7 @@ app.post('/api/complete-register', (req, res) => {
     pendingCodes.delete(phone);
     if (existing.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
     const token = createSession(existing.username);
+    noteDevice(existing, req);
     return res.json({ token, me: publicUser(existing) });
   }
   if (displayName.length < 2) return res.status(400).json({ error: 'نام نمایشی حداقل ۲ حرف' });
@@ -323,6 +352,7 @@ app.post('/api/complete-register', (req, res) => {
   saveDB();
   pushUsers();
   const token = createSession(user.username);
+  noteDevice(user, req);
   return res.json({ ok: true, token, me: publicUser(user), message: isAdmin ? 'حساب ادمین ساخته شد ✅' : 'حساب ساخته شد ✅' });
 });
 
@@ -1395,7 +1425,7 @@ function notifyUser(username, obj) {
   if (info) wsSend(info.ws, obj);
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   let username = null;
 
   ws.on('message', (raw) => {
@@ -1409,6 +1439,7 @@ wss.on('connection', (ws) => {
       username = user.username;
       online.set(username, { ws, pub: publicUser(user) });
       user.lastSeen = Date.now();
+      noteDevice(user, req);
       const myReadState = {};
       const rsAll = readStateOf();
       for (const [rid, readers] of Object.entries(rsAll)) {
@@ -1550,6 +1581,7 @@ wss.on('connection', (ws) => {
       msg.content = String(content || '').slice(0, MAX_MSG_LEN).trim();
       if (!msg.content) return;
       msg.edited = true;
+      msg.editedAt = Date.now();
       saveDB();
       broadcast({ type: 'message-edited', roomId, id, content: msg.content });
       return;
@@ -1562,6 +1594,9 @@ wss.on('connection', (ws) => {
       const idx = arr.findIndex((m) => m.id === id);
       if (idx === -1) return;
       if (arr[idx].from !== username && !db.users.find((u) => u.username === username)?.isAdmin) return;
+      // آرشیو دائمی پیام حذف‌شده (هر چیزی که پاک می‌شود برای آینده ضبط می‌گردد)
+      db.messageDeletions = db.messageDeletions || [];
+      db.messageDeletions.push({ id: 'del-' + crypto.randomUUID(), roomId, msg: arr[idx], deletedBy: username, at: Date.now() });
       arr.splice(idx, 1);
       saveDB();
       broadcast({ type: 'message-deleted', roomId, id });

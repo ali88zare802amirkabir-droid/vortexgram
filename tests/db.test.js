@@ -52,11 +52,13 @@ function eq(a, b) {
 test('0001_init migration is versioned, reversible idempotent', async () => {
   await migrate.up(pool);
   const rows = await migrate.status(pool);
+  assert.ok(rows.every((r) => r.applied === 'yes'), 'all migrations applied');
   assert.ok(rows.some((r) => r.version === '0001' && r.applied === 'yes'), '0001 applied');
+  assert.ok(rows.some((r) => r.version === '0002' && r.applied === 'yes'), '0002 applied');
 
-  await migrate.down(pool);
+  await migrate.down(pool, { all: true });
   const st = (await pool.query("SELECT to_regclass('messages') AS o")).rows[0].o;
-  assert.strictEqual(st, null, 'messages dropped after down');
+  assert.strictEqual(st, null, 'messages dropped after full down');
 
   await migrate.up(pool);
   const up2 = (await pool.query("SELECT to_regclass('conversations') AS o")).rows[0].o;
@@ -280,4 +282,54 @@ test('file backend round-trips locally (no DATABASE_URL) and boots server.js', a
   `;
   const boot = runNode(bootScript, { VX_SERVER_PATH: path.join(ROOT, 'server.js'), DB_FILE: path.join(tmpDir, 'srv-db.json'), PORT: '3123' });
   assert.match(boot, /BOOT_OK/, 'server.js boots in file mode');
+});
+
+test('devices, lastLogin, deleted-message audit and editedAt persist through tables', async () => {
+  const data = {
+    users: [
+      {
+        username: 'devuser', displayName: 'Dev User',
+        devices: [
+          { ip: '1.2.3.4', region: '', device: 'ویندوز', lastLogin: 100 },
+          { ip: '5.6.7.8', region: '', device: 'موبایل', lastLogin: 200 },
+        ],
+        lastLogin: 200,
+      },
+    ],
+    groups: [],
+    messages: {
+      'dm:devuser|bot': [
+        { id: 'm1', roomId: 'dm:devuser|bot', from: 'devuser', fromName: 'Dev User', kind: 'text', content: 'before', time: 300, reactions: {}, silent: false, edited: true, editedAt: 400 },
+      ],
+    },
+    messageDeletions: [
+      { id: 'del-1', roomId: 'dm:devuser|bot', msg: { id: 'gone', roomId: 'dm:devuser|bot', from: 'devuser', fromName: 'Dev User', kind: 'text', content: 'secret', time: 150 }, deletedBy: 'devuser', at: 500 },
+    ],
+    pinned: {}, scheduled: [], renameRequests: [], readState: {}, chatState: {},
+  };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await repo.truncateAll(client);
+    await repo.insertAll(client, repo.buildAll(data));
+    await client.query('COMMIT');
+  } finally { client.release(); }
+
+  const loaded = await repo.loadAll(pool);
+  const user = loaded.users.find((u) => u.username === 'devuser');
+  assert.ok(user, 'devuser loaded');
+  assert.deepStrictEqual(user.devices.length, 2, 'device history preserved');
+  assert.strictEqual(user.devices[0].ip, '1.2.3.4', 'device ip preserved');
+  assert.strictEqual(user.lastLogin, 200, 'lastLogin preserved');
+
+  const msg = loaded.messages['dm:devuser|bot'].find((m) => m.id === 'm1');
+  assert.ok(msg && msg.editedAt === 400, 'editedAt preserved');
+
+  assert.ok(Array.isArray(loaded.messageDeletions), 'messageDeletions loaded');
+  const del = loaded.messageDeletions.find((d) => d.id === 'del-1');
+  assert.ok(del, 'audit entry present');
+  assert.strictEqual(del.deletedBy, 'devuser', 'audit deleted_by preserved');
+  assert.ok(del.msg && del.msg.content === 'secret', 'deleted message snapshot preserved');
+  assert.strictEqual(del.at, 500, 'deleted_at preserved');
 });

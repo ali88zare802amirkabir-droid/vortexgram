@@ -8,7 +8,7 @@
 // Round-trip guarantee: loadAll(buildAll(db)) reproduces the same runtime object
 // (key set included), so server.js never changes regardless of backend.
 
-const MODELED_KEYS = new Set(['users', 'groups', 'messages', 'pinned', 'scheduled', 'readState', 'chatState', 'renameRequests', 'sessions']);
+const MODELED_KEYS = new Set(['users', 'groups', 'messages', 'pinned', 'scheduled', 'readState', 'chatState', 'renameRequests', 'sessions', 'messageDeletions']);
 const INTERNAL_KV = new Set(['__group_ids__', '__stub_users__', '__chat_empty__']);
 const MEDIA_KINDS = new Set(['image', 'gif', 'video', 'audio', 'voice', 'file']);
 
@@ -42,6 +42,7 @@ function buildAll(data) {
   const attachRows = [];
   const reactRows = new Map();
   const roomEarliest = new Map();
+  const deletionRows = [];
 
   // --- users --------------------------------------------------------------
   for (const u of data.users) {
@@ -52,6 +53,8 @@ function buildAll(data) {
       bool(u.isAdmin), bool(u.isPremium), bool(u.banned),
       text(u.activeSkin), text(u.profileEffect), text(u.profileEffectColor), text(u.profileBg),
       Array.isArray(u.blocked) ? u.blocked : [], num(u.createdAt), num(u.lastSeen), num(u.updatedAt),
+      Array.isArray(u.devices) && u.devices.length ? JSON.stringify(u.devices) : JSON.stringify([]),
+      num(u.lastLogin),
     ]);
   }
   const knownUsers = new Set(data.users.map((u) => u && u.username));
@@ -207,6 +210,12 @@ function buildAll(data) {
     if (token && s) sessionRows.push([token, text(s.username), num(s.exp) || 0, null]);
   }
 
+  // --- message_deletions (audit log of removed messages) -------------------
+  for (const d of (Array.isArray(data.messageDeletions) ? data.messageDeletions : [])) {
+    if (!d || !d.id) continue;
+    deletionRows.push([d.id, text(d.roomId), jstr(d.msg || d.message || d.snapshot), text(d.deletedBy), num(d.at) || 0]);
+  }
+
   // --- stub users (legacy handles referenced in state but w/o a profile row) -
   const referenced = new Set();
   for (const r of convRows) if (r[4]) referenced.add(r[4]);
@@ -222,7 +231,7 @@ function buildAll(data) {
   for (const uname of referenced) {
     if (!uname || knownUsers.has(uname) || users.some((u) => u[0] === uname)) continue;
     stubs.push(uname);
-    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null]);
+    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null, JSON.stringify([]), null]);
   }
 
   // --- kv (non-modeled top-level keys + internal bookkeeping) ---------------
@@ -242,6 +251,7 @@ function buildAll(data) {
     attachments: attachRows, reactions: [...reactRows.values()],
     readState: readStateRows, chatState: chatStateRows, pinned: pinRows,
     scheduled: scheduledRows, renameRequests: renameRows, sessions: sessionRows, kv: kvRows,
+    deletions: deletionRows,
   };
 }
 
@@ -265,7 +275,7 @@ async function _insertRows(exec, table, cols, rows) {
   }
 }
 
-const TRUNCATE = 'TRUNCATE users, conversations, conversation_members, messages, attachments, message_reactions, message_reads, notifications, read_state, chat_state, pinned, scheduled, rename_requests, sessions, kv';
+const TRUNCATE = 'TRUNCATE users, conversations, conversation_members, messages, attachments, message_reactions, message_reads, notifications, read_state, chat_state, pinned, scheduled, rename_requests, sessions, message_deletions, kv';
 
 async function truncateAll(exec) {
   await exec.query(TRUNCATE);
@@ -273,7 +283,7 @@ async function truncateAll(exec) {
 
 async function insertAll(exec, b) {
   // FK-safe order
-  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at'], b.users);
+  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login'], b.users);
   await _insertRows(exec, 'conversations', ['id', 'type', 'title', 'avatar', 'owner', 'invite_token', 'created_at', 'updated_at'], b.conversations);
   await _insertRows(exec, 'conversation_members', ['conversation_id', 'user_id', 'role', 'joined_at', 'last_read_message_id'], b.members);
   await _insertRows(exec, 'messages', ['id', 'conversation_id', 'from', 'from_name', 'from_avatar', 'from_premium', 'kind', 'content', 'silent', 'fwd_from', 'edited', 'reply_to_id', 'reply_to_message_id', 'reply_to_name', 'reply_to_snippet', 'poll', 'checklist', 'album', 'time', 'updated_at', 'deleted_at'], b.messages);
@@ -285,6 +295,7 @@ async function insertAll(exec, b) {
   await _insertRows(exec, 'scheduled', ['id', 'conversation_id', 'from_user', 'kind', 'content', 'url', 'name', 'mime_type', 'poll', 'checklist', 'scheduled_for', 'created_at'], b.scheduled);
   await _insertRows(exec, 'rename_requests', ['id', 'username', 'old_name', 'new_name', 'status', 'requested_at'], b.renameRequests);
   await _insertRows(exec, 'sessions', ['token', 'username', 'expires_at', 'created_at'], b.sessions);
+  await _insertRows(exec, 'message_deletions', ['id', 'room_id', 'msg_json', 'deleted_by', 'deleted_at'], b.deletions);
   await _insertRows(exec, 'kv', ['key', 'value'], b.kv);
 }
 
@@ -304,7 +315,7 @@ async function loadAll(exec) {
   const emptyChatUsers = new Set(JSON.parse(kvMap.get('__chat_empty__') || '[]'));
 
   // --- users (stub handles excluded from the runtime list) -----------------
-  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at FROM users')).rows;
+  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at, devices, last_login FROM users')).rows;
   const usersById = new Map();
   for (const r of userRows) {
     if (stubUsers.has(r.username)) continue;
@@ -317,6 +328,8 @@ async function loadAll(exec) {
     if (Array.isArray(r.blocked) && r.blocked.length) u.blocked = r.blocked;
     setIf(u, 'createdAt', lnum(r.created_at)); setIf(u, 'lastSeen', lnum(r.last_seen));
     setIf(u, 'updatedAt', lnum(r.updated_at));
+    if (Array.isArray(r.devices) && r.devices.length) u.devices = r.devices;
+    setIf(u, 'lastLogin', lnum(r.last_login));
     usersById.set(r.username, r.username);
     db.users.push(u);
   }
@@ -341,7 +354,7 @@ async function loadAll(exec) {
   }
 
   // --- messages (+ attachments + reactions + replies) ----------------------
-  const msgRes = (await exec.query('SELECT id, conversation_id, "from", from_name, from_avatar, from_premium, kind, content, silent, fwd_from, edited, reply_to_id, reply_to_name, reply_to_snippet, poll, checklist, album, time FROM messages ORDER BY time ASC, id ASC')).rows;
+  const msgRes = (await exec.query('SELECT id, conversation_id, "from", from_name, from_avatar, from_premium, kind, content, silent, fwd_from, edited, reply_to_id, reply_to_name, reply_to_snippet, poll, checklist, album, time, updated_at FROM messages ORDER BY time ASC, id ASC')).rows;
   const attachRes = (await exec.query('SELECT message_id, type, url, filename, size, mime_type, duration, wave FROM attachments ORDER BY sort ASC, id ASC')).rows;
   const reactRes = (await exec.query('SELECT message_id, user_id, reaction FROM message_reactions ORDER BY message_id')).rows;
 
@@ -367,6 +380,7 @@ async function loadAll(exec) {
     m.silent = !!row.silent;
     if (row.fwd_from !== null && row.fwd_from !== undefined) m.fwdFrom = row.fwd_from;
     if (row.edited) m.edited = true;
+    if (row.updated_at !== null && row.updated_at !== undefined) m.editedAt = lnum(row.updated_at);
 
     const imgs = attachmentsByMsg.get(row.id) || [];
     if (row.kind === 'album') {
@@ -434,6 +448,16 @@ async function loadAll(exec) {
   const sessionsObj = {};
   for (const r of sessRes) sessionsObj[r.token] = { username: r.username, exp: Number(r.expires_at || 0) };
   if (Object.keys(sessionsObj).length) db.sessions = sessionsObj;
+
+  // --- message_deletions (audit log) ---------------------------------------
+  const delRes = (await exec.query('SELECT id, room_id, msg_json, deleted_by, deleted_at FROM message_deletions ORDER BY deleted_at ASC')).rows;
+  db.messageDeletions = [];
+  for (const r of delRes) {
+    const d = setIf({ id: r.id, roomId: r.room_id }, 'deletedBy', r.deleted_by);
+    if (r.msg_json !== null && r.msg_json !== undefined) d.msg = r.msg_json;
+    setIf(d, 'at', lnum(r.deleted_at));
+    db.messageDeletions.push(d);
+  }
 
   // --- kv extras (signupRequests, tmpAdminFlag, future keys) ----------------
   for (const [k, v] of kvMap) {
