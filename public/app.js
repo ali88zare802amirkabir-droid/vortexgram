@@ -107,13 +107,13 @@ const state = {
 };
 
 /* AUTH */
-const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-username');
-const stepPhone = $('auth-step-phone'), stepCode = $('auth-step-code'), stepName = $('auth-step-name');
+const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-name'), authUname = $('auth-username');
+const stepPhone = $('auth-step-phone'), stepCode = $('auth-step-code'), stepName = $('auth-step-name'), stepPass = $('auth-step-pass');
 const authError = $('auth-error');
 let authPhoneVal = '', authBusy = false;
-function showAuthStep(s) { stepPhone.classList.toggle('hidden', s !== 'phone'); stepCode.classList.toggle('hidden', s !== 'code'); stepName.classList.toggle('hidden', s !== 'name'); authError.textContent = ''; }
+function showAuthStep(s) { stepPhone.classList.toggle('hidden', s !== 'phone'); stepCode.classList.toggle('hidden', s !== 'code'); stepName.classList.toggle('hidden', s !== 'name'); if (stepPass) stepPass.classList.toggle('hidden', s !== 'pass'); authError.textContent = ''; }
 function authErr(m, ok) { authError.textContent = m; authError.style.color = ok ? 'var(--success)' : 'var(--danger)'; }
-function authBusyState(busy) { authBusy = busy; $('auth-send').disabled = busy; $('auth-verify').disabled = busy; $('auth-finish').disabled = busy; if (busy) { $('auth-send').textContent = 'در حال ارسال…'; } else { $('auth-send').textContent = 'دریافت کد'; } }
+function authBusyState(busy) { authBusy = busy; $('auth-send').disabled = busy; $('auth-verify').disabled = busy; $('auth-finish').disabled = busy; const pl = $('auth-pass-login'); if (pl) pl.disabled = busy; if (busy) { $('auth-send').textContent = 'در حال ارسال…'; } else { $('auth-send').textContent = 'دریافت کد'; } }
 function normalizePhoneDisplay(p) { return p.replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[\s\-()]/g, ''); }
 // ذخیرهٔ هویت هر شماره روی دستگاه — تا دفعهٔ بعد دیگر نام/آیدی نپرسد
 function phoneProfiles() { try { return JSON.parse(localStorage.getItem('vx_phone_accounts') || '{}'); } catch { return {}; } }
@@ -158,6 +158,7 @@ $('auth-verify').onclick = async () => {
       authBusyState(false);
       if (auto) return;
       authName.value = phoneProfiles()[authPhoneVal] ? (phoneProfiles()[authPhoneVal].displayName || '') : '';
+      authUname.value = phoneProfiles()[authPhoneVal] ? (phoneProfiles()[authPhoneVal].username || '') : '';
       return showAuthStep('name');
     }
     authBusyState(false);
@@ -168,14 +169,35 @@ $('auth-finish').onclick = async () => {
   const displayName = authName.value.trim();
   if (displayName.length < 2) return authErr('نام نمایشی حداقل ۲ حرف باشد');
   authBusyState(true);
-  try { const uname = authName.value.trim(); const r = await fetch('/api/complete-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim(), displayName, username: (uname || displayName).replace('@', '') }) }); const d = await r.json();
+  try { const uname = authUname.value.trim().replace(/^@/, ''); const r = await fetch('/api/complete-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: authPhoneVal, code: authCode.value.trim(), displayName, username: (uname || '') }) }); const d = await r.json();
     authBusyState(false);
     if (!r.ok) return authErr(d.error || 'خطا'); if (d.token && d.me) { savePhoneProfile(authPhoneVal, d.me.username, d.me.displayName); return finishLogin(d); } if (d.pending) { authErr(d.message || 'درخواست ثبت شد؛ منتظر تایید ادمین', true); return; }
   } catch (e) { authErr(e.message); authBusyState(false); }
 };
+$('auth-to-pass').onclick = () => showAuthStep('pass');
+$('auth-pass-to-phone').onclick = () => showAuthStep('phone');
+$('auth-pass-login').onclick = async () => {
+  if (authBusy) return;
+  const username = $('auth-pass-username').value.trim();
+  const password = $('auth-pass-password').value;
+  if (!username) return authErr('نام کاربری را وارد کنید');
+  if (!password) return authErr('رمز عبور را وارد کنید');
+  authBusyState(true);
+  try {
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    const d = await r.json();
+    authBusyState(false);
+    if (!r.ok) { authErr(d.error || 'خطا'); return; }
+    authPhoneVal = '';
+    return finishLogin(d);
+  } catch (e) { authBusyState(false); authErr(e.message); }
+};
 authPhone.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-send').click(); });
 authCode.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-verify').click(); });
 authName.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-finish').click(); });
+const authPU = $('auth-pass-username'), authPP = $('auth-pass-password');
+if (authPU) authPU.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-pass-login').click(); });
+if (authPP) authPP.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-pass-login').click(); });
 
 /* APPEARANCE */
 function applyAppearance() {
@@ -2549,7 +2571,7 @@ function openNewMenu(anchor) {
   document.body.appendChild(pop);
   setTimeout(() => document.addEventListener('click', close), 0);
 }
-async function startDM() { const who = await uPrompt('نام کاربری مقابل (مثلاً ali):'); if (!who) return; let other = (who + '').replace('@', '').trim(); if (!other) return; if (other.toLowerCase() === state.me.username.toLowerCase()) { toast('با خودت نمیتونی چت کنی!'); return; } if (other !== BOT_USERNAME && !state.me.isAdmin && !getContacts()[other]) { try { const r = await api('/api/users/exists/' + encodeURIComponent(other)); if (r.status === 404) { toast('چنین کاربری ثبت نشده'); return; } if (r.ok) { const j = await r.json(); other = j.username || other; } } catch (e) { } } const rid = 'dm:' + [state.me.username, other].sort().join('|'); if (state.me.isAdmin || getContacts()[other] || other === BOT_USERNAME) { openRoom(rid); } else { const c = getContacts(); c[other] = other; saveContacts(c); openRoom(rid); } }
+async function startDM() { const who = await uPrompt('نام کاربری مقابل (مثلاً ali):'); if (!who) return; let other = (who + '').replace('@', '').trim(); if (!other) return; if (other.toLowerCase() === state.me.username.toLowerCase()) { toast('با خودت نمیتونی چت کنی!'); return; } if (other !== BOT_USERNAME && !state.me.isAdmin && !getContacts()[other]) { try { const r = await api('/api/users/exists/' + encodeURIComponent(other)); if (r.status === 404) { toast('چنین کاربری ثبت نشده'); return; } if (r.ok) { const j = await r.json(); other = j.username || other; } } catch (e) { } } const rid = 'dm:' + [state.me.username, other].sort().join('|'); if (state.me.isAdmin || getContacts()[other] || other === BOT_USERNAME) { openRoom(rid); } else { const c = getContacts(); const cu = (state.users || []).find((u) => u.username === other); c[other] = (cu && cu.displayName) || other; saveContacts(c); openRoom(rid); } }
 function openDM(other) {
   if (other === state.me.username) return;
   const rid = 'dm:' + [state.me.username, other].sort().join('|');
@@ -2822,6 +2844,7 @@ function renderProfile(username) {
       if (u.isAdmin) h += '<button class="btn danger" data-act="demote">حذف ادمین</button>';
       else h += '<button class="btn" data-act="promote">ارتقا به ادمین</button>';
       h += '<button class="btn danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدودسازی') + '</button>';
+      h += '<button class="btn" data-act="reset-pass">تغییر رمز کاربر</button>';
     }
   }
   if (u.username === state.me.username) {
@@ -2843,6 +2866,14 @@ function renderProfile(username) {
   const imp = viewHost.querySelector('[data-act="impersonate"]'); if (imp) imp.onclick = () => enterAsUser(username);
   const pm = viewHost.querySelector('[data-act="promote"]'); if (pm) pm.onclick = async () => { await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'admin' }) }); toast('کاربر به ادمین ارتقا یافت'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
   const dm = viewHost.querySelector('[data-act="demote"]'); if (dm) dm.onclick = async () => { if (!(await uConfirm('ادمین بودن @' + username + ' حذف شود؟'))) return; await api('/api/admin/promote', { method: 'POST', body: JSON.stringify({ username, scope: 'global', role: 'member' }) }); toast('از ادمینی حذف شد'); const d = await (await api('/api/admin/users')).json(); if (d.users) { state.users = d.users; renderProfile(username); } };
+  const rp = viewHost.querySelector('[data-act="reset-pass"]'); if (rp) rp.onclick = async () => {
+    const np = await uPrompt('رمز جدید برای @' + username + ' (حداقل ۴ کاراکتر):', '', 'رمز جدید');
+    if (!np) return;
+    const r = await api('/api/admin/reset-password', { method: 'POST', body: JSON.stringify({ username, newPassword: np }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || 'خطا');
+    toast('رمز @' + username + ' بازنشانی شد 👌');
+  };
   if (state.me.isAdmin) {
     const sec = document.createElement('div'); sec.className = 'profile-files';
     sec.innerHTML = '<h3>' + ic('paperclip') + ' فایل‌های ارسالی</h3><div class="pf-body ph-loading">در حال بارگذاری…</div>';
@@ -3171,8 +3202,23 @@ function renderAccSub(body) {
   t += '<div class="settings-row"><span>نام نمایشی</span><b>' + esc(state.me.displayName) + '</b><button class="btn sm" onclick="promptRename()">تغییر</button></div>';
   t += '<div class="settings-row"><span>نام کاربری</span><b>@' + esc(state.me.username) + '</b></div>';
   t += '<div class="settings-row"><span>شماره</span><b>' + esc(state.me.phone || '—') + '</b></div>';
+  t += '<div class="settings-row"><span>بیو</span><input class="inp" id="acc-bio" maxlength="' + (state.me.isPremium ? 200 : 80) + '" placeholder="درباره خودت…" value="' + esc(state.me.bio || '') + '" style="max-width:220px"></div>';
   t += '<div class="settings-row"><span>وضعیت</span><b>' + (state.me.isPremium ? 'پریمیوم' : 'رایگان') + (state.me.isAdmin ? ' • ادمین' : '') + '</b></div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('smartphone') + ' دستگاه‌های متصل</h3><div id="acc-devices" class="acc-devices">در حال بارگذاری…</div></div>';
   body.innerHTML = t;
+  const bioSave = () => {
+    const v = body.querySelector('#acc-bio').value.trim();
+    api('/api/profile/bio', { method: 'POST', body: JSON.stringify({ bio: v }) }).then((r) => r.json()).then((d) => { if (!d.ok) { toast(d.error || 'خطا'); return; } if (d.me) state.me = d.me; toast('بیو ذخیره شد'); }).catch(() => toast('خطا'));
+  };
+  const bio = body.querySelector('#acc-bio'); if (bio) bio.addEventListener('change', bioSave);
+  api('/api/profile/devices').then((r) => r.json()).then((d) => {
+    const box = body.querySelector('#acc-devices');
+    if (!box) return;
+    const devs = Array.isArray(d.devices) ? d.devices : [];
+    if (!devs.length) { box.innerHTML = '<div class="placeholder">هنوز دستگاهی ثبت نشده است.</div>'; return; }
+    box.innerHTML = '<div class="settings-row"><span>تعداد دستگاه</span><b>' + devs.length + '</b></div>' + devs.map((x) => '<div class="dev-row"><span class="dev-ic">' + ic('smartphone') + '</span><span><b>' + esc(x.device || 'مرورگر') + '</b><small>' + esc(x.ip || '?') + ' • ' + esc(x.lastLogin ? fmt(x.lastLogin) : '') + '</small></span></div>').join('');
+  }).catch(() => { const box = body.querySelector('#acc-devices'); if (box) box.innerHTML = '<div class="placeholder">خطا در بارگذاری.</div>'; });
+  luc();
 }
 function renderNotifSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان‌ها</h3><div class="settings-row"><span>اعلان مرورگر</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
@@ -3181,14 +3227,39 @@ function renderNotifSub(body) {
 }
 function renderPrivSub(body) {
   const ptoggle = (key, label) => '<div class="settings-row"><span>' + label + '</span><label class="switch"><input type="checkbox" id="priv-' + key + '" ' + (localStorage.getItem(key) !== '0' ? 'checked' : '') + '><span class="slider"></span></label></div>';
+  const hasPw = !!(state.me && state.me.hasPassword);
   let t = '<div class="settings-sec"><h3>' + ic('lock') + ' حریم خصوصی</h3>';
   t += ptoggle('vx_online', 'نمایش وضعیت آنلاین');
   t += ptoggle('vx_lastseen', 'نمایش آخرین بازدید');
   t += ptoggle('vx_showphone', 'نمایش شماره به دیگران');
   t += ptoggle('vx_acceptall', 'پذیرش پیام از همه');
   t += '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('key') + ' رمز عبور</h3>';
+  t += '<div class="settings-row"><span>وضعیت رمز</span><b>' + (hasPw ? 'فعال' : 'غیرفعال — حساب با پیامک ساخته شده') + '</b></div>';
+  t += '<div class="settings-row' + (hasPw ? '' : ' hidden') + '"><span>رمز فعلی</span><input type="password" id="pw-current" class="inp" autocomplete="current-password" placeholder="••••••" style="max-width:150px"></div>';
+  t += '<div class="settings-row"><span>رمز جدید</span><input type="password" id="pw-new" class="inp" placeholder="حداقل ۴ کاراکتر" autocomplete="new-password" style="max-width:150px"></div>';
+  t += '<div class="settings-row"><span>تکرار رمز جدید</span><input type="password" id="pw-new2" class="inp" placeholder="تکرار" style="max-width:150px"></div>';
+  t += '<button class="btn sm primary" id="pw-save">' + (hasPw ? 'تغییر رمز عبور' : 'ساخت رمز عبور') + '</button>';
+  t += '<div class="pw-note">بعد از ساخت رمز می‌توانید از صفحه ورود با «رمز عبور» وارد شوید.</div>';
+  t += '</div>';
   body.innerHTML = t;
   ['vx_online', 'vx_lastseen', 'vx_showphone', 'vx_acceptall'].forEach((k) => { const el = body.querySelector('#priv-' + k); if (el) el.onchange = (e) => { localStorage.setItem(k, e.target.checked ? '1' : '0'); toast('تنظیمات حریم خصوصی ذخیره شد'); }; });
+  const save = body.querySelector('#pw-save');
+  if (save) save.onclick = async () => {
+    const cur = hasPw ? (body.querySelector('#pw-current') ? body.querySelector('#pw-current').value : '') : '';
+    const n1 = body.querySelector('#pw-new').value;
+    const n2 = body.querySelector('#pw-new2').value;
+    if (!n1 || n1.length < 4) return toast('رمز جدید حداقل ۴ کاراکتر باشد');
+    if (n1 !== n2) return toast('تکرار رمز جدید مطابقت ندارد');
+    try {
+      const r = await api('/api/password-change', { method: 'POST', body: JSON.stringify({ currentPassword: cur, newPassword: n1 }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return toast(d.error || 'خطا');
+      toast('رمز عبور ذخیره شد — از این پس با نام کاربری و رمز هم می‌توانید وارد شوید');
+      if (state.me) state.me.hasPassword = true;
+      renderPrivSub(body);
+    } catch (e) { toast('خطا: ' + e.message); }
+  };
 }
 const SKINS = [
   { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'cyber', accent: 'blue', mood: 'happy', desc: 'تم پیش‌فرض ورتیکس' },

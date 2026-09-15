@@ -182,7 +182,7 @@ function sendSMS(phone, text) {
   });
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [] };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
 }
 const LIMITS = {
   normalUploadMB: 30,
@@ -261,7 +261,8 @@ app.post('/api/register', (req, res) => {
 
   const salt = crypto.randomBytes(16).toString('hex');
   const phone = normalizePhone((req.body || {}).phone || '');
-  db.users.push({ username, salt, passHash: hash(String(password), salt), displayName: username, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null, phone: phone || undefined });
+  const displayName = String((req.body || {}).displayName || '').trim().slice(0, 25) || username;
+  db.users.push({ username, salt, passHash: hash(String(password), salt), displayName, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null, phone: phone || undefined });
   saveDB();
   pushUsers();
   const token = createSession(username);
@@ -369,6 +370,20 @@ function auth(req, res, next) {
 app.get('/api/me', auth, (req, res) => {
   const pending = db.renameRequests.some((r) => r.username === req.user.username && r.status === 'pending');
   res.json({ me: publicUser(req.user), renamePending: pending });
+});
+
+// ---------- password ----------
+// کاربر از داخل اپ رمز عبور می‌سازد یا تغییر می‌دهد (اگر حساب پیامکی ساخته شده باشد salt/passHash خالی است)
+app.post('/api/password-change', auth, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'رمز جدید حداقل ۴ کاراکتر باشد' });
+  if (req.user.passHash) {
+    if (!currentPassword || req.user.passHash !== hash(String(currentPassword || ''), req.user.salt)) return res.status(403).json({ error: 'رمز فعلی اشتباه است' });
+  }
+  req.user.salt = crypto.randomBytes(16).toString('hex');
+  req.user.passHash = hash(String(newPassword), req.user.salt);
+  saveDB();
+  res.json({ ok: true });
 });
 
 // ---------- profile ----------
@@ -694,7 +709,7 @@ app.post('/api/admin/reset-password', auth, (req, res) => {
   const { username, newPassword } = req.body || {};
   const target = db.users.find((u) => u.username === username);
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
-  if (target.isAdmin) return res.status(400).json({ error: 'رمز ادمین دیگر قابل تغییر نیست' });
+  if (target.isAdmin && !isOriginalAdmin(req.user)) return res.status(403).json({ error: 'برای تغییر رمز ادمین‌ها فقط ادمین اصلی اجازه دارد' });
   if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'رمز جدید حداقل ۴ کاراکتر باشد' });
   target.salt = crypto.randomBytes(16).toString('hex');
   target.passHash = hash(String(newPassword), target.salt);

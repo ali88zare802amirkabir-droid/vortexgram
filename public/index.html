@@ -15,8 +15,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=117" />
-  <script src="icons.js?v=85"></script>
+  <link rel="stylesheet" href="style.css?v=118" />
+  <script src="icons.js?v=86"></script>
 </head>
 <body>
   <div id="auth-screen">
@@ -26,6 +26,13 @@
       <div id="auth-step-phone">
         <input id="auth-phone" type="tel" inputmode="numeric" placeholder="شماره موبایل (۰۹۱۲۳۴۵۶۷۸۹)" maxlength="11" autocomplete="tel" />
         <button class="primary" id="auth-send">دریافت کد</button>
+        <button class="auth-switch" id="auth-to-pass">ورود با رمز عبور</button>
+      </div>
+      <div id="auth-step-pass" class="hidden">
+        <input id="auth-pass-username" type="text" placeholder="نام کاربری" maxlength="20" autocomplete="username" />
+        <input id="auth-pass-password" type="password" placeholder="رمز عبور" maxlength="64" autocomplete="current-password" />
+        <button class="primary" id="auth-pass-login">ورود</button>
+        <button class="auth-switch" id="auth-pass-to-phone">ورود با شماره موبایل</button>
       </div>
       <div id="auth-step-code" class="hidden">
         <p id="auth-phone-label" class="hint" style="text-align:center;margin-bottom:6px"></p>
@@ -131,7 +138,7 @@
 
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=121"></script>
+  <script src="app.js?v=122"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
   var q = new URLSearchParams(location.search);
