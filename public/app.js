@@ -5,7 +5,7 @@ const BOT_NAME = 'Vortex AI';
 let REACTIONS = ['👍', '❤️', '😂', '🥰', '😡', '👎', '🔥'];
 const REACTION_LABELS = { '👍': 'thumbs up', '❤️': 'heart', '😂': 'laughing face', '🥰': 'smiling face with hearts', '😡': 'angry face', '👎': 'thumbs down', '🔥': 'fire' };
 /* Reply gesture tuning — swipe-right on a message to reply. */
-const REPLY_THRESHOLD = 56;        /* px of right-drag past which the reply fires on release */
+const REPLY_THRESHOLD = 56;        /* px of swipe past which the reply fires on release */
 const REPLY_GRAB_TOLERANCE = 12;   /* px before the gesture is claimed as horizontal */
 const REPLY_STICKY_RATIO = 1.6;      /* dx must stay > dy * ratio to keep the horizontal claim */
 const REPLY_MAX_OFFSET = 90;       /* clamp of the visual drag distance */
@@ -2467,16 +2467,16 @@ function replyDragMove(e) {
   const g = _rg; if (!g) return;
   const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
   if (!g.engaged) {
-    if (dx < REPLY_GRAB_TOLERANCE) return;              /* only right-swipe */
-    if (Math.abs(dy) * REPLY_STICKY_RATIO > dx) return; /* vertical scroll wins; stay passive */
+    if (dx > -REPLY_GRAB_TOLERANCE) return;               /* only left-swipe */
+    if (Math.abs(dy) * REPLY_STICKY_RATIO > Math.abs(dx)) return; /* vertical scroll wins; stay passive */
     g.engaged = true;
     g.wrap.classList.add('replying-grab');
     try { g.wrap.setPointerCapture(e.pointerId); } catch (err) {}
   }
-  const fx = Math.min(Math.max(0, dx), REPLY_MAX_OFFSET);
+  const fx = Math.max(-REPLY_MAX_OFFSET, Math.min(0, dx));
   g.fx = fx;
   g.wrap.style.transform = 'translateX(' + fx + 'px)';
-  g.wrap.classList.toggle('drag-past', fx >= REPLY_THRESHOLD);
+  g.wrap.classList.toggle('drag-past', Math.abs(fx) >= REPLY_THRESHOLD);
   if (e.cancelable) e.preventDefault();                  /* stop text-selection / native image drag */
 }
 function replyTouchMove(e) {
@@ -2486,16 +2486,16 @@ function replyTouchMove(e) {
   const dx = t.clientX - g.sx, dy = t.clientY - g.sy;
   if (!g.engaged) {
     if (_selectMode) { _rgT = null; return; }
-    if (dx < REPLY_GRAB_TOLERANCE) return;              /* only right-swipe */
+    if (dx > -REPLY_GRAB_TOLERANCE) return;               /* only left-swipe */
     if (_lpTimer) cancelLp();                           /* swipe را به‌جای لانگ‌پرس انتخاب فعال کن */
-    if (Math.abs(dy) * REPLY_STICKY_RATIO > dx) return; /* vertical scroll wins; stay passive */
+    if (Math.abs(dy) * REPLY_STICKY_RATIO > Math.abs(dx)) return; /* vertical scroll wins; stay passive */
     g.engaged = true;
     g.wrap.classList.add('replying-grab');
   }
-  const fx = Math.min(Math.max(0, dx), REPLY_MAX_OFFSET);
+  const fx = Math.max(-REPLY_MAX_OFFSET, Math.min(0, dx));
   g.fx = fx;
   g.wrap.style.transform = 'translateX(' + fx + 'px)';
-  g.wrap.classList.toggle('drag-past', fx >= REPLY_THRESHOLD);
+  g.wrap.classList.toggle('drag-past', Math.abs(fx) >= REPLY_THRESHOLD);
   if (e.cancelable) e.preventDefault();                  /* stop native pan / text-select / image drag */
 }
 function replyDragCleanup(g, animateBack) {
@@ -2513,12 +2513,12 @@ function replyDragCleanup(g, animateBack) {
 }
 function finishReply(g) {
   const wrap = g.wrap;
-  const hit = g.engaged && g.fx >= REPLY_THRESHOLD;
+  const hit = g.engaged && Math.abs(g.fx) >= REPLY_THRESHOLD;
   if (hit && wrap.isConnected) {
     wrap.classList.remove('replying-grab');
     wrap.style.willChange = '';
     wrap.style.transition = 'transform .2s var(--ease)';
-    wrap.style.transform = 'translateX(' + Math.min(g.fx + 8, REPLY_MAX_OFFSET + 8) + 'px)';
+    wrap.style.transform = 'translateX(' + Math.max(g.fx - 8, -REPLY_MAX_OFFSET - 8) + 'px)';
     void wrap.offsetWidth;
     wrap.style.transform = '';
     wrap.classList.add('replying-flash');
