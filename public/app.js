@@ -37,7 +37,21 @@ function fmt(t) {
 function api(path, opts = {}) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+  headers['X-Fingerprint'] = getBrowserFp();
   return fetch(path, { method: opts.method || 'GET', headers, body: opts.body ? opts.body : undefined });
+}
+// اثر انگشت دستگاه مرورگر (برای هارد‌بن قطعی): هش از UA + screen + platform + language.
+let _browserFp = null;
+function getBrowserFp() {
+  if (_browserFp) return _browserFp;
+  try { _browserFp = localStorage.getItem('vx_fp'); } catch (e) {}
+  if (_browserFp) return _browserFp;
+  const parts = [navigator.userAgent || '', screen.width + 'x' + screen.height, navigator.platform || '', navigator.language || '', screen.colorDepth ? String(screen.colorDepth) : '', ''];
+  let h = 0;
+  for (const s of parts) { for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) >>> 0; } }
+  _browserFp = 'fp-' + h.toString(16);
+  try { localStorage.setItem('vx_fp', _browserFp); } catch (e) {}
+  return _browserFp;
 }
 function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; $('toast').appendChild(t); setTimeout(() => t.remove(), 2600); }
 function avatarEl(u, size) {

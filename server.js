@@ -257,11 +257,12 @@ function clearSessionCookie(res) {
 function noteDevice(user, req) {
   if (!user) return;
   const d = clientDevice(req);
+  const fp = (req.headers['x-fingerprint'] || '').slice(0, 64);
   const now = Date.now();
   user.devices = Array.isArray(user.devices) ? user.devices : [];
   const existing = user.devices.find((x) => x && x.ip === d.ip && ((x.browser && x.platform === d.platform && x.browser === d.browser) || (!x.platform && x.device === d.device)));
-  if (existing) { Object.assign(existing, d); existing.lastLogin = now; }
-  else { user.devices.push(Object.assign({}, d, { lastLogin: now })); }
+  if (existing) { Object.assign(existing, d); existing.lastLogin = now; if (fp) existing.fingerprint = fp; }
+  else { user.devices.push(Object.assign({}, d, { lastLogin: now, fingerprint: fp })); }
   if (user.devices.length > 12) user.devices = user.devices.slice(-12);
   user.lastLogin = now;
   saveDB();
@@ -276,11 +277,20 @@ function hash(pw, salt) {
 function hardBanHit(phone, req) {
   const bans = db.globalBans || { phones: [], deviceFps: [] };
   if (phone && Array.isArray(bans.phones) && bans.phones.includes(phone)) return true;
-  const d = clientDevice(req);
   const fps = Array.isArray(bans.deviceFps) ? bans.deviceFps : [];
-  if (!fps.length) return false;
+  const fp = (req.headers['x-fingerprint'] || '').slice(0, 64);
+  if (fp && fps.includes(fp)) return true;
+  const d = clientDevice(req);
   if (d.app && d.device && fps.includes(d.device)) return true;
   if (d.model && d.os && fps.includes(d.model + '|' + d.os)) return true;
+  // پوشش روی‌باک: بررسی اثر انگشت دستگاه از هر کاربر بن‌شده‌ی مستقیم
+  // (برای بن‌هایی که قبل از اضافه شدن فینگرپرینت انجام شدند ولی کاربر بعداً لاگین کرده).
+  if (fp) {
+    for (const u of db.users) {
+      if (!u.banned || !u.devices || !Array.isArray(u.devices)) continue;
+      for (const dev of u.devices) { if (dev.fingerprint === fp) return true; }
+    }
+  }
   return false;
 }
 // امنیت: هش رمز از SHA-256 (سریع/قابل بروت‌فورس) به scrypt ارتقا یافت — بدون شکستن
@@ -995,6 +1005,7 @@ app.post('/api/admin/hard-ban', auth, (req, res) => {
     for (const d of target.devices) {
       if (d.app && d.device) bannedDeviceFps.add(d.device);
       if (d.model && d.os) bannedDeviceFps.add(`${d.model}|${d.os}`);
+      if (d.fingerprint) bannedDeviceFps.add(d.fingerprint);
     }
   }
   if (!db.globalBans) db.globalBans = { phones: [], deviceFps: [] };
