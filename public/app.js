@@ -105,6 +105,7 @@ const state = {
   profileReturnRoom: null,
   profileReturnNav: null,
 };
+const MSG_RENDER_LIMIT = 150;
 
 /* AUTH */
 const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-name'), authUname = $('auth-username');
@@ -419,7 +420,7 @@ function handleWS(d) {
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
     case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (d.username === state.me.username && state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); refreshReadTicks(d.roomId); break;
-    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); if (!state.renderedRooms.has(d.roomId)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(d.messages); renderReplyCounts(d.roomId); state.renderedRooms.add(d.roomId); } break;
+    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); if (!state.renderedRooms.has(d.roomId)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((d.messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(d.roomId); state.renderedRooms.add(d.roomId); } break;
     case 'message': onNewMessage(d.message); break;
     case 'message-updated': updateMessage(d); break;
     case 'message-edited': {
@@ -598,11 +599,12 @@ function openRoom(rid) {
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
+  const renderMsgs = cachedMsgs.slice(-MSG_RENDER_LIMIT);
   if (state.ws && state.ws.readyState === 1) {
-    if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs); state.renderedRooms.add(rid); }
+    if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(renderMsgs); state.renderedRooms.add(rid); }
     state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   } else {
-    $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs); state.renderedRooms.add(rid);
+    $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(renderMsgs); state.renderedRooms.add(rid);
   }
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
@@ -714,7 +716,7 @@ function renderMessagesBatch(messages) {
   if (!messages.length) return;
   const msgs = $('messages');
   const frag = document.createDocumentFragment();
-  let daySepAdded = false;
+  const rmap = replyCountMap(messages);
   
   for (const m of messages) {
     const d = new Date(m.time); const ds = d.toLocaleDateString('fa-IR');
@@ -738,7 +740,7 @@ function renderMessagesBatch(messages) {
     const timeHtml = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>';
     meta.innerHTML = (m.edited || m.editedAt) ? '<span class="msg-ed">ویرایش‌شده</span>' + timeHtml : timeHtml;
     bubble.appendChild(meta);
-    applyReplyBadge(wrap, m);
+    applyReplyBadge(wrap, m, rmap);
     wrap.appendChild(bubble);
     const hasReactions = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions) && Object.keys(m.reactions).some((k) => (Array.isArray(m.reactions[k]) ? m.reactions[k].length > 0 : !!m.reactions[k])));
     if (hasReactions) wrap.appendChild(reactionsEl(m));
