@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=118" />
+  <link rel="stylesheet" href="style.css?v=119" />
   <script src="icons.js?v=86"></script>
 </head>
 <body>
@@ -36,6 +36,7 @@
       </div>
       <div id="auth-step-code" class="hidden">
         <p id="auth-phone-label" class="hint" style="text-align:center;margin-bottom:6px"></p>
+        <div id="auth-shown-code" class="auth-shown-code hidden"></div>
         <input id="auth-code" type="text" inputmode="numeric" placeholder="کد ۶ رقمی" maxlength="6" autocomplete="one-time-code" />
         <button class="primary" id="auth-verify">تایید کد</button>
       </div>
@@ -138,7 +139,7 @@
 
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=122"></script>
+  <script src="app.js?v=123"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
   var q = new URLSearchParams(location.search);

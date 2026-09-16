@@ -24,9 +24,19 @@ process.on('unhandledRejection', (e) => console.error('UNHANDLED:', e));
 // محیط اجرا و پروکسی
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const IS_PROD = NODE_ENV === 'production';
-// کد ورود (OTP) فقط خارج از production برمی‌گردد؛ در production پیامک غیرفعال است و
-// اپراتور باید SMS واقعی را وصل کند (نکته در گزارش deploy).
-const devCodeEnabled = !IS_PROD;
+// کد ورود (OTP) همیشه در پاسخ برمی‌گردد تا در خود صفحه نمایش داده شود — این دمو پیامک
+// واقعی ارسال نمی‌کند مگر KAVENEGAR_KEY تنظیم شود. برای مواقعی که کد نباید در پاسخ بیاید
+// (نصب قفل‌شده) می‌توان VX_HIDE_CODE=1 گذاشت؛ در آن صورت کد فقط با VX_ALLOW_DEV_CODE=1
+// (یا در حالت توسعه) برمی‌گردد.
+const HIDE_CODE = String(process.env.VX_HIDE_CODE || '').trim() === '1';
+const devCodeEnabled = !HIDE_CODE || !IS_PROD || String(process.env.VX_ALLOW_DEV_CODE || '').trim() === '1';
+if (HIDE_CODE && !devCodeEnabled) {
+  console.log('VX_HIDE_CODE=1 — OTP codes will only be delivered via SMS (not returned in API)');
+}
+// حالت تست بدون کد ورود: فقط با VX_NO_OTP=1 (در هر محیط). در این حالت شماره‌ی ثبت‌شده
+// مستقیم وارد می‌شود و شماره‌ی جدید فقط نام/آیدی می‌خواهد.
+const noOtpEnabled = String(process.env.VX_NO_OTP || '').trim() === '1';
+if (noOtpEnabled) console.warn('VX_NO_OTP enabled — phone login without code (TEST MODE, do not use in production)');
 // پشت پراکسی (مثل Render) تنها وقتی TRUST_PROXY ست شود X-Forwarded-For بکار می‌رود.
 const TRUST_PROXY = String(process.env.TRUST_PROXY || '0');
 
@@ -241,12 +251,29 @@ function normalizePhone(p) {
   if (!/^09\d{9}$/.test(p)) return null;
   return p;
 }
-// ارسال پیامک: طبق درخواست کاربر غیرفعال شد — هیچ پیامکی ارسال نمی‌شود و کد فقط روی صفحه نمایش داده می‌شود
-function sendSMS(phone, text) {
-  return new Promise((resolve) => {
-    console.log('[SMS disabled] would send to', phone, '->', text);
-    resolve({ ok: true, dev: true });
-  });
+// ارسال پیامک: اگر KAVENEGAR_KEY تنظیم شده باشد از API واقعی استفاده می‌شود
+// وگرنه کد فقط در کنسول سرور چاپ می‌شود (حالت توسعه).
+async function sendSMS(phone, text) {
+  const key = String(process.env.KAVENEGAR_KEY || '').trim();
+  const sender = String(process.env.KAVENEGAR_SENDER || '').trim();
+  console.log('[SMS] sending to', phone);
+  if (!key) { console.log('[SMS] no KAVENEGAR_KEY — dev mode, code:', text); return { ok: true, dev: true }; }
+  try {
+    const params = new URLSearchParams({ receptor: phone, message: text });
+    if (sender) params.set('sender', sender);
+    const r = await fetch('https://api.kavenegar.com/v1/' + encodeURIComponent(key) + '/sms/send.json', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    const body = await r.json();
+    if (r.ok && body.return && body.return.status === 200) { console.log('[SMS] sent OK'); return { ok: true, dev: false }; }
+    const errMsg = (body.return && body.return.message) || JSON.stringify(body);
+    console.error('[SMS] Kavenegar error:', errMsg);
+    return { ok: false, dev: false, smsError: errMsg };
+  } catch (e) {
+    console.error('[SMS] fetch failed:', e.message);
+    return { ok: false, dev: false, smsError: e.message };
+  }
 }
 function publicUser(u) {
   return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
@@ -422,10 +449,23 @@ app.post('/api/send-code', async (req, res) => {
   if (!authRateOk('send-code-ip:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const code = genCode();
   pendingCodes.set(phone, { code, exp: Date.now() + 2 * 60 * 1000 });
+  // حالت تست بدون کد: شماره‌ی ثبت‌شده مستقیم وارد می‌شود، شماره‌ی جدید به مرحله‌ی نام می‌رود.
+  if (noOtpEnabled) {
+    const user = db.users.find((u) => u.phone === phone);
+    if (user) {
+      if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
+      const token = createSession(user.username);
+      setSessionCookie(res, token);
+      noteDevice(user, req);
+      return res.json({ ok: true, token, me: publicUser(user) });
+    }
+    return res.json({ ok: true, needsName: true });
+  }
   const sms = await sendSMS(phone, `کد ورود VORTEXGRAM: ${code}`);
   const out = { ok: true };
-  // امنیت: کد تأیید فقط خارج از production به کلاینت برمی‌گردد (پیامک فعلاً غیرفعال است).
-  if (sms.dev && devCodeEnabled) out.devCode = code;
+  // کد همیشه در همین صفحه نمایش داده می‌شود (ارسال پیامک لازم نیست).
+  // فقط با VX_HIDE_CODE=1 و بدون VX_ALLOW_DEV_CODE از پاسخ حذف می‌شود.
+  if (devCodeEnabled) out.devCode = code;
   if (sms.smsError) out.note = 'ارسال پیامک با خطا مواجه شد — کد در کنسول سرور چاپ شد';
   res.json(out);
 });
@@ -437,8 +477,10 @@ app.post('/api/verify-code', (req, res) => {
   if (!authRateOk('verify-code:' + phone, 10, 5 * 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — چند دقیقه صبر کن' });
   if (!authRateOk('verify-ip:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const rec = pendingCodes.get(phone);
-  if (!rec || rec.exp < Date.now()) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
-  if (rec.code !== code) return res.status(401).json({ error: 'کد اشتباه است' });
+  if (!noOtpEnabled) {
+    if (!rec || rec.exp < Date.now()) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
+    if (rec.code !== code) return res.status(401).json({ error: 'کد اشتباه است' });
+  }
   const user = db.users.find((u) => u.phone === phone);
   if (user) {
     pendingCodes.delete(phone);
@@ -459,7 +501,9 @@ app.post('/api/complete-register', (req, res) => {
   let username = String((req.body || {}).username || '').trim();
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
   const rec = pendingCodes.get(phone);
-  if (!rec || rec.exp < Date.now() || rec.code !== code) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
+  if (!noOtpEnabled) {
+    if (!rec || rec.exp < Date.now() || rec.code !== code) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
+  }
   const existing = db.users.find((u) => u.phone === phone);
   if (existing) {
     pendingCodes.delete(phone);

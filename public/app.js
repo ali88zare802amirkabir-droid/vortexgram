@@ -138,9 +138,23 @@ $('auth-send').onclick = async () => {
   if (!/^09\d{9}$/.test(phone)) return authErr('شماره موبایل معتبر نیست (باید با ۰۹ شروع شود و ۱۱ رقم باشد)');
   authBusyState(true);
   try { const r = await fetch('/api/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) }); const d = await r.json();
-    if (!r.ok) { authErr(d.error || 'خطا'); authBusyState(false); return; } authPhoneVal = phone; $('auth-phone-label').textContent = 'کد به ' + phone + ' ارسال شد'; showAuthStep('code'); authBusyState(false);
-    if (d.devCode) authErr('کد ورود (پیامک غیرفعال): ' + d.devCode, true); else if (d.note) authErr(d.note, true);
-  } catch (e) { authErr(e.message); authBusyState(false); }
+    if (!r.ok) { authErr(d.error || 'خطا'); authBusyState(false); return; } authPhoneVal = phone;
+    // حالت تست بدون کد: اگر حساب موجود باشد مستقیم وارد می‌شویم؛ وگرنه فقط نام/آیدی می‌خواهیم
+    if (d.token && d.me) { authBusyState(false); return finishLogin(d); }
+    if (d.needsName) {
+      authName.value = phoneProfiles()[authPhoneVal] ? (phoneProfiles()[authPhoneVal].displayName || '') : '';
+      authUname.value = phoneProfiles()[authPhoneVal] ? (phoneProfiles()[authPhoneVal].username || '') : '';
+      $('auth-phone-label').textContent = phone;
+      authBusyState(false);
+      return showAuthStep('name');
+    }
+    $('auth-phone-label').textContent = 'شماره ' + phone + ' — کد ورود در همین صفحه آمده است:';
+    showAuthStep('code'); authBusyState(false);
+    const shown = $('auth-shown-code');
+    if (d.devCode) { shown.textContent = d.devCode; shown.classList.remove('hidden'); authCode.value = d.devCode; }
+    else { shown.classList.add('hidden'); authCode.value = '';
+      if (d.note) authErr(d.note, true); else authErr('کد به صورت پیامک به این شماره ارسال شد؛ اگر پیامک در دسترس نیست روی سرور VX_HIDE_CODE را بردار.', true); }
+  } catch (e) { authErr('خطا در برقراری ارتباط با سرور — مطمئن شو سرور روشن است', true); authBusyState(false); }
 };
 $('auth-verify').onclick = async () => {
   if (authBusy) return;
@@ -162,7 +176,7 @@ $('auth-verify').onclick = async () => {
       return showAuthStep('name');
     }
     authBusyState(false);
-  } catch (e) { authBusyState(false); authErr(e.message); }
+  } catch (e) { authBusyState(false); authErr('خطا در برقراری ارتباط با سرور — دوباره تلاش کن', true); }
 };
 $('auth-finish').onclick = async () => {
   if (authBusy) return;

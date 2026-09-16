@@ -1,7 +1,7 @@
 node_modules/
 .env
 data/*
-!data/db.json
+!data/db.json.migrated
 *.sessions.json
 public/uploads/
 

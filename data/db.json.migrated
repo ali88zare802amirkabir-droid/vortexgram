@@ -1,0 +1,164 @@
+{
+  "users": [
+    {
+      "username": "bob",
+      "phone": "09120000002",
+      "displayName": "Bob",
+      "avatar": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='teal'/><text x='50' y='65' font-size='55' text-anchor='middle' fill='white'>B</text></svg>",
+      "salt": "xyz",
+      "passHash": "uvw",
+      "bio": "",
+      "isAdmin": false,
+      "isPremium": false,
+      "createdAt": 1700000123000,
+      "lastSeen": 1700001213000,
+      "updatedAt": 1700001213000,
+      "lastLogin": 1700001213000
+    },
+    {
+      "username": "carol",
+      "phone": "09120000001",
+      "displayName": "Carol",
+      "avatar": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='navy'/><text x='50' y='65' font-size='55' text-anchor='middle' fill='white'>C</text></svg>",
+      "salt": "abc",
+      "passHash": "def",
+      "bio": "legacy fixture user",
+      "isAdmin": true,
+      "isPremium": true,
+      "createdAt": 1700000000000,
+      "lastSeen": 1700001111000,
+      "updatedAt": 1700001111000,
+      "devices": [
+        {
+          "id": "d1",
+          "type": "web",
+          "name": "Chrome",
+          "createdAt": 1700000000000,
+          "lastSeen": 1700001111000
+        }
+      ],
+      "lastLogin": 1700001111000
+    }
+  ],
+  "groups": [
+    {
+      "id": "g1",
+      "type": "group",
+      "name": "Legacy Crew",
+      "avatar": null,
+      "owner": "carol",
+      "createdAt": 1700000222000,
+      "members": [
+        {
+          "username": "carol",
+          "role": "owner"
+        },
+        {
+          "username": "bob",
+          "role": "member"
+        }
+      ]
+    }
+  ],
+  "messages": {
+    "dm:carol|bob": [
+      {
+        "id": "m1",
+        "roomId": "dm:carol|bob",
+        "from": "carol",
+        "fromName": "Carol",
+        "kind": "text",
+        "content": "سلام legacy",
+        "time": 1700000300000,
+        "reactions": {
+          "👍": [
+            "bob"
+          ]
+        },
+        "silent": false,
+        "fromPremium": true
+      },
+      {
+        "id": "m2",
+        "roomId": "dm:carol|bob",
+        "from": "bob",
+        "fromName": "Bob",
+        "kind": "voice",
+        "content": "",
+        "url": "uploads/vx-voice-m2.ogg",
+        "src": "uploads/vx-voice-m2.ogg",
+        "name": "voice_note.ogg",
+        "size": 20480,
+        "mime": "audio/ogg",
+        "duration": 4,
+        "wave": [
+          0.1,
+          0.3,
+          0.45,
+          0.6,
+          0.35,
+          0.2
+        ],
+        "time": 1700000400000,
+        "reactions": {},
+        "silent": false,
+        "fromPremium": false
+      },
+      {
+        "id": "m3",
+        "roomId": "dm:carol|bob",
+        "from": "bob",
+        "fromName": "Bob",
+        "kind": "text",
+        "content": "legacy reply target",
+        "time": 1700000500000,
+        "reactions": {},
+        "silent": false,
+        "fromPremium": false
+      }
+    ],
+    "group:g1": [
+      {
+        "id": "m4",
+        "roomId": "group:g1",
+        "from": "carol",
+        "fromName": "Carol",
+        "kind": "text",
+        "content": "hello crew",
+        "time": 1700000600000,
+        "reactions": {},
+        "silent": false,
+        "fromPremium": true
+      }
+    ]
+  },
+  "pinned": {
+    "group:g1": [
+      "m4"
+    ]
+  },
+  "readState": {
+    "carol": {
+      "dm:carol|bob": 1700000400000
+    },
+    "bob": {
+      "dm:carol|bob": 1700000500000
+    }
+  },
+  "chatState": {
+    "carol": {
+      "dm:carol|bob": {
+        "lastOutTime": 6
+      }
+    },
+    "bob": {
+      "dm:carol|bob": {}
+    }
+  },
+  "scheduled": [],
+  "renameRequests": [],
+  "signupRequests": [],
+  "reports": [],
+  "messageDeletions": [],
+  "tmpAdminFlag": true
+}

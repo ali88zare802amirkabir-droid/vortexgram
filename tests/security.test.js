@@ -144,19 +144,26 @@ test('security: swtest removed, JSON 404, logout invalidation, sessions out of d
   });
 });
 
-test('security: devCode OTP gated off in production', async (t) => {
-  // development → کد برگردانده می‌شود
+test('security: OTP code shown in page by default; VX_HIDE_CODE=1 re-gates it', async (t) => {
+  // پیش‌فرض (این دمو) → کد در همان صفحه برمی‌گردد و OTP اجباری می‌ماند
   await withServer(t, { seed: {} }, async ({ base }) => {
     const r = await api(base, 'POST', '/api/send-code', null, { phone: '09121234567' });
-    assert.strictEqual(r.status, 200, 'send-code ok (dev)');
-    assert.match(String(r.d.devCode || ''), /^\d{6}$/, 'devCode present in development');
+    assert.strictEqual(r.status, 200, 'send-code ok');
+    assert.match(String(r.d.devCode || ''), /^\d{6}$/, 'code visible in page by default');
+    const ok = await api(base, 'POST', '/api/verify-code', null, { phone: '09121234567', code: r.d.devCode });
+    assert.strictEqual(ok.status, 200, 'correct code accepted');
+    assert.strictEqual(ok.d.needsName, true, 'new phone proceeds to name');
+    const bad = await api(base, 'POST', '/api/verify-code', null, { phone: '09121234567', code: '000000' });
+    assert.strictEqual(bad.status, 401, 'wrong code still blocked');
   });
 
-  // production → کد هرگز برنگردد
-  await withServer(t, { server: { NODE_ENV: 'production' }, seed: {} }, async ({ base }) => {
+  // production + VX_HIDE_CODE=1 → کد هرگز برنگردد و OTP اجباری بماند
+  await withServer(t, { server: { NODE_ENV: 'production', VX_HIDE_CODE: '1' }, seed: {} }, async ({ base }) => {
     const r = await api(base, 'POST', '/api/send-code', null, { phone: '09121234567' });
     assert.strictEqual(r.status, 200, 'send-code ok (prod)');
-    assert.strictEqual(r.d.devCode, undefined, 'devCode NOT returned in production');
+    assert.strictEqual(r.d.devCode, undefined, 'devCode NOT returned with VX_HIDE_CODE=1');
+    const v = await api(base, 'POST', '/api/verify-code', null, { phone: '09121234567', code: '000000' });
+    assert.strictEqual(v.status, 401, 'wrong code blocked in locked-down production');
   });
 });
 

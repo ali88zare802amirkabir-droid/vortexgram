@@ -116,7 +116,17 @@ async function load() {
   if (!pool) pool = poolFromEnv();
   if (!pool) {
     mode = 'file';
-    console.log('DATABASE_URL not set — persisting to ' + DB_FILE + ' (local JSON file, survives restarts)');
+    if (process.env.NODE_ENV === 'production') {
+      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      console.error('WARNING: DATABASE_URL is NOT set. Running FILE mode on this host.');
+      console.error('If this host has an ephemeral disk (Render free tier, containers, CI)');
+      console.error('ALL data will be WIPED on the next restart/redeploy.');
+      console.error('Set DATABASE_URL (PostgreSQL) or mount a persistent disk at:');
+      console.error('  ' + DB_FILE);
+      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    } else {
+      console.log('DATABASE_URL not set — persisting to ' + DB_FILE + ' (local JSON file, survives restarts)');
+    }
     return _loadFromFile();
   }
   mode = 'pg';
@@ -165,9 +175,10 @@ async function close() {
 // ---------------------------------------------------------------------------
 // Local JSON file backend (fallback when DATABASE_URL is not set)
 // ---------------------------------------------------------------------------
-// امنیت: توکن‌های نشست در data/db.json ذخیره نمی‌شوند (چون این فایل در git می‌رود و
-// کل تاریخچه چت را شامل می‌شود). نشست‌ها در فایلِ جداگانه و gitignored
-// (data/db.sessions.json) نگهداری می‌شوند تا «لاگین پس از ری‌استارت» حفظ شود.
+// امنیت: توکن‌های نشست در data/db.json ذخیره نمی‌شوند؛ نشست‌ها در فایلِ جداگانه و
+// gitignored (data/db.sessions.json) نگهداری می‌شوند تا «لاگین پس از ری‌استارت» حفظ شود.
+// یادداشت: data/db.json دیگر در git ردیابی نمی‌شود تا عملیات git (reset/checkout/pull)
+// ناخواسته آن را به اسنپ‌شات قدیمی برنگرداند و داده‌های محلی را پاک نکند.
 function _sessionsFile() {
   return (process.env.SESSIONS_FILE || '').trim() || DB_FILE.replace(/\.json$/i, '') + '.sessions.json';
 }
