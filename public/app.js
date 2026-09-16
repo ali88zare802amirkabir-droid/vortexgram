@@ -2485,10 +2485,10 @@ function replyTouchMove(e) {
   const t = e.touches[0];
   const dx = t.clientX - g.sx, dy = t.clientY - g.sy;
   if (!g.engaged) {
-    if (_selectMode) { _rgT = null; return; }
     if (dx > -REPLY_GRAB_TOLERANCE) return;               /* only left-swipe */
-    if (_lpTimer) cancelLp();                           /* swipe را به‌جای لانگ‌پرس انتخاب فعال کن */
     if (Math.abs(dy) * REPLY_STICKY_RATIO > Math.abs(dx)) return; /* vertical scroll wins; stay passive */
+    if (_selectMode) { exitSelectMode(); _touchDrag = null; }     /* سوایپ بر سلکتِ لانگ‌پرس غلبه کند */
+    if (_lpTimer) cancelLp();                           /* swipe را به‌جای لانگ‌پرس انتخاب فعال کن */
     g.engaged = true;
     g.wrap.classList.add('replying-grab');
   }
