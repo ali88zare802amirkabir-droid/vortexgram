@@ -419,7 +419,7 @@ function handleWS(d) {
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
     case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (d.username === state.me.username && state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); refreshReadTicks(d.roomId); break;
-    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); if (!state.renderedRooms.has(d.roomId)) { $('messages').innerHTML = ''; state.lastDay = null; d.messages.forEach(addMessage); renderReplyCounts(d.roomId); scrollBottom(); state.renderedRooms.add(d.roomId); } break;
+    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); if (!state.renderedRooms.has(d.roomId)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(d.messages); renderReplyCounts(d.roomId); state.renderedRooms.add(d.roomId); } break;
     case 'message': onNewMessage(d.message); break;
     case 'message-updated': updateMessage(d); break;
     case 'message-edited': {
@@ -599,10 +599,10 @@ function openRoom(rid) {
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
   if (state.ws && state.ws.readyState === 1) {
-    if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; cachedMsgs.forEach(addMessage); scrollBottom(); state.renderedRooms.add(rid); }
+    if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs); state.renderedRooms.add(rid); }
     state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   } else {
-    $('messages').innerHTML = ''; state.lastDay = null; cachedMsgs.forEach(addMessage); scrollBottom(); state.renderedRooms.add(rid);
+    $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs); state.renderedRooms.add(rid);
   }
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
@@ -710,48 +710,69 @@ function showMsgAvatar() {
   const g = state.groups.find((x) => 'group:' + x.id === state.room);
   return !g || (g.type || 'group') !== 'channel';
 }
+function renderMessagesBatch(messages) {
+  if (!messages.length) return;
+  const msgs = $('messages');
+  const frag = document.createDocumentFragment();
+  let daySepAdded = false;
+  
+  for (const m of messages) {
+    const d = new Date(m.time); const ds = d.toLocaleDateString('fa-IR');
+    if (ds !== state.lastDay) {
+      state.lastDay = ds;
+      const sep = document.createElement('div'); sep.className = 'day-sep';
+      sep.innerHTML = '<span>' + ds + '</span>';
+      frag.appendChild(sep);
+    }
+    const mine = m.from === state.me.username;
+    const wrap = document.createElement('div'); wrap.className = 'msg ' + (mine ? 'mine' : ''); wrap.dataset.id = m.id;
+    if (showMsgAvatar()) {
+      const av = mine ? avatarEl(state.me, 'xs') : avatarEl(state.users.find((u) => u.username === m.from) || { displayName: m.from }, 'xs');
+      wrap.innerHTML = '<div class="msg-av">' + av.outerHTML + '</div>';
+    } else {
+      wrap.classList.add('no-av');
+    }
+    const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.dataset.id = m.id; bubble.dataset.from = m.from || '';
+    bubble.appendChild(bodyEl(m));
+    const meta = document.createElement('div'); meta.className = 'msg-meta';
+    const timeHtml = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>';
+    meta.innerHTML = (m.edited || m.editedAt) ? '<span class="msg-ed">ویرایش‌شده</span>' + timeHtml : timeHtml;
+    bubble.appendChild(meta);
+    applyReplyBadge(wrap, m);
+    wrap.appendChild(bubble);
+    const hasReactions = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions) && Object.keys(m.reactions).some((k) => (Array.isArray(m.reactions[k]) ? m.reactions[k].length > 0 : !!m.reactions[k])));
+    if (hasReactions) wrap.appendChild(reactionsEl(m));
+    const actions = document.createElement('div'); actions.className = 'msg-actions';
+    let actionsHTML = '<button class="icon-btn" data-a="smile">' + ic('smile') + '</button><button class="icon-btn" data-a="reply">' + ic('reply') + '</button><button class="icon-btn" data-a="forward">' + ic('forward') + '</button>';
+    if (m.from === state.me.username) actionsHTML += '<button class="icon-btn danger" data-a="delete">' + ic('trash-2') + '</button>';
+    actionsHTML += '<button class="icon-btn" data-a="more">' + ic('more-vertical') + '</button>';
+    actions.innerHTML = actionsHTML;
+    actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(m, bubble); };
+    actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
+    actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
+    if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
+    actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); const w = e.target.closest('.msg'); const anchor = w ? (w.querySelector('.bubble') || w) : null; openMsgCtx(m, anchor, { x: e.clientX, y: e.clientY }); };
+    wrap.appendChild(actions);
+    if (m.kind === 'sticker') {
+      wrap.classList.add('msg-sticker', 'emoji-enter');
+      setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
+    } else if ((!m.kind || m.kind === 'text') && emojiOnly(m.content) && emojiCount(m.content) < 5) {
+      const cnt = emojiCount(m.content);
+      wrap.classList.add('msg-emoji-only', 'emoji-enter');
+      const fs = cnt <= 1 ? 64 : cnt === 2 ? 46 : cnt === 3 ? 38 : 32;
+      bubble.style.fontSize = fs + 'px';
+      setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
+    }
+    frag.appendChild(wrap);
+  }
+  
+  msgs.appendChild(frag);
+  applyIcons(msgs);
+  scrollBottom();
+}
 function addMessage(m) {
-  const msgs = $('messages'); const d = new Date(m.time); const ds = d.toLocaleDateString('fa-IR');
-  if (ds !== state.lastDay) { state.lastDay = ds; const sep = document.createElement('div'); sep.className = 'day-sep'; sep.innerHTML = '<span>' + ds + '</span>'; msgs.appendChild(sep); }
-  const mine = m.from === state.me.username;   const wrap = document.createElement('div'); wrap.className = 'msg ' + (mine ? 'mine' : ''); wrap.dataset.id = m.id;
-  if (showMsgAvatar()) {
-    const av = mine ? avatarEl(state.me, 'xs') : avatarEl(state.users.find((u) => u.username === m.from) || { displayName: m.from }, 'xs');
-    wrap.innerHTML = '<div class="msg-av">' + av.outerHTML + '</div>';
-  } else {
-    wrap.classList.add('no-av');
-  }
-  const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.dataset.id = m.id; bubble.dataset.from = m.from || '';
-  bubble.appendChild(bodyEl(m));
-  const meta = document.createElement('div'); meta.className = 'msg-meta';
-  const timeHtml = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>';
-  meta.innerHTML = (m.edited || m.editedAt) ? '<span class="msg-ed">ویرایش‌شده</span>' + timeHtml : timeHtml;
-  bubble.appendChild(meta);
-  applyReplyBadge(wrap, m);
-  wrap.appendChild(bubble);
-  const hasReactions = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions) && Object.keys(m.reactions).some((k) => (Array.isArray(m.reactions[k]) ? m.reactions[k].length > 0 : !!m.reactions[k])));
-  if (hasReactions) wrap.appendChild(reactionsEl(m));
-  const actions = document.createElement('div'); actions.className = 'msg-actions';
-  let actionsHTML = '<button class="icon-btn" data-a="smile">' + ic('smile') + '</button><button class="icon-btn" data-a="reply">' + ic('reply') + '</button><button class="icon-btn" data-a="forward">' + ic('forward') + '</button>';
-  if (m.from === state.me.username) actionsHTML += '<button class="icon-btn danger" data-a="delete">' + ic('trash-2') + '</button>';
-  actionsHTML += '<button class="icon-btn" data-a="more">' + ic('more-vertical') + '</button>';
-  actions.innerHTML = actionsHTML;
-  actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(m, bubble); };
-  actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
-  actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
-  if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
-  actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); const w = e.target.closest('.msg'); const anchor = w ? (w.querySelector('.bubble') || w) : null; openMsgCtx(m, anchor, { x: e.clientX, y: e.clientY }); };
-  wrap.appendChild(actions);
-  if (m.kind === 'sticker') {
-    wrap.classList.add('msg-sticker', 'emoji-enter');
-    setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
-  } else if ((!m.kind || m.kind === 'text') && emojiOnly(m.content) && emojiCount(m.content) < 5) {
-    const cnt = emojiCount(m.content);
-    wrap.classList.add('msg-emoji-only', 'emoji-enter');
-    const fs = cnt <= 1 ? 64 : cnt === 2 ? 46 : cnt === 3 ? 38 : 32;
-    bubble.style.fontSize = fs + 'px';
-    setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
-  }
-  msgs.appendChild(wrap); applyIcons(wrap);
+  if (!m) return;
+  renderMessagesBatch([m]);
 }
 function replyCountMap(arr) {
   const map = {};
