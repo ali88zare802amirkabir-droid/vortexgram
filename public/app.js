@@ -2102,11 +2102,27 @@ async function toggleBlock(other) {
     if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); renderDetails(); }
     else toast(d.error || 'خطا در آنبلاک');
   } else {
-    if (!(await uConfirm('آیا می‌خواهید این کاربر را مسدود کنید؟'))) return;
-    const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
-    const d = await res.json();
-    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
-    else toast(d.error || 'خطا در مسدودسازی');
+    const opts = [
+      { key: 'block', label: 'مسدود از چت (عدم امکان ارسال پیام به شما)', checked: true },
+    ];
+    if (state.me.isRoot) {
+      opts.push({ key: 'hard', label: 'هارد‌بن کامل (مسدود از کل پیام‌رسان با هر شماره/دستگاه)', checked: false });
+    }
+    const choices = await uConfirmCb('مسدودسازی کاربر @' + other, opts);
+    if (!choices) return;
+    if (choices.hard && state.me.isRoot) {
+      const res = await api('/api/admin/hard-ban', { method: 'POST', body: JSON.stringify({ username: other }) });
+      const d = await res.json();
+      if (d.ok) { toast('کاربر هارد‌بن و کاملاً مسدود شد ⛔'); buildChatList(); renderDetails(); }
+      else toast(d.error || 'خطا در هارد‌بن');
+      return;
+    }
+    if (choices.block) {
+      const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
+      const d = await res.json();
+      if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
+      else toast(d.error || 'خطا در مسدودسازی');
+    }
   }
 }
 async function deleteChat(rid) {
@@ -2131,16 +2147,14 @@ async function deleteChat(rid) {
       try {
         const res = await api('/api/chats/delete', { method: 'POST', body: JSON.stringify({ roomId: rid }) });
         const d = await res.json();
-        if (d.ok) { toast('چت پاک شد'); if (state.room === rid) { state.room = null; buildChatList(); setMode('chats'); } else buildChatList(); }
-        else toast(d.error || 'خطا در پاک‌کردن چت');
+        if (!d.ok) toast(d.error || 'خطا در پاک‌کردن چت');
       } catch (e) { toast('خطا در پاک‌کردن چت'); }
     } else if (isGroup) {
       const gid = rid.slice(6);
       try {
         const res = await api('/api/groups/' + gid + '/leave', { method: 'POST' });
         const d = await res.json();
-        if (d.ok) { toast('از گروه خارج شدید'); state.room = null; buildChatList(); setMode('chats'); }
-        else toast(d.error || 'خطا در خروج از گروه');
+        if (!d.ok) toast(d.error || 'خطا در خروج از گروه');
       } catch (e) { toast('خطا در خروج از گروه'); }
     }
   }
