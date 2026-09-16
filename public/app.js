@@ -7,7 +7,7 @@ const REACTION_LABELS = { '👍': 'thumbs up', '❤️': 'heart', '😂': 'laugh
 /* Reply gesture tuning — swipe-right on a message to reply. */
 const REPLY_THRESHOLD = 56;        /* px of right-drag past which the reply fires on release */
 const REPLY_GRAB_TOLERANCE = 12;   /* px before the gesture is claimed as horizontal */
-const REPLY_STICKY_RATIO = 2;      /* dx must stay > dy * ratio to keep the horizontal claim */
+const REPLY_STICKY_RATIO = 1.6;      /* dx must stay > dy * ratio to keep the horizontal claim */
 const REPLY_MAX_OFFSET = 90;       /* clamp of the visual drag distance */
 function loadReactionConfig() {
   fetch('/api/react-config').then((r) => r.json()).then((d) => {
@@ -2441,17 +2441,27 @@ async function doForward(m, toRoomId) {
   if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'message', roomId: toRoomId, ...fwd }));
 }
 /* ===================== REPLY GESTURE — swipe-right to reply ===================== */
-let _rg = null;
-function replyDragStart(e) {
-  if (_rg || e.button !== 0 || _ctxEl) return;
+let _rg = null, _rgT = null;
+const REPLY_IGNORE = '.msg-actions, .reply-ref, .reac, .ctx-menu, .msg-ctx, .msg-sheet, .ctx-scrim, .emoji-pop, .composer, input, textarea, button, a, select, .react-pop';
+function replyGrab(e, isTouch) {
+  if (_rg || _rgT || _ctxEl) return;
   if (!state.room) return;
-  const ign = '.msg-actions, .reply-ref, .reac, .ctx-menu, .msg-ctx, .msg-sheet, .ctx-scrim, .emoji-pop, .composer, input, textarea, button, a, select, .react-pop';
-  if (e.target.closest(ign)) return;
+  if (!isTouch && e.button !== 0) return;
+  if (e.target.closest(REPLY_IGNORE)) return;
   const wrap = e.target.closest('#messages .msg');
   if (!wrap || !wrap.dataset.id) return;
   const msg = ((state.rooms[state.room] || {}).messages || []).find((x) => x.id === wrap.dataset.id);
   if (!msg) return;
-  _rg = { wrap, msg, id: wrap.dataset.id, sx: e.clientX, sy: e.clientY, fx: 0, engaged: false, consumed: false };
+  const t = isTouch ? (e.touches && e.touches[0]) : null;
+  const g = { wrap, msg, id: wrap.dataset.id, sx: t ? t.clientX : e.clientX, sy: t ? t.clientY : e.clientY, fx: 0, engaged: false, consumed: false };
+  if (isTouch) _rgT = g; else _rg = g;
+}
+function replyDragStart(e) {
+  if (e.pointerType === 'touch') return;   /* touch → مسیر اختصاصی replyTouch* */
+  replyGrab(e, false);
+}
+function replyTouchStart(e) {
+  replyGrab(e, true);
 }
 function replyDragMove(e) {
   const g = _rg; if (!g) return;
@@ -2469,6 +2479,25 @@ function replyDragMove(e) {
   g.wrap.classList.toggle('drag-past', fx >= REPLY_THRESHOLD);
   if (e.cancelable) e.preventDefault();                  /* stop text-selection / native image drag */
 }
+function replyTouchMove(e) {
+  const g = _rgT; if (!g) return;
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  const dx = t.clientX - g.sx, dy = t.clientY - g.sy;
+  if (!g.engaged) {
+    if (_selectMode) { _rgT = null; return; }
+    if (dx < REPLY_GRAB_TOLERANCE) return;              /* only right-swipe */
+    if (_lpTimer) cancelLp();                           /* swipe را به‌جای لانگ‌پرس انتخاب فعال کن */
+    if (Math.abs(dy) * REPLY_STICKY_RATIO > dx) return; /* vertical scroll wins; stay passive */
+    g.engaged = true;
+    g.wrap.classList.add('replying-grab');
+  }
+  const fx = Math.min(Math.max(0, dx), REPLY_MAX_OFFSET);
+  g.fx = fx;
+  g.wrap.style.transform = 'translateX(' + fx + 'px)';
+  g.wrap.classList.toggle('drag-past', fx >= REPLY_THRESHOLD);
+  if (e.cancelable) e.preventDefault();                  /* stop native pan / text-select / image drag */
+}
 function replyDragCleanup(g, animateBack) {
   const wrap = g.wrap;
   wrap.classList.remove('replying-grab');
@@ -2482,8 +2511,7 @@ function replyDragCleanup(g, animateBack) {
     wrap.style.transform = '';
   }
 }
-function replyDragEnd() {
-  const g = _rg; if (!g) return; _rg = null;
+function finishReply(g) {
   const wrap = g.wrap;
   const hit = g.engaged && g.fx >= REPLY_THRESHOLD;
   if (hit && wrap.isConnected) {
@@ -2502,8 +2530,20 @@ function replyDragEnd() {
   }
   if (g.engaged) swallowWrapClick(wrap);
 }
+function replyDragEnd() {
+  const g = _rg; if (!g) return; _rg = null;
+  finishReply(g);
+}
 function replyDragCancel() {
   const g = _rg; if (!g) return; _rg = null;
+  replyDragCleanup(g, true);
+}
+function replyTouchEnd() {
+  const g = _rgT; if (!g) return; _rgT = null;
+  finishReply(g);
+}
+function replyTouchCancel() {
+  const g = _rgT; if (!g) return; _rgT = null;
   replyDragCleanup(g, true);
 }
 function swallowWrapClick(wrap) {
@@ -2520,6 +2560,10 @@ window.addEventListener('pointermove', replyDragMove, { passive: false });
 window.addEventListener('pointerup', replyDragEnd, { passive: true });
 window.addEventListener('pointercancel', replyDragCancel, { passive: true });
 window.addEventListener('lostpointercapture', replyDragCancel, { passive: true });
+document.addEventListener('touchstart', replyTouchStart, { passive: true });
+document.addEventListener('touchmove', replyTouchMove, { passive: false });
+document.addEventListener('touchend', replyTouchEnd, { passive: true });
+document.addEventListener('touchcancel', replyTouchCancel, { passive: true });
 /* PART 3 — views, palette, new menu, profile, misc, init */
 const EMOJI_CATEGORIES = {
   '😀 چهره‌ها': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🫣','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','🫤','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'],
