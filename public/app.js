@@ -2536,6 +2536,7 @@ function finishReply(g) {
   const hit = g.engaged && Math.abs(g.fx) >= REPLY_THRESHOLD;
   if (hit && wrap.isConnected) {
     wrap.classList.remove('replying-grab');
+    wrap.classList.remove('drag-past');
     wrap.style.willChange = '';
     wrap.style.transition = 'transform .2s var(--ease)';
     wrap.style.transform = 'translateX(' + Math.max(g.fx - 8, -REPLY_MAX_OFFSET - 8) + 'px)';
