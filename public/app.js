@@ -419,7 +419,7 @@ function handleWS(d) {
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
     case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (d.username === state.me.username && state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); refreshReadTicks(d.roomId); break;
-    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); $('messages').innerHTML = ''; state.lastDay = null; d.messages.forEach(addMessage); scrollBottom(); break;
+    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); $('messages').innerHTML = ''; state.lastDay = null; d.messages.forEach(addMessage); renderReplyCounts(d.roomId); scrollBottom(); break;
     case 'message': onNewMessage(d.message); break;
     case 'message-updated': updateMessage(d); break;
     case 'message-edited': {
@@ -436,6 +436,7 @@ function handleWS(d) {
       const el = document.querySelector('[data-id="' + d.id + '"]'); if (el) el.remove();
       const rr = state.rooms[d.roomId]; if (rr) { rr.messages = rr.messages.filter((m) => m.id !== d.id); rr.last = rr.messages[rr.messages.length - 1] || null; scheduleChatListRefresh(120); }
       refreshDeletedRefs(d.id);
+      if (d.roomId === state.room) renderReplyCounts(d.roomId);
       break;
     }
     case 'added-to': toast('به «' + (d.name || 'گروه') + '» اضافه شدی'); buildChatList(); break;
@@ -658,7 +659,7 @@ function searchChatMessages(q) {
 function onNewMessage(m) {
   const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.previewOnly = false; r.messages.push(m); r.last = m;
   if (rid.startsWith('dm:') && m.from !== state.me.username && !getContacts()[m.from] && m.from !== BOT_USERNAME) { const c = getContacts(); const u = state.users.find((x) => x.username === m.from); c[m.from] = u ? (u.displayName || m.from) : m.from; saveContacts(c); }
-  if (rid === state.room) { addMessage(m); if (m.from === state.me.username || isNearBottom()) scrollBottom(); markRead(rid); }
+  if (rid === state.room) { addMessage(m); if (m.from === state.me.username || isNearBottom()) scrollBottom(); markRead(rid); renderReplyCounts(state.room); }
   else { r.unread = computeUnread(rid, r); beep(); pushNotification(m); }
   scheduleChatListRefresh(rid === state.room ? 120 : 250);
   const dp = $('details-panel');
@@ -718,12 +719,6 @@ function addMessage(m) {
     wrap.classList.add('no-av');
   }
   const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.dataset.id = m.id; bubble.dataset.from = m.from || '';
-  if (m.replyTo && m.replyTo.id) {
-    bubble.appendChild(replyRef(m.replyTo));
-  } else if (m.replyToId) {
-    const orig = (state.rooms[state.room] || {}).messages.find((x) => x.id === m.replyToId);
-    if (orig) bubble.appendChild(replyRef(orig));
-  }
   bubble.appendChild(bodyEl(m));
   const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.innerHTML = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>'; bubble.appendChild(meta);
   wrap.appendChild(bubble);
@@ -751,6 +746,30 @@ function addMessage(m) {
     setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
   }
   msgs.appendChild(wrap); applyIcons(wrap);
+}
+function renderReplyCounts(rid) {
+  if (rid !== state.room) return;
+  const room = state.rooms[rid] || {};
+  const msgs = room.messages || [];
+  const map = {};
+  for (const x of msgs) {
+    const t = (x && x.replyTo && x.replyTo.id) || (x && x.replyToId);
+    if (t) map[t] = (map[t] || 0) + 1;
+  }
+  document.querySelectorAll('#messages .msg[data-id]').forEach((el) => {
+    const id = el.dataset.id; const n = map[id] || 0;
+    let chip = el.querySelector('.msg-replies');
+    if (!n) { if (chip) chip.remove(); return; }
+    if (!chip) { chip = document.createElement('div'); chip.className = 'msg-replies'; el.appendChild(chip); }
+    chip.innerHTML = ic('corner-up-right') + '<span>' + n.toLocaleString('fa-IR') + ' پاسخ</span>';
+    chip.classList.toggle('has', true);
+    chip.onclick = (ev) => { ev.stopPropagation();
+      const arr = (state.rooms[rid] || {}).messages || [];
+      const first = arr.find((x) => ((x.replyTo && x.replyTo.id) || x.replyToId) === id);
+      if (first) jumpToMsg(first.id);
+    };
+    applyIcons(chip);
+  });
 }
 function refreshDeletedRefs(id) {
   document.querySelectorAll('.reply-ref[data-target="' + id + '"]').forEach((r) => {
@@ -799,6 +818,7 @@ function bodyEl(m) {
   else if (m.kind === 'poll') { b.appendChild(pollEl(m)); }
   else if (m.kind === 'checklist') { b.appendChild(checklistEl(m)); }
   else b.textContent = m.content || '';
+  if (m.edited || m.editedAt) { const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; b.appendChild(t); }
   return b;
 }
 function mediaEl(m) {
