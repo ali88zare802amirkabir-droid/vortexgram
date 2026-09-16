@@ -518,7 +518,7 @@ function handleInviteFollow() {
   const rid = 'dm:' + [state.me.username, inviter].sort().join('|');
   setTimeout(() => openRoom(rid), 400);
 }
-function cachePreview(rid, msgs) { const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.messages = msgs; r.last = msgs[msgs.length - 1] || null; r.unread = 0; r.previewOnly = false; }
+function cachePreview(rid, msgs) { const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.messages = msgs; r.last = msgs[msgs.length - 1] || null; r.unread = 0; r.previewOnly = false; r.lastSync = Date.now(); }
 function fetchPreviews() { allRoomIds().forEach((rid, i) => setTimeout(() => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'history', roomId: rid })); }, i * 60)); }
 
 /* CHAT LIST */
@@ -599,10 +599,11 @@ function openRoom(rid) {
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
+  const cacheFresh = canRenderCache && (Date.now() - (roomCache.lastSync || 0)) < 45000;
   const renderMsgs = cachedMsgs.slice(-MSG_RENDER_LIMIT);
   if (state.ws && state.ws.readyState === 1) {
     if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(renderMsgs); state.renderedRooms.add(rid); }
-    state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
+    if (!cacheFresh) state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   } else {
     $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(renderMsgs); state.renderedRooms.add(rid);
   }
@@ -661,7 +662,7 @@ function searchChatMessages(q) {
 }
 
 function onNewMessage(m) {
-  const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.previewOnly = false; r.messages.push(m); r.last = m;
+  const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.previewOnly = false; r.messages.push(m); r.last = m; r.lastSync = Date.now();
   if (rid.startsWith('dm:') && m.from !== state.me.username && !getContacts()[m.from] && m.from !== BOT_USERNAME) { const c = getContacts(); const u = state.users.find((x) => x.username === m.from); c[m.from] = u ? (u.displayName || m.from) : m.from; saveContacts(c); }
   if (rid === state.room) { addMessage(m); if (m.from === state.me.username || isNearBottom()) scrollBottom(); markRead(rid); renderReplyCounts(state.room); }
   else { r.unread = computeUnread(rid, r); beep(); pushNotification(m); }
@@ -2109,14 +2110,54 @@ async function toggleBlock(other) {
   }
 }
 async function deleteChat(rid) {
-  if (!rid || !rid.startsWith('dm:')) return;
-  if (!(await uConfirm('چت به‌طور کامل حذف شود؟ تاریخچه برای هر دو طرف پاک می‌شود.'))) return;
-  try {
-    const res = await api('/api/chats/delete', { method: 'POST', body: JSON.stringify({ roomId: rid }) });
+  if (!rid) return;
+  const isDm = rid.startsWith('dm:');
+  const other = isDm ? rid.slice(3).split('|').find((p) => p !== state.me.username) : null;
+  const isGroup = rid.startsWith('group:');
+  const opts = [
+    { key: 'del', label: 'حذف کامل چت (تاریخچه پاک شود)', checked: true },
+  ];
+  if (isDm && other && other !== BOT_USERNAME) {
+    const isBlocked = state.me.blocked && state.me.blocked.includes(other);
+    opts.push({ key: 'block', label: isBlocked ? 'همچنین آنبلاک کن' : 'همچنین مسدود کن', checked: false });
+  }
+  if (isGroup) {
+    opts.push({ key: 'leave', label: 'همچنین از گروه خارج شوم', checked: false });
+  }
+  const choices = await uConfirmCb(isGroup ? 'حذف گروه؟' : 'حذف چت؟', opts);
+  if (!choices) return;
+  if (choices.del) {
+    if (isDm) {
+      try {
+        const res = await api('/api/chats/delete', { method: 'POST', body: JSON.stringify({ roomId: rid }) });
+        const d = await res.json();
+        if (d.ok) { toast('چت پاک شد'); if (state.room === rid) { state.room = null; buildChatList(); setMode('chats'); } else buildChatList(); }
+        else toast(d.error || 'خطا در پاک‌کردن چت');
+      } catch (e) { toast('خطا در پاک‌کردن چت'); }
+    } else if (isGroup) {
+      const gid = rid.slice(6);
+      try {
+        const res = await api('/api/groups/' + gid + '/leave', { method: 'POST' });
+        const d = await res.json();
+        if (d.ok) { toast('از گروه خارج شدید'); state.room = null; buildChatList(); setMode('chats'); }
+        else toast(d.error || 'خطا در خروج از گروه');
+      } catch (e) { toast('خطا در خروج از گروه'); }
+    }
+  }
+  if (choices.block && isDm && other) {
+    const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
     const d = await res.json();
-    if (d.ok) { toast('چت پاک شد'); }
-    else toast(d.error || 'خطا در پاک‌کردن چت');
-  } catch (e) { toast('خطا در پاک‌کردن چت'); }
+    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
+  }
+  if (choices.leave && isGroup && !choices.del) {
+    const gid = rid.slice(6);
+    try {
+      const res = await api('/api/groups/' + gid + '/leave', { method: 'POST' });
+      const d = await res.json();
+      if (d.ok) { toast('از گروه خارج شدید'); state.room = null; buildChatList(); setMode('chats'); }
+      else toast(d.error || 'خطا در خروج از گروه');
+    } catch (e) { toast('خطا در خروج از گروه'); }
+  }
 }
 function setFlag(rid, key, val) { if (!state.chatState[rid]) state.chatState[rid] = {}; state.chatState[rid][key] = val; api('/api/chats/state', { method: 'POST', body: JSON.stringify({ roomId: rid, key: key, value: val }) }); buildChatList(); }
 
@@ -2132,9 +2173,9 @@ function openChatMenu(e, rid) {
     if (other && other !== BOT_USERNAME) {
       const isBlocked = state.me.blocked && state.me.blocked.includes(other);
       mk(isBlocked ? 'آنبلاک کردن' : 'مسدود کردن', isBlocked ? 'user-check' : 'user-x', () => toggleBlock(other));
-      mk('پاک کردن چت', 'trash-2', () => deleteChat(rid));
     }
   }
+  mk('پاک کردن چت', 'trash-2', () => deleteChat(rid));
   document.body.appendChild(pop); setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 50);
 }
 /* ===================== MESSAGE CONTEXT MENU ===================== */
@@ -2679,6 +2720,21 @@ function uConfirm(message) {
     pop.innerHTML = '<div class="u-pop-box"><div class="u-pop-title">' + esc(message) + '</div><div class="u-pop-actions"><button class="btn sm ghost" data-k="0">انصراف</button><button class="btn sm" data-k="1">تأیید</button></div></div>';
     pop.querySelector('[data-k="0"]').onclick = () => { pop.remove(); resolve(false); };
     pop.querySelector('[data-k="1"]').onclick = () => { pop.remove(); resolve(true); };
+    document.body.appendChild(pop);
+  });
+}
+function uConfirmCb(title, options) {
+  return new Promise((resolve) => {
+    const pop = document.createElement('div'); pop.className = 'u-pop';
+    let rows = '';
+    for (const o of options) rows += '<label class="u-pop-check"><input type="checkbox" data-k="' + esc(o.key) + '"' + (o.checked ? ' checked' : '') + '><span>' + esc(o.label) + '</span></label>';
+    pop.innerHTML = '<div class="u-pop-box"><div class="u-pop-title">' + esc(title) + '</div><div class="u-pop-checks">' + rows + '</div><div class="u-pop-actions"><button class="btn sm ghost" data-k="0">انصراف</button><button class="btn sm danger" data-k="1">تأیید</button></div></div>';
+    pop.querySelector('[data-k="0"]').onclick = () => { pop.remove(); resolve(null); };
+    pop.querySelector('[data-k="1"]').onclick = () => {
+      const out = {};
+      for (const o of options) out[o.key] = !!pop.querySelector('[data-k="' + o.key + '"]').checked;
+      pop.remove(); resolve(out);
+    };
     document.body.appendChild(pop);
   });
 }

@@ -677,6 +677,10 @@ a{color:var(--primary);text-decoration:none;}
 .u-pop-box .inp{background:var(--surface);}
 .u-pop-actions{display:flex;gap:10px;justify-content:flex-end;}
 .u-pop-actions .btn{flex:1;justify-content:center;}
+.u-pop-checks{display:flex;flex-direction:column;gap:10px;padding:2px 0;}
+.u-pop-check{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--on-surface);cursor:pointer;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;transition:border-color .15s,background .15s;}
+.u-pop-check:hover{border-color:var(--primary);}
+.u-pop-check input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer;flex-shrink:0;}
 
 /* AI */
 .ai-card{display:flex;flex-direction:column;height:calc(100% - 20px);}
