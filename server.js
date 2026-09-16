@@ -170,17 +170,66 @@ function clientIp(req) {
   const ip = (req && (req.ip || (req.socket && req.socket.remoteAddress))) || '?';
   return String(ip).replace(/^::ffff:/, '').slice(0, 60) || '?';
 }
-// دستگاه متصل کاربر را تشخیص و در db.users.devices ثبت می‌کند (ip/device/lastLogin)
+// دستگاه متصل کاربر را تشخیص و در db.users.devices ثبت می‌کند
+// (ip / پلتفرم / مدل / مرورگر / آخرین بازدید / نسخه اپ)
 function clientDevice(req) {
-  const ua = String((req && req.headers && req.headers['user-agent']) || 'Unknown').slice(0, 120);
+  const ua = String((req && req.headers && req.headers['user-agent']) || 'Unknown').slice(0, 300);
   const ip = clientIp(req);
-  let device = 'مرورگر';
-  if (/Tablet|iPad/i.test(ua)) device = 'تبلت';
-  else if (/Mobile|Android|iPhone|iOS/i.test(ua)) device = 'موبایل';
-  else if (/Windows/i.test(ua)) device = 'ویندوز';
-  else if (/Mac|iPhone OS|Darwin/i.test(ua)) device = 'مک';
-  else if (/Linux/i.test(ua)) device = 'لینوکس';
-  return { ip, region: (ip === '?' ? '' : ''), device };
+  const appM = ua.match(/(?:VortexGram|VORTEX|Vortex)[/\s]([0-9][0-9.]*)/i);
+  const isApp = !!appM;
+  let platform = 'web', category = 'وب', os = '', osVersion = '', model = '', isTablet = false;
+
+  const iosM = ua.match(/iPhone|iPad|iPod/);
+  if (iosM) {
+    isTablet = /iPad/.test(ua);
+    platform = isTablet ? 'tablet' : 'ios';
+    category = isTablet ? 'تبلت' : 'موبایل';
+    os = 'iOS';
+    const ov = ua.match(/OS (\d+[_\d]*)/);
+    osVersion = ov ? ov[1].replace(/_/g, '.') : '';
+    const ph = ua.match(/\(([^;]+); CPU/);
+    model = ph ? ph[1].trim().replace(/_\d+$/, '') : (isTablet ? 'iPad' : 'iPhone');
+  }
+  const anM = ua.match(/Android (\d{1,2}(?:\.\d+)*)/);
+  if (anM) {
+    isTablet = /Tablet|SM-T|Pixel Tablet|KF[A-Z]|Nexus 10/i.test(ua);
+    platform = isTablet ? 'tablet' : 'android';
+    category = isTablet ? 'تبلت' : 'موبایل';
+    os = 'Android';
+    osVersion = anM[1];
+    const mv = ua.match(/Android[^;]+;\s*([^;)]+)/);
+    model = mv ? mv[1].trim().replace(/Build\/.*$/, '').trim() : '';
+  }
+  const winM = ua.match(/Windows NT (\d{1,2}(?:\.\d+)*)/);
+  if (winM && !iosM && !anM) {
+    platform = 'windows'; category = 'دسکتاپ'; os = 'Windows';
+    osVersion = ({ '6.1': '7', '6.2': '8', '6.3': '8.1', '10.0': '10/11' }[winM[1]]) || winM[1];
+  }
+  if (/Macintosh|Mac OS X|Mac_PowerPC/.test(ua) && !iosM) {
+    platform = 'macos'; category = 'دسکتاپ'; os = 'macOS';
+    const mv = ua.match(/Mac OS X (\d+[_\d]*)/);
+    osVersion = mv ? mv[1].replace(/_/g, '.') : '';
+  }
+  if (/(?:Linux|x86_64|X11;)/.test(ua) && !iosM && !anM && !winM && !(/Macintosh/.test(ua))) {
+    platform = 'linux'; category = 'دسکتاپ'; os = 'Linux'; osVersion = '';
+  }
+  if (platform === 'web' && /Desktop|Windows|Macintosh|X11|Linux/.test(ua)) category = 'دسکتاپ';
+  if (isApp) { platform = 'app'; category = 'دسکتاپ'; }
+
+  let browser = 'مرورگر';
+  if (ua.match(/Edg\//)) browser = 'Microsoft Edge';
+  else if (ua.match(/(OPR|Opera)\//)) browser = 'Opera';
+  else if (ua.match(/CriOS\//)) browser = 'Chrome (iOS)';
+  else if (ua.match(/FxiOS\//)) browser = 'Firefox (iOS)';
+  else if (ua.match(/Firefox\//)) browser = 'Firefox';
+  else if (ua.match(/Chrome\//) || ua.match(/Chromium\//)) browser = 'Chrome';
+  else if (ua.match(/Safari\//)) browser = 'Safari';
+  if (isApp) browser = 'اپلیکیشن VORTEX';
+
+  const device = isApp
+    ? (appM[1] ? 'اپلیکیشن VORTEX ' + appM[1] : 'اپلیکیشن VORTEX')
+    : browser + ' — ' + category;
+  return { ip, region: '', platform, category, browser, os, osVersion, model, app: isApp, appVersion: isApp ? appM[1] : '', device };
 }
 // توکن از هدر Authorization یا کوکی نشست خوانده می‌شود (برای سرو فایل‌های خصوصی).
 function requestToken(req) {
@@ -210,9 +259,9 @@ function noteDevice(user, req) {
   const d = clientDevice(req);
   const now = Date.now();
   user.devices = Array.isArray(user.devices) ? user.devices : [];
-  const existing = user.devices.find((x) => x && x.ip === d.ip && x.device === d.device);
-  if (existing) existing.lastLogin = now;
-  else { user.devices.push({ ip: d.ip, region: d.region, device: d.device, lastLogin: now }); }
+  const existing = user.devices.find((x) => x && x.ip === d.ip && ((x.browser && x.platform === d.platform && x.browser === d.browser) || (!x.platform && x.device === d.device)));
+  if (existing) { Object.assign(existing, d); existing.lastLogin = now; }
+  else { user.devices.push(Object.assign({}, d, { lastLogin: now })); }
   if (user.devices.length > 12) user.devices = user.devices.slice(-12);
   user.lastLogin = now;
   saveDB();
@@ -600,7 +649,20 @@ app.post('/api/profile/settings', auth, (req, res) => {
 
 app.get('/api/profile/devices', auth, (req, res) => {
   const d = req.user.devices || [];
-  res.json({ devices: d.map((dev) => ({ ip: dev.ip, region: dev.region, device: dev.device, lastLogin: dev.lastLogin })) });
+  res.json({ devices: d.map((dev) => ({
+    ip: dev.ip,
+    region: dev.region || '',
+    platform: dev.platform || 'web',
+    category: dev.category || 'وب',
+    browser: dev.browser || '',
+    os: dev.os || '',
+    osVersion: dev.osVersion || '',
+    model: dev.model || '',
+    device: dev.device || (dev.category || 'مرورگر'),
+    app: !!dev.app,
+    appVersion: dev.appVersion || '',
+    lastLogin: dev.lastLogin
+  })) });
 });
 
 // ذخیره تم/اسکین فعال کاربر (برای جلوه‌های پروفایل دیسکوردی)

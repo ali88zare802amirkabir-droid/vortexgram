@@ -424,7 +424,9 @@ function handleWS(d) {
     case 'message-updated': updateMessage(d); break;
     case 'message-edited': {
       const rr = state.rooms[d.roomId]; if (rr) { const mm = rr.messages.find((x) => x.id === d.id); if (mm) { mm.content = d.content; mm.edited = true; } scheduleChatListRefresh(120); }
-      const el = document.querySelector('[data-id="' + d.id + '"] .msg-body'); if (el) { while (el.querySelector('.msg-edited')) el.querySelector('.msg-edited').remove(); const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; el.appendChild(t); } break;
+      const el = document.querySelector('[data-id="' + d.id + '"] .msg-body'); if (el) { const old = el.querySelector('.msg-edited'); if (old) old.remove(); }
+      const em = document.querySelector('[data-id="' + d.id + '"] .msg-meta'); if (em && !em.querySelector('.msg-ed')) { const ed = document.createElement('span'); ed.className = 'msg-ed'; ed.textContent = 'ویرایش‌شده'; em.insertBefore(ed, em.firstChild); }
+      break;
     }
     case 'message-deleted': {
       state.deletedIds.add(d.id);
@@ -720,7 +722,11 @@ function addMessage(m) {
   }
   const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.dataset.id = m.id; bubble.dataset.from = m.from || '';
   bubble.appendChild(bodyEl(m));
-  const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.innerHTML = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>'; bubble.appendChild(meta);
+  const meta = document.createElement('div'); meta.className = 'msg-meta';
+  const timeHtml = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>';
+  meta.innerHTML = (m.edited || m.editedAt) ? '<span class="msg-ed">ویرایش‌شده</span>' + timeHtml : timeHtml;
+  bubble.appendChild(meta);
+  applyReplyBadge(wrap, m);
   wrap.appendChild(bubble);
   const hasReactions = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions) && Object.keys(m.reactions).some((k) => (Array.isArray(m.reactions[k]) ? m.reactions[k].length > 0 : !!m.reactions[k])));
   if (hasReactions) wrap.appendChild(reactionsEl(m));
@@ -747,28 +753,36 @@ function addMessage(m) {
   }
   msgs.appendChild(wrap); applyIcons(wrap);
 }
-function renderReplyCounts(rid) {
-  if (rid !== state.room) return;
-  const room = state.rooms[rid] || {};
-  const msgs = room.messages || [];
+function replyCountMap(arr) {
   const map = {};
-  for (const x of msgs) {
+  for (const x of arr) {
     const t = (x && x.replyTo && x.replyTo.id) || (x && x.replyToId);
     if (t) map[t] = (map[t] || 0) + 1;
   }
+  return map;
+}
+function applyReplyBadge(wrap, m, map) {
+  const id = m ? m.id : (wrap && wrap.dataset.id);
+  if (!id || !wrap) return;
+  const meta = wrap.querySelector('.msg-meta');
+  if (!meta) return;
+  const arr = (state.rooms[state.room] || {}).messages || [];
+  const n = (map || replyCountMap(arr))[id] || 0;
+  let rc = meta.querySelector('.msg-rc');
+  if (!n) { if (rc) rc.remove(); return; }
+  if (!rc) { rc = document.createElement('span'); rc.className = 'msg-rc'; rc.title = 'پاسخ‌ها'; rc.setAttribute('role', 'button'); meta.appendChild(rc); }
+  rc.innerHTML = ic('corner-up-right') + '<b>' + n.toLocaleString('fa-IR') + '</b>';
+  rc.onclick = (ev) => { ev.stopPropagation();
+    const first = arr.find((x) => ((x.replyTo && x.replyTo.id) || x.replyToId) === id);
+    if (first) jumpToMsg(first.id);
+  };
+  applyIcons(rc);
+}
+function renderReplyCounts(rid) {
+  if (rid !== state.room) return;
+  const map = replyCountMap((state.rooms[rid] || {}).messages || []);
   document.querySelectorAll('#messages .msg[data-id]').forEach((el) => {
-    const id = el.dataset.id; const n = map[id] || 0;
-    let chip = el.querySelector('.msg-replies');
-    if (!n) { if (chip) chip.remove(); return; }
-    if (!chip) { chip = document.createElement('div'); chip.className = 'msg-replies'; el.appendChild(chip); }
-    chip.innerHTML = ic('corner-up-right') + '<span>' + n.toLocaleString('fa-IR') + ' پاسخ</span>';
-    chip.classList.toggle('has', true);
-    chip.onclick = (ev) => { ev.stopPropagation();
-      const arr = (state.rooms[rid] || {}).messages || [];
-      const first = arr.find((x) => ((x.replyTo && x.replyTo.id) || x.replyToId) === id);
-      if (first) jumpToMsg(first.id);
-    };
-    applyIcons(chip);
+    applyReplyBadge(el, null, map);
   });
 }
 function refreshDeletedRefs(id) {
@@ -818,7 +832,6 @@ function bodyEl(m) {
   else if (m.kind === 'poll') { b.appendChild(pollEl(m)); }
   else if (m.kind === 'checklist') { b.appendChild(checklistEl(m)); }
   else b.textContent = m.content || '';
-  if (m.edited || m.editedAt) { const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; b.appendChild(t); }
   return b;
 }
 function mediaEl(m) {
@@ -3316,7 +3329,19 @@ function renderAccSub(body) {
     if (!box) return;
     const devs = Array.isArray(d.devices) ? d.devices : [];
     if (!devs.length) { box.innerHTML = '<div class="placeholder">هنوز دستگاهی ثبت نشده است.</div>'; return; }
-    box.innerHTML = '<div class="settings-row"><span>تعداد دستگاه</span><b>' + devs.length + '</b></div>' + devs.map((x) => '<div class="dev-row"><span class="dev-ic">' + ic('smartphone') + '</span><span><b>' + esc(x.device || 'مرورگر') + '</b><small>' + esc(x.ip || '?') + ' • ' + esc(x.lastLogin ? fmt(x.lastLogin) : '') + '</small></span></div>').join('');
+    const devIcon = (p) => { if (p === 'web') return 'globe'; if (p === 'tablet' || p === 'ios' || p === 'android') return 'smartphone'; return 'cpu'; };
+    const rows = devs.map((x) => {
+      const title = x.device || 'مرورگر';
+      const det = [];
+      if (x.os) det.push(x.os + (x.osVersion ? ' ' + x.osVersion : ''));
+      if (x.model) det.push(x.model);
+      const spec = det.join(' • ');
+      const seen = 'آخرین بازدید: ' + (x.lastLogin ? fmt(x.lastLogin) : '—');
+      const meta = spec + (spec && x.ip && x.ip !== '?' ? '<br>' : '') + seen + (x.ip && x.ip !== '?' ? ' • IP: ' + esc(x.ip) : '');
+      return '<div class="dev-row"><span class="dev-ic">' + ic(devIcon(x.platform)) + '</span><span class="dev-info"><b>' + esc(title) + (x.app ? ' <i class="dev-tag">' + esc(x.appVersion || 'اپ') + '</i>' : '') + '</b><small>' + meta + '</small></span></div>';
+    }).join('');
+    box.innerHTML = '<div class="settings-row"><span>تعداد دستگاه</span><b>' + devs.length + '</b></div>' + rows;
+    box.querySelectorAll('.dev-row').forEach((el) => applyIcons(el));
   }).catch(() => { const box = body.querySelector('#acc-devices'); if (box) box.innerHTML = '<div class="placeholder">خطا در بارگذاری.</div>'; });
   luc();
 }
