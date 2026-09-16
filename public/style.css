@@ -788,6 +788,10 @@ a{color:var(--primary);text-decoration:none;}
 .msg-sheet .ctx-actions .ctx-item{padding:13px 16px;font-size:14.5px;min-height:48px;}
 .msg-sheet .ctx-reactions{padding:8px 4px 14px;gap:8px;}
 .msg-sheet .ctx-reac{width:48px;height:48px;font-size:26px;}
+.msg-ctx.mobile{width:min(292px,calc(100vw - 20px));max-width:min(292px,calc(100vw - 20px));}
+.msg-ctx.mobile .ctx-actions .ctx-item{min-height:48px;padding:13px 16px;font-size:14.5px;}
+.msg-ctx.mobile .ctx-reactions{gap:7px;padding:6px 4px 8px;}
+.msg-ctx.mobile .ctx-reac{width:44px;height:44px;font-size:24px;}
 .msg-selected{border-radius:18px;outline:2px solid var(--primary);outline-offset:3px;}
 body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;}
 .msg.menu-open-target{border-radius:16px;box-shadow:0 0 0 2px rgba(var(--primary-rgb),.32),0 0 0 7px rgba(var(--primary-rgb),.07);transition:box-shadow .18s var(--ease);}

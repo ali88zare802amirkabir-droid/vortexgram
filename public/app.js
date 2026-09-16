@@ -738,7 +738,7 @@ function addMessage(m) {
   actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
   actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
   if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
-  actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); const w = e.target.closest('.msg'); const anchor = w ? (w.querySelector('.bubble') || w) : null; openMsgCtx(m, anchor); };
+  actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); const w = e.target.closest('.msg'); const anchor = w ? (w.querySelector('.bubble') || w) : null; openMsgCtx(m, anchor, { x: e.clientX, y: e.clientY }); };
   wrap.appendChild(actions);
   if (m.kind === 'sticker') {
     wrap.classList.add('msg-sticker', 'emoji-enter');
@@ -1770,6 +1770,19 @@ function setReply(m) {
   const inp = $('composer-input'); if (inp) inp.focus();
 }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
+/* Mobile: تپ روی پیام → باز کردن منوی پیام (بخش‌های تعاملی/چندرسانه‌ای رفتار خودشان را دارند) */
+$('messages').addEventListener('click', (e) => {
+  if (!isMobile() || _selectMode) return;
+  if (e.target.closest('a, button, input, textarea, select, .reac, .reply-ref, .msg-actions, .emoji-pop, .react-pop, .msg-ctx, .msg-sheet, .ctx-scrim, video, audio')) return;
+  const tg = e.target.closest('img');
+  if (tg && !tg.classList.contains('sticker')) return;
+  const msgEl = e.target.closest('.msg');
+  if (!msgEl || !msgEl.dataset.id) return;
+  const m = (state.rooms[state.room] || {}).messages.find((x) => x.id === msgEl.dataset.id);
+  if (!m) return;
+  e.preventDefault(); e.stopPropagation();
+  openMsgCtx(m, msgEl.querySelector('.bubble') || msgEl, { x: e.clientX, y: e.clientY });
+});
 document.addEventListener('touchstart', lpStart, { passive: true });
 document.addEventListener('touchmove', lpMove, { passive: false });
 document.addEventListener('touchend', lpEnd, { passive: true });
@@ -2093,7 +2106,7 @@ async function reportMsg(m) {
     else toast(d.error || 'گزارش ثبت نشد');
   } catch (e) { toast('ارسال گزارش ممکن نشد'); }
 }
-function openMsgCtx(m, anchor) {
+function openMsgCtx(m, anchor, pos) {
   closeMsgCtx();
   closeCtxMenus();
   _ctxMsg = m;
@@ -2101,7 +2114,7 @@ function openMsgCtx(m, anchor) {
   if (_ctxMsgEl && _ctxMsgEl.classList) _ctxMsgEl.classList.add('menu-open-target');
   var isM = isMobile();
   var el = document.createElement('div');
-  el.className = isM ? 'msg-sheet' : 'msg-ctx';
+  el.className = 'msg-ctx' + (isM ? ' mobile' : '');
   el.setAttribute('role', 'menu');
   el.setAttribute('aria-label', 'عملیات پیام');
   el.setAttribute('tabindex', '-1');
@@ -2151,40 +2164,41 @@ function openMsgCtx(m, anchor) {
   mk('انتخاب', 'check-square', function() { toggleSelectMsg(m.id); });
   el.appendChild(acts);
 
-  if (isM) {
-    var scrim = document.createElement('div'); scrim.className = 'ctx-scrim'; scrim.setAttribute('aria-hidden', 'true');
-    scrim.onclick = closeMsgCtx;
-    document.body.appendChild(scrim);
-    document.body.appendChild(el);
-  } else {
-    el._anchor = (anchor && anchor.nodeType) ? anchor : null;
-    document.body.appendChild(el);
-    positionMsgCtx(el, el._anchor);
-  }
+  el._anchor = (anchor && anchor.nodeType) ? anchor : null;
+  document.body.appendChild(el);
+  positionMsgCtx(el, el._anchor, pos);
   applyIcons(el);
   _ctxEl = el;
   setTimeout(function() { var f = el.querySelector('.ctx-reac, .ctx-item'); if (f) f.focus(); }, 30);
 }
-function positionMsgCtx(el, anchorEl) {
+function positionMsgCtx(el, anchorEl, pt) {
   var pad = 8, vw = window.innerWidth, vh = window.innerHeight;
   el.style.maxWidth = Math.max(180, vw - pad * 2) + 'px';
   el.style.maxHeight = (vh - pad * 2) + 'px';
   var mw = el.offsetWidth || 210, mh = el.offsetHeight || 320;
-  var r = anchorEl && anchorEl.isConnected ? anchorEl.getBoundingClientRect() : null;
-  if (!r || (r.width === 0 && r.height === 0)) {
-    el.style.top = Math.max(pad, vh - mh - pad) + 'px';
-    el.style.left = pad + 'px';
-    return;
-  }
-  var top = r.bottom + pad;                       /* باز شدن زیر پیام ترجیح داده می‌شود */
-  if (top + mh + pad > vh) top = r.top - mh - pad; /* اگر جا نبود، بالای پیام */
-  top = Math.max(pad, Math.min(top, vh - mh - pad));
-  var left = Math.max(pad, Math.min(r.left, vw - mw - pad));
-  if (r.left < pad || r.right > vw - pad) {       /* نزدیک لبه → به سمت داخل جابه‌جا شو */
-    var innerRight = vw - pad - mw;
-    var innerLeft = pad;
-    if (r.right - mw - pad >= innerLeft) left = Math.min(r.right - mw - pad, innerRight);
-    else left = innerLeft;
+  var top, left;
+  if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+    /* میان لمس قرار می‌گیرد: ترجیحاً بالای انگشت، در صورت نبود جا پایین آن */
+    var gap = 6;
+    top = (pt.y - mh - gap >= pad) ? pt.y - mh - gap : Math.max(pad, pt.y + gap);
+    top = Math.min(top, vh - mh - pad);
+    left = Math.max(pad, Math.min(pt.x - Math.round(mw / 2), vw - mw - pad));
+  } else {
+    var r = anchorEl && anchorEl.isConnected ? anchorEl.getBoundingClientRect() : null;
+    if (!r || (r.width === 0 && r.height === 0)) {
+      top = Math.max(pad, vh - mh - pad); left = pad;
+    } else {
+      top = r.bottom + pad;                       /* باز شدن زیر پیام ترجیح داده می‌شود */
+      if (top + mh + pad > vh) top = r.top - mh - pad; /* اگر جا نبود، بالای پیام */
+      top = Math.max(pad, Math.min(top, vh - mh - pad));
+      left = Math.max(pad, Math.min(r.left, vw - mw - pad));
+      if (r.left < pad || r.right > vw - pad) {       /* نزدیک لبه → به سمت داخل جابه‌جا شو */
+        var innerRight = vw - pad - mw;
+        var innerLeft = pad;
+        if (r.right - mw - pad >= innerLeft) left = Math.min(r.right - mw - pad, innerRight);
+        else left = innerLeft;
+      }
+    }
   }
   el.style.top = top + 'px'; el.style.left = left + 'px';
 }
@@ -3490,7 +3504,7 @@ document.addEventListener('contextmenu', (e) => {
     if (_selectMode) { e.stopPropagation(); return; }
     var msgId = msgWrap.dataset.id;
     var m = (state.rooms[state.room] || {}).messages.find(x => x.id === msgId);
-    if (m) openMsgCtx(m, msgWrap.querySelector('.bubble') || msgWrap);
+    if (m) openMsgCtx(m, msgWrap.querySelector('.bubble') || msgWrap, { x: e.clientX, y: e.clientY });
   }
   else { closeMsgCtx(); closeCtxMenus(); }
 });
