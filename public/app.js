@@ -37,21 +37,7 @@ function fmt(t) {
 function api(path, opts = {}) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
-  headers['X-Fingerprint'] = getBrowserFp();
   return fetch(path, { method: opts.method || 'GET', headers, body: opts.body ? opts.body : undefined });
-}
-// اثر انگشت دستگاه مرورگر (برای هارد‌بن قطعی): هش از UA + screen + platform + language.
-let _browserFp = null;
-function getBrowserFp() {
-  if (_browserFp) return _browserFp;
-  try { _browserFp = localStorage.getItem('vx_fp'); } catch (e) {}
-  if (_browserFp) return _browserFp;
-  const parts = [navigator.userAgent || '', screen.width + 'x' + screen.height, navigator.platform || '', navigator.language || '', screen.colorDepth ? String(screen.colorDepth) : '', ''];
-  let h = 0;
-  for (const s of parts) { for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) >>> 0; } }
-  _browserFp = 'fp-' + h.toString(16);
-  try { localStorage.setItem('vx_fp', _browserFp); } catch (e) {}
-  return _browserFp;
 }
 function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; $('toast').appendChild(t); setTimeout(() => t.remove(), 2600); }
 function avatarEl(u, size) {
@@ -119,7 +105,7 @@ const state = {
   profileReturnRoom: null,
   profileReturnNav: null,
 };
-const MSG_RENDER_LIMIT = 150;
+const MSG_RENDER_LIMIT = 100;
 
 /* AUTH */
 const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-name'), authUname = $('auth-username');
@@ -614,12 +600,16 @@ function openRoom(rid) {
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
   const cacheFresh = canRenderCache && (Date.now() - (roomCache.lastSync || 0)) < 45000;
-  const renderMsgs = cachedMsgs.slice(-MSG_RENDER_LIMIT);
+  const hasPreview = roomCache.previewOnly && cachedMsgs.length;
   if (state.ws && state.ws.readyState === 1) {
-    if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(renderMsgs); state.renderedRooms.add(rid); }
+    if (canRenderCache) {
+      $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
+    } else if (hasPreview) {
+      $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
+    }
     if (!cacheFresh) state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   } else {
-    $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(renderMsgs); state.renderedRooms.add(rid);
+    $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
   }
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
@@ -2116,27 +2106,11 @@ async function toggleBlock(other) {
     if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); renderDetails(); }
     else toast(d.error || 'خطا در آنبلاک');
   } else {
-    const opts = [
-      { key: 'block', label: 'مسدود از چت (عدم امکان ارسال پیام به شما)', checked: true },
-    ];
-    if (state.me.isRoot) {
-      opts.push({ key: 'hard', label: 'هارد‌بن کامل (مسدود از کل پیام‌رسان با هر شماره/دستگاه)', checked: false });
-    }
-    const choices = await uConfirmCb('مسدودسازی کاربر @' + other, opts);
-    if (!choices) return;
-    if (choices.hard && state.me.isRoot) {
-      const res = await api('/api/admin/hard-ban', { method: 'POST', body: JSON.stringify({ username: other }) });
-      const d = await res.json();
-      if (d.ok) { toast('کاربر هارد‌بن و کاملاً مسدود شد ⛔'); buildChatList(); renderDetails(); }
-      else toast(d.error || 'خطا در هارد‌بن');
-      return;
-    }
-    if (choices.block) {
-      const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
-      const d = await res.json();
-      if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
-      else toast(d.error || 'خطا در مسدودسازی');
-    }
+    if (!(await uConfirm('آیا می‌خواهید این کاربر را مسدود کنید؟'))) return;
+    const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
+    const d = await res.json();
+    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
+    else toast(d.error || 'خطا در مسدودسازی');
   }
 }
 async function deleteChat(rid) {
@@ -2161,14 +2135,16 @@ async function deleteChat(rid) {
       try {
         const res = await api('/api/chats/delete', { method: 'POST', body: JSON.stringify({ roomId: rid }) });
         const d = await res.json();
-        if (!d.ok) toast(d.error || 'خطا در پاک‌کردن چت');
+        if (d.ok) { toast('چت پاک شد'); if (state.room === rid) { state.room = null; buildChatList(); setMode('chats'); } else buildChatList(); }
+        else toast(d.error || 'خطا در پاک‌کردن چت');
       } catch (e) { toast('خطا در پاک‌کردن چت'); }
     } else if (isGroup) {
       const gid = rid.slice(6);
       try {
         const res = await api('/api/groups/' + gid + '/leave', { method: 'POST' });
         const d = await res.json();
-        if (!d.ok) toast(d.error || 'خطا در خروج از گروه');
+        if (d.ok) { toast('از گروه خارج شدید'); state.room = null; buildChatList(); setMode('chats'); }
+        else toast(d.error || 'خطا در خروج از گروه');
       } catch (e) { toast('خطا در خروج از گروه'); }
     }
   }

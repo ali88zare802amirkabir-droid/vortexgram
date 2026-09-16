@@ -257,41 +257,17 @@ function clearSessionCookie(res) {
 function noteDevice(user, req) {
   if (!user) return;
   const d = clientDevice(req);
-  const fp = (req.headers['x-fingerprint'] || '').slice(0, 64);
   const now = Date.now();
   user.devices = Array.isArray(user.devices) ? user.devices : [];
   const existing = user.devices.find((x) => x && x.ip === d.ip && ((x.browser && x.platform === d.platform && x.browser === d.browser) || (!x.platform && x.device === d.device)));
-  if (existing) { Object.assign(existing, d); existing.lastLogin = now; if (fp) existing.fingerprint = fp; }
-  else { user.devices.push(Object.assign({}, d, { lastLogin: now, fingerprint: fp })); }
+  if (existing) { Object.assign(existing, d); existing.lastLogin = now; }
+  else { user.devices.push(Object.assign({}, d, { lastLogin: now })); }
   if (user.devices.length > 12) user.devices = user.devices.slice(-12);
   user.lastLogin = now;
   saveDB();
 }
 function hash(pw, salt) {
   return crypto.createHash('sha256').update(salt + ':' + pw).digest('hex');
-}
-// هارد‌بن: شماره‌ی تلفنِ بن‌شده یا اثر انگشتِ دستگاهِ بن‌شده (اپ یا مدل گوشی).
-// محافظه‌کارانه: دستگاه‌های دسکتاپ وب (تشخیص‌ناپذیر) هرگز با این چک مسدود نمی‌شوند؛
-// فقط اپ (بخش app) و مدل گوشی واقعی (model|os) تطبیق داده می‌شوند تا بقیه‌ی کاربران
-// همان مرورگر آسیب نبینند.
-function hardBanHit(phone, req) {
-  const bans = db.globalBans || { phones: [], deviceFps: [] };
-  if (phone && Array.isArray(bans.phones) && bans.phones.includes(phone)) return true;
-  const fps = Array.isArray(bans.deviceFps) ? bans.deviceFps : [];
-  const fp = (req.headers['x-fingerprint'] || '').slice(0, 64);
-  if (fp && fps.includes(fp)) return true;
-  const d = clientDevice(req);
-  if (d.app && d.device && fps.includes(d.device)) return true;
-  if (d.model && d.os && fps.includes(d.model + '|' + d.os)) return true;
-  // پوشش روی‌باک: بررسی اثر انگشت دستگاه از هر کاربر بن‌شده‌ی مستقیم
-  // (برای بن‌هایی که قبل از اضافه شدن فینگرپرینت انجام شدند ولی کاربر بعداً لاگین کرده).
-  if (fp) {
-    for (const u of db.users) {
-      if (!u.banned || !u.devices || !Array.isArray(u.devices)) continue;
-      for (const dev of u.devices) { if (dev.fingerprint === fp) return true; }
-    }
-  }
-  return false;
 }
 // امنیت: هش رمز از SHA-256 (سریع/قابل بروت‌فورس) به scrypt ارتقا یافت — بدون شکستن
 // سازگاری: هش‌های قدیمی SHA-256 همچنان در verifyPassword پشتیبانی می‌شوند و هر بار
@@ -349,7 +325,7 @@ async function sendSMS(phone, text) {
   }
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, isRoot: !!isOriginalAdmin(u), banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
+  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
 }
 // نمای عمومیِ امن برای پخش همگانی: بدون شماره، بدون لیست مسدودشده و بدون flag رمز
 function publicSafe(u) {
@@ -520,7 +496,6 @@ app.post('/api/send-code', async (req, res) => {
   if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
   if (!authRateOk('send-code:' + phone, 5, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
   if (!authRateOk('send-code-ip:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
-  if (hardBanHit(phone, req)) return res.status(403).json({ error: 'این شماره یا دستگاه مسدود شده است' });
   const code = genCode();
   pendingCodes.set(phone, { code, exp: Date.now() + 2 * 60 * 1000 });
   // حالت تست بدون کد: شماره‌ی ثبت‌شده مستقیم وارد می‌شود، شماره‌ی جدید به مرحله‌ی نام می‌رود.
@@ -548,7 +523,6 @@ app.post('/api/verify-code', (req, res) => {
   const phone = normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '');
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
-  if (hardBanHit(phone, req)) return res.status(403).json({ error: 'این شماره یا دستگاه مسدود شده است' });
   if (!authRateOk('verify-code:' + phone, 10, 5 * 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — چند دقیقه صبر کن' });
   if (!authRateOk('verify-ip:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const rec = pendingCodes.get(phone);
@@ -575,7 +549,6 @@ app.post('/api/complete-register', (req, res) => {
   const displayName = String((req.body || {}).displayName || '').trim();
   let username = String((req.body || {}).username || '').trim();
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
-  if (hardBanHit(phone, req)) return res.status(403).json({ error: 'این شماره یا دستگاه مسدود شده است' });
   const rec = pendingCodes.get(phone);
   if (!noOtpEnabled) {
     if (!rec || rec.exp < Date.now() || rec.code !== code) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
@@ -618,7 +591,6 @@ function auth(req, res, next) {
   const username = getSession(token);
   const user = username && db.users.find((u) => u.username === username);
   if (!user || user.banned) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
-  if (hardBanHit(user.phone, req)) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
   setSessionCookie(res, token);
   req.user = user;
   next();
@@ -985,67 +957,6 @@ app.post('/api/admin/ban', auth, (req, res) => {
   target.banned = !!banned;
   saveDB();
   if (banned) kickUser(target.username);
-  pushUsers();
-  res.json({ ok: true });
-});
-// هارد‌بن (بنِ جهانی بر اساس شماره تلفن + اثر انگشت دستگاه) — فقط ادمین اصلی
-app.post('/api/admin/hard-ban', auth, (req, res) => {
-  if (!req.user.isAdmin || !isOriginalAdmin(req.user)) return res.status(403).json({ error: 'فقط ادمین اصلی' });
-  const { username } = req.body || {};
-  const target = db.users.find((u) => u.username === String(username).replace('@', ''));
-  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
-  if (target.isAdmin) return res.status(400).json({ error: 'ادمین قابل بن نیست' });
-  // جمع‌آوری اثر انگشت‌های دستگاه — محافظه‌کارانه: فقط اپ یا مدل گوشی واقعی.
-  // «Chrome — وب» یا سایر دستگاه‌های دسکتاپ قابل‌تشخیص نیستند و بن نمی‌شوند تا همه‌ی
-  // کاربران مرورگر آسیب نبینند.
-  const bannedPhones = new Set();
-  const bannedDeviceFps = new Set();
-  if (target.phone) bannedPhones.add(target.phone);
-  if (target.devices && Array.isArray(target.devices)) {
-    for (const d of target.devices) {
-      if (d.app && d.device) bannedDeviceFps.add(d.device);
-      if (d.model && d.os) bannedDeviceFps.add(`${d.model}|${d.os}`);
-      if (d.fingerprint) bannedDeviceFps.add(d.fingerprint);
-    }
-  }
-  if (!db.globalBans) db.globalBans = { phones: [], deviceFps: [] };
-  for (const p of bannedPhones) if (!db.globalBans.phones.includes(p)) db.globalBans.phones.push(p);
-  for (const f of bannedDeviceFps) if (!db.globalBans.deviceFps.includes(f)) db.globalBans.deviceFps.push(f);
-  // بنِ کاربر
-  target.banned = true;
-  if (!Array.isArray(target.bannedPhones)) target.bannedPhones = [];
-  if (!Array.isArray(target.bannedDeviceFps)) target.bannedDeviceFps = [];
-  for (const p of bannedPhones) if (!target.bannedPhones.includes(p)) target.bannedPhones.push(p);
-  for (const f of bannedDeviceFps) if (!target.bannedDeviceFps.includes(f)) target.bannedDeviceFps.push(f);
-  saveDB();
-  kickUser(target.username);
-  pushUsers();
-  res.json({ ok: true, bannedPhones: Array.from(bannedPhones), bannedDeviceFps: Array.from(bannedDeviceFps) });
-});
-// رفع هارد‌بن
-app.post('/api/admin/unhard-ban', auth, (req, res) => {
-  if (!req.user.isAdmin || !isOriginalAdmin(req.user)) return res.status(403).json({ error: 'فقط ادمین اصلی' });
-  const { username } = req.body || {};
-  const target = db.users.find((u) => u.username === String(username).replace('@', ''));
-  if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
-  if (target.bannedPhones && target.bannedPhones.length) {
-    for (const p of target.bannedPhones) {
-      if (db.globalBans && db.globalBans.phones) {
-        db.globalBans.phones = db.globalBans.phones.filter((x) => x !== p);
-      }
-    }
-  }
-  if (target.bannedDeviceFps && target.bannedDeviceFps.length) {
-    for (const f of target.bannedDeviceFps) {
-      if (db.globalBans && db.globalBans.deviceFps) {
-        db.globalBans.deviceFps = db.globalBans.deviceFps.filter((x) => x !== f);
-      }
-    }
-  }
-  target.banned = false;
-  target.bannedPhones = [];
-  target.bannedDeviceFps = [];
-  saveDB();
   pushUsers();
   res.json({ ok: true });
 });
@@ -1424,6 +1335,23 @@ function enrichMsg(m) {
     fromAvatar: m.fromAvatar || (u && u.avatar) || null,
     fromPremium: m.fromPremium || !!(u && u.isPremium),
   };
+}
+// بهینه: map کاربران برای enrichMsg سریع
+function enrichMsgBatch(messages) {
+  if (!messages.length) return [];
+  const userMap = new Map();
+  for (const m of messages) {
+    if (m.from && !userMap.has(m.from)) userMap.set(m.from, db.users.find((x) => x.username === m.from));
+  }
+  return messages.map((m) => {
+    const u = userMap.get(m.from);
+    return {
+      ...m,
+      reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
+      fromAvatar: m.fromAvatar || (u && u.avatar) || null,
+      fromPremium: m.fromPremium || !!(u && u.isPremium),
+    };
+  });
 }
 
 // ادمین: اتاق‌های چت یک کاربر
@@ -1879,7 +1807,7 @@ wss.on('connection', (ws, req) => {
       if (!wsRateOk(username, 'history', 30, 60 * 1000)) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
-      const msgs = (db.messages[roomId] || []).slice(-100).map(enrichMsg);
+      const msgs = enrichMsgBatch((db.messages[roomId] || []).slice(-100));
       wsSend(ws, { type: 'history', roomId, messages: msgs });
       return;
     }
