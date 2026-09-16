@@ -100,10 +100,10 @@ const state = {
   token: localStorage.getItem('ft_token') || null, me: null, ws: null,
   groups: [], users: [], chatState: {}, readState: {}, pinned: {},
   room: null, replyTo: null, rooms: {}, chatFilter: 'all', search: '', nav: 'chats', notifications: [],
-  deletedIds: new Set(),
+  deletedIds: new Set(), renderedRooms: new Set(),
   fontScale: parseInt(localStorage.getItem('vx_fontsize') || '14', 10),
-  profileReturnRoom: null,  // Room to return to after closing profile
-  profileReturnNav: null,  // Nav view to return to after closing profile
+  profileReturnRoom: null,
+  profileReturnNav: null,
 };
 
 /* AUTH */
@@ -419,7 +419,7 @@ function handleWS(d) {
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
     case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (d.username === state.me.username && state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); refreshReadTicks(d.roomId); break;
-    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); $('messages').innerHTML = ''; state.lastDay = null; d.messages.forEach(addMessage); renderReplyCounts(d.roomId); scrollBottom(); break;
+    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); if (!state.renderedRooms.has(d.roomId)) { $('messages').innerHTML = ''; state.lastDay = null; d.messages.forEach(addMessage); renderReplyCounts(d.roomId); scrollBottom(); state.renderedRooms.add(d.roomId); } break;
     case 'message': onNewMessage(d.message); break;
     case 'message-updated': updateMessage(d); break;
     case 'message-edited': {
@@ -592,17 +592,17 @@ function openRoom(rid) {
   setReply(null);
   document.querySelectorAll('.chat-item').forEach((e) => e.classList.toggle('active', e.dataset.roomId === rid));
   if (isMobile()) { $('details-panel').classList.remove('open'); } else { $('details-panel').classList.add('hidden'); }
-  renderRoomHeader(); markRead(rid); buildChatList();
+  renderRoomHeader(); markRead(rid);
   setMode('chats');
   if (isMobile()) { $('details-panel').classList.remove('open'); $('conversation').classList.add('chat-open'); showScrim(false); }
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
   if (state.ws && state.ws.readyState === 1) {
-    if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; cachedMsgs.forEach(addMessage); scrollBottom(); }
+    if (canRenderCache) { $('messages').innerHTML = ''; state.lastDay = null; cachedMsgs.forEach(addMessage); scrollBottom(); state.renderedRooms.add(rid); }
     state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   } else {
-    $('messages').innerHTML = ''; state.lastDay = null; cachedMsgs.forEach(addMessage); scrollBottom();
+    $('messages').innerHTML = ''; state.lastDay = null; cachedMsgs.forEach(addMessage); scrollBottom(); state.renderedRooms.add(rid);
   }
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
