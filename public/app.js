@@ -1771,6 +1771,11 @@ function setReply(m) {
 }
 $('messages').addEventListener('click', (e) => { const a = e.target.closest('.msg-action'); if (a) { /* handled inline */ } });
 /* Mobile: تپ روی پیام → باز کردن منوی پیام (بخش‌های تعاملی/چندرسانه‌ای رفتار خودشان را دارند) */
+let _tapPtr = null;
+document.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#messages .msg')) _tapPtr = { x: e.clientX, y: e.clientY, t: Date.now() };
+}, { passive: true });
+document.addEventListener('pointercancel', () => { _tapPtr = null; }, { passive: true });
 $('messages').addEventListener('click', (e) => {
   if (!isMobile() || _selectMode) return;
   if (e.target.closest('a, button, input, textarea, select, .reac, .reply-ref, .msg-actions, .emoji-pop, .react-pop, .msg-ctx, .msg-sheet, .ctx-scrim, video, audio')) return;
@@ -1780,6 +1785,8 @@ $('messages').addEventListener('click', (e) => {
   if (!msgEl || !msgEl.dataset.id) return;
   const m = (state.rooms[state.room] || {}).messages.find((x) => x.id === msgEl.dataset.id);
   if (!m) return;
+  const tp = _tapPtr; _tapPtr = null;
+  if (tp && (Date.now() - tp.t) < 850 && (Math.abs(e.clientX - tp.x) > 10 || Math.abs(e.clientY - tp.y) > 10)) return;
   e.preventDefault(); e.stopPropagation();
   openMsgCtx(m, msgEl.querySelector('.bubble') || msgEl, { x: e.clientX, y: e.clientY });
 });
