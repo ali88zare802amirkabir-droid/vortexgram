@@ -1131,12 +1131,26 @@ app.post('/api/forward', auth, (req, res) => {
 // ===== سنجاق چندگانه =====
 app.post('/api/pin', auth, (req, res) => {
   if (!authRateOk('pin:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
-  const { roomId, msgId } = req.body || {};
+  const { roomId, msgId, scope } = req.body || {};
   const rid = String(roomId || '');
   if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
-  if (!db.pinned[rid]) db.pinned[rid] = [];
   const mid = String(msgId || '') || '';
-  // سنجاق فقط برای پیام‌های موجود در همان اتاق پذیرفته می‌شود (unpin پیامِ حذف‌شده مجاز است)
+  if (db.pinned[rid] && db.pinned[rid].indexOf(mid) === -1 && !(db.messages[rid] || []).some((m) => m.id === mid)) { /* allow unpin even if deleted */ }
+  // channel: always global
+  const isChannel = rid.startsWith('group:') && ((findGroup(rid.slice(6))||{}).type==='channel');
+  const wantPersonal = scope==='personal' && !isChannel;
+  if(wantPersonal){
+    const st=chatStateOf(req.user.username);
+    if(!st[rid]) st[rid]={}; if(!st[rid].pinned) st[rid].pinned=[];
+    const arr=st[rid].pinned; const i=arr.indexOf(mid);
+    if(i>=0) arr.splice(i,1); else arr.push(mid);
+    saveDB();
+    // only to this user
+    const wsForUser = [...wss.clients].filter(c=>c.username===req.user.username);
+    wsForUser.forEach(c=>{ try{ c.send(JSON.stringify({type:'pinned-updated', roomId:rid, ids:arr, personal:true})); }catch(e){} });
+    return res.json({ ok: true, ids: arr, personal:true });
+  }
+  if (!db.pinned[rid]) db.pinned[rid] = [];
   if (db.pinned[rid].indexOf(mid) === -1 && !(db.messages[rid] || []).some((m) => m.id === mid)) return res.status(404).json({ error: 'پیام یافت نشد' });
   const i = db.pinned[rid].indexOf(mid);
   if (i >= 0) db.pinned[rid].splice(i, 1);
@@ -1592,6 +1606,33 @@ app.post('/api/groups/join/:token', auth, (req, res) => {
   saveDB();
   broadcastGroups();
   res.json({ ok: true, group: { id: g.id, name: g.name, type: g.type } });
+});
+
+// channel/group edit: rename, username, visibility
+app.patch('/api/groups/:id', auth, (req, res)=>{
+  const g=findGroup(req.params.id);
+  if(!g) return res.status(404).json({error:'یافت نشد'});
+  if(g.owner!==req.user.username && !req.user.isAdmin) return res.status(403).json({error:'فقط مالک'});
+  const {name, username, visibility} = req.body||{};
+  if(typeof name==='string'){
+    const n=name.trim();
+    if(n.length<2||n.length>30) return res.status(400).json({error:'نام ۲ تا ۳۰ کاراکتر'});
+    g.name=n;
+  }
+  if(typeof username==='string'){
+    let u=username.trim().replace(/^@/,'').toLowerCase();
+    if(u){
+      if(!/^[a-z0-9_]{3,20}$/.test(u)) return res.status(400).json({error:'ایدی ۳-۲۰ حرف/عدد/_'});
+      if(db.groups.some(x=>x.username===u && x.id!==g.id)) return res.status(409).json({error:'ایدی قبلا گرفته شده'});
+      g.username=u;
+    } else g.username=null;
+  }
+  if(typeof visibility==='string'){
+    if(!['public','private'].includes(visibility)) return res.status(400).json({error:'نوع نامعتبر'});
+    g.visibility=visibility;
+  }
+  saveDB(); broadcastGroups();
+  res.json({ok:true, group:g});
 });
 
 // ---------- وضعیت چت‌ها: بایگانی / سنجاق ----------

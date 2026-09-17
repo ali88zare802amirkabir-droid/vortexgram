@@ -77,6 +77,13 @@
         <div class="cl-tab" data-tab="channels">کانال‌ها</div>
         <div class="cl-tab" data-tab="bots">ربات‌ها</div>
       </div>
+      <div id="now-playing" class="now-playing hidden" aria-live="polite">
+        <div class="np-art"><i data-lucide="music" class="icon"></i></div>
+        <div class="np-meta"><div class="np-title">در حال پخش</div><div class="np-sub"></div></div>
+        <button class="np-btn" id="np-toggle" aria-label="توقف/پخش"><i data-lucide="pause" class="icon"></i></button>
+        <button class="np-btn ghost" id="np-close" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
+        <div class="np-prog"><div class="np-fill" id="np-fill"></div></div>
+      </div>
       <div class="cl-items" id="cl-items"></div>
     </section>
 

@@ -760,6 +760,14 @@ function renderMessagesBatch(messages) {
     if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
     actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); const w = e.target.closest('.msg'); const anchor = w ? (w.querySelector('.bubble') || w) : null; openMsgCtx(m, anchor, { x: e.clientX, y: e.clientY }); };
     wrap.appendChild(actions);
+    // new mini reply + reaction rail (desktop)
+    const miniReply=document.createElement('button'); miniReply.className='msg-mini-reply'; miniReply.innerHTML=ic('reply'); miniReply.title='پاسخ'; miniReply.onclick=(e)=>{ e.stopPropagation(); setReply(m); }; wrap.appendChild(miniReply);
+    const rail=document.createElement('div'); rail.className='msg-react-rail';
+    const mainEm=document.createElement('button'); mainEm.className='rr-main'; mainEm.textContent='😊'; mainEm.title='واکنش'; rail.appendChild(mainEm);
+    const pop=document.createElement('div'); pop.className='rr-pop';
+    const more=document.createElement('button'); more.className='rr-more'; more.innerHTML=ic('more-horizontal'); more.title='همه ایموجی‌ها'; more.onclick=(e)=>{ e.stopPropagation(); openReactionPicker(m,bubble); }; pop.appendChild(more);
+    REACTIONS.forEach(em=>{ const b=document.createElement('button'); b.className='rr-emoji'; b.textContent=em; b.onclick=(e)=>{ e.stopPropagation(); toggleReaction(m.id,em,m.roomId||state.room,m); }; pop.appendChild(b); });
+    rail.appendChild(pop); wrap.appendChild(rail);
     if (m.kind === 'sticker') {
       wrap.classList.add('msg-sticker', 'emoji-enter');
       setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
@@ -1038,12 +1046,13 @@ function voiceEl(m) {
     btn.innerHTML = ic('refresh-cw');
     luc();
   };
-  aud.onplay = () => { d.classList.add('voice-playing'); d.classList.remove('voice-error'); btn.innerHTML = ic('pause'); paint(); luc(); };
-  aud.onpause = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); };
-  aud.onended = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); if (window._cva === aud) window._cva = null; };
+  aud.onplay = () => { d.classList.add('voice-playing'); d.classList.remove('voice-error'); btn.innerHTML = ic('pause'); paint(); luc(); const bar=document.getElementById('now-playing'); if(bar){ window._npAudio=aud; bar.classList.remove('hidden'); const t=(m&&m.name)||'ویس'; const sub=bar.querySelector('.np-sub'); if(sub) sub.textContent=t; luc(); const upd=()=>{ const fill=document.getElementById('np-fill'); const tt=totalDur||aud.duration||0; const cur=aud.currentTime||0; if(fill) fill.style.width=(tt>0?Math.round(cur/tt*100):0)+'%'; if(sub) sub.textContent=t+' • '+fmtDur(cur)+' / '+fmtDur(tt); if(!aud.paused) requestAnimationFrame(upd); }; upd(); } };
+  aud.onpause = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); const bar=document.getElementById('now-playing'); if(bar && window._npAudio===aud){ const b=bar.querySelector('#np-toggle'); if(b){ b.innerHTML=ic('play'); luc(); } } };
+  aud.onended = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); if (window._cva === aud) window._cva = null; const bar=document.getElementById('now-playing'); if(bar && window._npAudio===aud) bar.classList.add('hidden'); if(window._npAudio===aud) window._npAudio=null; };
   aud.ontimeupdate = paint;
   return d;
 }
+if(!window._npBound){ window._npBound=true; document.addEventListener('click',(e)=>{ if(e.target.closest('#np-toggle')){ if(window._npAudio){ if(window._npAudio.paused) window._npAudio.play(); else window._npAudio.pause(); const bar=document.getElementById('now-playing'); if(bar){ const ic2=window._npAudio&&!window._npAudio.paused?'pause':'play'; bar.querySelector('#np-toggle').innerHTML=ic(ic2); luc(); } } } if(e.target.closest('#np-close')){ if(window._npAudio) window._npAudio.pause(); const bar=document.getElementById('now-playing'); if(bar) bar.classList.add('hidden'); window._npAudio=null; } }); }
 function pollEl(m) {
   const d = document.createElement('div'); d.className = 'poll'; const opts = m.poll.options;
   const votes = m.poll.votes || {};
@@ -1172,6 +1181,19 @@ const __memCache = new Map();          // url -> blob URL (برای عدم دا�
 function memCacheSet(k, v) {
   if (__memCache.size >= (LOW_END ? 20 : 80)) { const first = __memCache.keys().next().value; try { URL.revokeObjectURL(first); } catch (e) {} __memCache.delete(first); }
   __memCache.set(k, v);
+  try{ vxIdbPut(k, v); }catch(e){}
+}
+// IndexedDB persistent cache for media blobs (survives browser restart)
+const VX_IDB='vx-media', VX_STORE='blobs';
+function vxIdb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(VX_IDB,1); r.onupgradeneeded=()=>{ try{ r.result.createObjectStore(VX_STORE);}catch(e){} }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function vxIdbPut(url, blobUrl){
+  try{
+    const blob = await (await fetch(blobUrl)).blob();
+    const db = await vxIdb(); const tx=db.transaction(VX_STORE,'readwrite'); tx.objectStore(VX_STORE).put(blob, url);
+  }catch(e){}
+}
+async function vxIdbGet(url){
+  try{ const db=await vxIdb(); return await new Promise((res,rej)=>{ const tx=db.transaction(VX_STORE,'readonly'); const rq=tx.objectStore(VX_STORE).get(url); rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>res(null); }); }catch(e){ return null; }
 }
 const DL_C = 100.53;                    // محیط حلقه (2πr برای r=16 در viewBox 36)
 
@@ -1245,7 +1267,11 @@ function fetchMediaStream(url, onPct, onDone, onErr) {
 // دانلود دستی عکس: دکمه «دانلود» → حلقه → نمایش؛ لغو → دکمه دوباره (بدون دانلود خودکار)
 function attachImageTransfer(holder, im, src) {
   const cached = __memCache.get(src);
-  if (cached) { im.src = cached; im.onclick = () => openViewer(src, 'image'); return; }
+  if (cached) { im.src = cached; im.onclick = () => openViewer(cached, 'image', src); return; }
+  // try IDB persistent cache
+  vxIdbGet(src).then(b=>{
+    if(b){ const u=URL.createObjectURL(b); memCacheSet(src,u); im.src=u; holder.classList.remove('dl-loading'); const ov2=holder.querySelector('.dl-overlay'); if(ov2) ov2.remove(); im.onclick=()=>openViewer(u,'image',src); im.classList.add('loaded'); }
+  });
   holder.classList.add('dl-loading');
   const ov = document.createElement('div'); ov.className = 'dl-overlay';
   const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
@@ -1285,7 +1311,8 @@ function attachImageTransfer(holder, im, src) {
 // دانلود دستی فیلم: دکمه «دانلود» → حلقه → پخش؛ بدون دانلود خودکار
 function attachVideoTransfer(holder, v, src) {
   const cached = __memCache.get(src);
-  if (cached) { v.src = cached; return; }
+  if (cached) { v.src = cached; v.onclick=()=>openViewer(cached,'video',src); return; }
+  vxIdbGet(src).then(b=>{ if(b){ const u=URL.createObjectURL(b); memCacheSet(src,u); v.src=u; holder.classList.remove('dl-loading'); const ov2=holder.querySelector('.dl-overlay'); if(ov2) ov2.remove(); v.onclick=()=>openViewer(u,'video',src); } });
   holder.classList.add('dl-loading');
   const ov = document.createElement('div'); ov.className = 'dl-overlay';
   const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
@@ -2702,8 +2729,46 @@ function showAuth() {
 
 /* PROFILE */
 
-/* VIEWER */
-function openViewer(src, kind) { const v = document.createElement('div'); v.className = 'viewer'; const s = esc(src); v.innerHTML = (kind === 'video' ? '<video src="' + s + '" controls autoplay></video>' : '<img src="' + s + '">') + '<div class="v-close" onclick="this.parentNode.remove()">' + ic('x') + '</div>'; v.onclick = (e) => { if (e.target === v) v.remove(); }; document.body.appendChild(v); luc(); }
+/* VIEWER — custom, swipe up/down to dismiss, uses cached blob if available */
+function openViewer(src, kind, origUrl) {
+  const v = document.createElement('div'); v.className = 'viewer';
+  const useSrc = src;
+  const escSrc = esc(useSrc);
+  // try to use origUrl for display; src may be blob
+  if(kind==='video'){
+    v.innerHTML = '<div class="vxv-wrap"><video src="'+escSrc+'" playsinline></video><div class="vxv-ctrl"><button class="vxv-btn" data-a="play">'+ic('play')+'</button><div class="vxv-prog"><div class="vxv-fill"></div></div><span class="vxv-time">0:00 / 0:00</span><button class="vxv-btn" data-a="fs">'+ic('maximize')+'</button><button class="vxv-btn" data-a="dl">'+ic('download')+'</button><button class="vxv-btn" data-a="close">'+ic('x')+'</button></div></div>';
+  } else {
+    v.innerHTML = '<img src="'+escSrc+'" draggable="false"><div class="v-close">'+ic('x')+'</div>';
+  }
+  document.body.appendChild(v); luc();
+  // video custom controls
+  if(kind==='video'){
+    const vd=v.querySelector('video'), btn=v.querySelector('[data-a="play"]'), fill=v.querySelector('.vxv-fill'), tm=v.querySelector('.vxv-time');
+    const fmt=s=>{ s=Math.floor(s||0); return Math.floor(s/60)+":"+String(s%60).padStart(2,'0'); };
+    const upd=()=>{ if(vd.duration) { fill.style.width=Math.round(vd.currentTime/vd.duration*100)+"%"; tm.textContent=fmt(vd.currentTime)+" / "+fmt(vd.duration); } };
+    vd.addEventListener('timeupdate',upd); vd.addEventListener('loadedmetadata',upd);
+    btn.onclick=()=>{ if(vd.paused) vd.play(); else vd.pause(); };
+    vd.addEventListener('play',()=>{ btn.innerHTML=ic('pause'); luc(); }); vd.addEventListener('pause',()=>{ btn.innerHTML=ic('play'); luc(); });
+    v.querySelector('[data-a="fs"]').onclick=()=>{ if(vd.requestFullscreen) vd.requestFullscreen(); };
+    v.querySelector('[data-a="dl"]').onclick=()=>{ const a=document.createElement('a'); a.href=useSrc; a.download='video'; a.click(); };
+    v.querySelector('[data-a="close"]').onclick=()=>v.remove();
+    v.querySelector('.vxv-prog').onclick=(e)=>{ const r=e.currentTarget.getBoundingClientRect(); const p=(e.clientX-r.left)/r.width; if(vd.duration) vd.currentTime=p*vd.duration; };
+    vd.play().catch(()=>{});
+  } else {
+    v.querySelector('.v-close').onclick=()=>v.remove();
+  }
+  v.onclick=(e)=>{ if(e.target===v) v.remove(); };
+  // swipe up/down to dismiss
+  let sy=0, dy=0, dragging=false;
+  const el = kind==='video' ? v.querySelector('.vxv-wrap') : v.querySelector('img');
+  const onDown=(e)=>{ dragging=true; sy=(e.touches?e.touches[0].clientY:e.clientY); v.style.transition='none'; };
+  const onMove=(e)=>{ if(!dragging) return; const y=(e.touches?e.touches[0].clientY:e.clientY); dy=y-sy; if(el){ el.style.transform='translateY('+dy+'px) scale('+(1-Math.min(0.2,Math.abs(dy)/600))+')'; v.style.background='rgba(0,0,0,'+(0.9-Math.min(0.5,Math.abs(dy)/400))+')'; } };
+  const onUp=()=>{ if(!dragging) return; dragging=false; v.style.transition=''; if(Math.abs(dy)>90) v.remove(); else { if(el) el.style.transform=''; v.style.background=''; } dy=0; };
+  v.addEventListener('touchstart',onDown,{passive:true}); v.addEventListener('touchmove',onMove,{passive:true}); v.addEventListener('touchend',onUp);
+  v.addEventListener('mousedown',onDown); window.addEventListener('mousemove',onMove); window.addEventListener('mouseup',onUp);
+  // esc close
+  const escH=(e)=>{ if(e.key==='Escape'){ v.remove(); document.removeEventListener('keydown',escH); } }; document.addEventListener('keydown',escH);
+}
 
 /* IN-APP DIALOGS (موبایل: بدون prompt/confirm مرورگر که روی iOS باز نمی‌شود) */
 function uPrompt(title, initial, placeholder) {
@@ -2748,7 +2813,7 @@ function openNewMenu(anchor) {
   // اگر باز است، ببند (تاگل) و جلوگیری از چند منوی روی‌هم
   const opened = document.querySelectorAll('.ctx-menu');
   if (opened.length) { opened.forEach((n) => n.remove()); return; }
-  const pop = document.createElement('div'); pop.className = 'ctx-menu';
+  const pop = document.createElement('div'); pop.className = 'ctx-menu anchored';
   const src = anchor || $('cl-new');
   if (src && typeof src.getBoundingClientRect === 'function') {
     const btn = src.getBoundingClientRect();
