@@ -52,9 +52,10 @@
 
   <div id="app" class="hidden">
     <aside id="nav-sidebar">
-      <button class="nav-toggle" id="nav-toggle" title="باز/بسته"><i data-lucide="panel-left-open" class="icon"></i></button>
-      <div class="nav-logo"><span class="mark">V</span><b>VORTEX</b><small> Messenger</small></div>
-      <div class="nav-profile" id="nav-profile">
+<button class="nav-toggle" id="nav-toggle" title="باز/بسته"><i data-lucide="panel-left-open" class="icon"></i></button>
+        <button class="icon-btn" id="nav-pencil" title="ساخت گروه یا کانال" aria-label="ساخت گروه یا کانال"><i data-lucide="square-pen" class="icon"></i></button>
+        <div class="nav-logo"><span class="mark">V</span><b>VORTEX</b><small> Messenger</small></div>
+        <div class="nav-profile" id="nav-profile">
         <div class="av sm" id="nav-av">?</div>
         <div class="meta"><div class="nm" id="nav-name">...</div><div class="st">● آنلاین</div></div>
       </div>
@@ -77,14 +78,14 @@
         <div class="cl-tab" data-tab="channels">کانال‌ها</div>
         <div class="cl-tab" data-tab="bots">ربات‌ها</div>
       </div>
-      <div id="now-playing" class="now-playing hidden" aria-live="polite">
+      <div id="now-playing" class="now-playing hidden" aria-live="polite" style="position:stackbar;top:0;left:0;width:100%;z-index:50;background:var(--surface);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;gap:10px;justify-content:space-between;">
         <div class="np-art"><i data-lucide="music" class="icon"></i></div>
         <div class="np-meta"><div class="np-title">در حال پخش</div><div class="np-sub"></div></div>
         <button class="np-btn" id="np-toggle" aria-label="توقف/پخش"><i data-lucide="pause" class="icon"></i></button>
         <button class="np-btn ghost" id="np-close" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
         <div class="np-prog"><div class="np-fill" id="np-fill"></div></div>
       </div>
-      <div class="cl-items" id="cl-items"></div>
+<div class="cl-items" id="cl-items"></div>
     </section>
 
     <main id="conversation">
@@ -108,6 +109,13 @@
           </div>
         </div>
         <div id="conv-searchbox" class="hidden" style="padding:8px 14px;border-bottom:1px solid var(--border)"><input id="conv-search-input" class="input" placeholder="جستجو در این چت..." /></div>
+        <div id="now-playing-main" class="now-playing-main hidden" style="position:sticky;top:0;background:var(--surface);z-index:30;border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;gap:10px;">
+          <div class="np-art"><i data-lucide="music" class="icon"></i></div>
+          <div class="np-meta"><div class="np-title" id="np-title-main">در حال پخش</div><div class="np-sub" id="np-sub-main"></div></div>
+          <button class="np-btn" id="np-toggle-main" aria-label="توقف/پخش"><i data-lucide="pause" class="icon"></i></button>
+          <button class="np-btn ghost" id="np-close-main" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
+          <div class="np-prog"><div class="np-fill" id="np-fill-main"></div></div>
+        </div>
         <div id="messages"></div>
         <button id="scroll-fab" class="scroll-fab hidden" title="رفتن به پایین"><i data-lucide="arrow-down" class="icon"></i></button>
         <div id="reply-bar" class="hidden"></div>
@@ -120,6 +128,7 @@
             <button class="icon-btn" id="composer-mic" title="ضبط صدا" aria-label="ضبط پیام صوتی"><i data-lucide="mic" class="icon"></i></button>
           </div>
           <textarea id="composer-input" placeholder="پیام بنویس..." rows="1"></textarea>
+          <div id="mention-pop" class="mention-pop hidden"></div>
           <button class="send-btn" id="composer-send"><i data-lucide="send" class="icon"></i></button>
           <div id="rec-inline" class="rec-inline hidden">
             <button class="rec-inline-btn rec-inline-del" id="rec-inline-del" title="لغو"><i data-lucide="trash-2" class="icon"></i></button>
@@ -166,5 +175,14 @@
   window.addEventListener('appinstalled', function () { var b = window.__pwaBtn; if (b) b.remove(); });
 })();
 </script>
+  <div id="pencil-menu" class="pencil-menu hidden" role="menu" aria-label="منوی ساخت گروه/کانال">
+    <div class="pencil-menu-inner">
+      <button class="pencil-menu-close" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
+      <div class="pencil-menu-section">
+        <div class="pencil-menu-item" data-type="group"><i data-lucide="square-pen" class="icon"></i><span> گروه جدید</span></div>
+        <div class="pencil-menu-item" data-type="channel"><i data-lucide="folder" class="icon"></i><span> کانال جدید</span></div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

@@ -372,6 +372,32 @@ function renderNav() {
   luc();
 }
 $('nav-toggle').onclick = () => { if (isMobile()) { $('nav-sidebar').classList.remove('m-open'); showScrim(false); } else $('nav-sidebar').classList.toggle('expanded'); };
+$('nav-pencil').onclick = (e) => { e.stopPropagation(); openPencilMenu(e.currentTarget); };
+function openPencilMenu(anchor) {
+  const menu = $('pencil-menu'); if (!menu) return;
+  if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+  menu.classList.remove('hidden');
+  const r = anchor.getBoundingClientRect();
+  let left = r.right + 8, top = r.top;
+  if (left + 230 > window.innerWidth - 8) left = Math.max(8, r.left - 230 - 8);
+  if (top + 120 > window.innerHeight - 8) top = Math.max(8, window.innerHeight - 128);
+  menu.style.left = left + 'px'; menu.style.top = top + 'px';
+  luc();
+}
+document.addEventListener('click', (e) => {
+  const menu = $('pencil-menu');
+  if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target) && !e.target.closest('#nav-pencil')) menu.classList.add('hidden');
+});
+$('pencil-menu').addEventListener('click', (e) => {
+  const item = e.target.closest('.pencil-menu-item');
+  if (item && item.dataset.type) {
+    $('pencil-menu').classList.add('hidden');
+    if (item.dataset.type === 'group') startGroup();
+    else if (item.dataset.type === 'channel') startGroup(true);
+    return;
+  }
+  if (e.target.closest('.pencil-menu-close') || e.target === $('pencil-menu')) $('pencil-menu').classList.add('hidden');
+});
 function switchNav(id) {
   state.nav = id;
   if (isMobile()) $('nav-sidebar').classList.remove('m-open');
@@ -583,7 +609,7 @@ function msgSenderName(m) {
 }
 $('cl-tabs').addEventListener('click', (e) => { const t = e.target.closest('.cl-tab'); if (!t) return; document.querySelectorAll('.cl-tab').forEach((x) => x.classList.remove('active')); t.classList.add('active'); state.chatFilter = t.dataset.tab; buildChatList(); });
 $('cl-search-input').addEventListener('input', (e) => { state.search = e.target.value; buildChatList(); });
-$('cl-new').onclick = (e) => { e.stopPropagation(); openNewMenu(); };
+$('cl-new').onclick = (e) => { e.stopPropagation(); openNewMenu(e.currentTarget); };
 $('cl-menu').onclick = () => { const open = !$('nav-sidebar').classList.contains('m-open'); $('nav-sidebar').classList.toggle('m-open', open); showScrim(open); };
 /* PART 2 — conversation, messages, composer, details */
 function openRoom(rid) {
@@ -860,6 +886,7 @@ function replyRef(rt) {
 }
 function bodyEl(m) {
   const b = document.createElement('div'); b.className = 'msg-body';
+  if (m.replyTo) { b.appendChild(replyRef(m.replyTo)); }
   if (m.kind === 'image' || m.kind === 'video') { b.appendChild(mediaEl(m)); }
   else if (m.kind === 'album') { b.appendChild(albumEl(m)); }
   else if (m.kind === 'voice') { b.appendChild(voiceEl(m)); }
@@ -867,8 +894,21 @@ function bodyEl(m) {
   else if (m.kind === 'sticker') { const s = document.createElement('img'); s.className = 'sticker'; s.src = m.sticker || m.content; b.appendChild(s); }
   else if (m.kind === 'poll') { b.appendChild(pollEl(m)); }
   else if (m.kind === 'checklist') { b.appendChild(checklistEl(m)); }
-  else b.textContent = m.content || '';
+  else { b.innerHTML = formatText(m.content || ''); }
   return b;
+}
+/* MARKDOWN TEXT FORMATTING (inline: bold, italic, code, strikethrough, links, mentions) */
+function formatText(t) {
+  if (!t) return '';
+  let s = esc(t);
+  s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  s = s.replace(/\*(.+?)\*/g, '<i>$1</i>');
+  s = s.replace(/`(.+?)`/g, '<code>$1</code>');
+  s = s.replace(/~~(.+?)~~/g, '<s>$1</s>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
+  s = s.replace(/\n/g, '<br>');
+  return s;
 }
 function mediaEl(m) {
   const d = document.createElement('div'); d.className = 'media';
@@ -1046,13 +1086,56 @@ function voiceEl(m) {
     btn.innerHTML = ic('refresh-cw');
     luc();
   };
-  aud.onplay = () => { d.classList.add('voice-playing'); d.classList.remove('voice-error'); btn.innerHTML = ic('pause'); paint(); luc(); const bar=document.getElementById('now-playing'); if(bar){ window._npAudio=aud; bar.classList.remove('hidden'); const t=(m&&m.name)||'ویس'; const sub=bar.querySelector('.np-sub'); if(sub) sub.textContent=t; luc(); const upd=()=>{ const fill=document.getElementById('np-fill'); const tt=totalDur||aud.duration||0; const cur=aud.currentTime||0; if(fill) fill.style.width=(tt>0?Math.round(cur/tt*100):0)+'%'; if(sub) sub.textContent=t+' • '+fmtDur(cur)+' / '+fmtDur(tt); if(!aud.paused) requestAnimationFrame(upd); }; upd(); } };
-  aud.onpause = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); const bar=document.getElementById('now-playing'); if(bar && window._npAudio===aud){ const b=bar.querySelector('#np-toggle'); if(b){ b.innerHTML=ic('play'); luc(); } } };
-  aud.onended = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); if (window._cva === aud) window._cva = null; const bar=document.getElementById('now-playing'); if(bar && window._npAudio===aud) bar.classList.add('hidden'); if(window._npAudio===aud) window._npAudio=null; };
+  aud.onplay = () => { d.classList.add('voice-playing'); d.classList.remove('voice-error'); btn.innerHTML = ic('pause'); paint(); luc(); showNowPlaying(aud, (m&&m.name)||'ویس', totalDur); };
+  function showNowPlaying(aud, name, duration) {
+    const bars = [document.getElementById('now-playing'), document.getElementById('now-playing-main')];
+    const t = name || 'ویس';
+    bars.forEach(bar => { if (bar) { bar.classList.remove('hidden'); const sub=bar.querySelector('.np-sub'); if(sub) sub.textContent = t; const title=bar.querySelector('.np-title'); if(title) title.textContent='در حال پخش'; } });
+    window._npAudio = aud;
+    window._npName = t;
+    window._npDur = duration || aud.duration || 0;
+    window._npStart = Date.now();
+    window._npUpdate = () => {
+      const cur = (Date.now() - window._npStart) / 1000;
+      const tt = window._npDur || aud.duration || 0;
+      bars.forEach(bar => {
+        if (!bar) return;
+        const fill=bar.querySelector('#np-fill');
+        const prog=bar.querySelector('.np-prog');
+        if (fill) fill.style.width = (tt > 0 ? Math.round((aud.currentTime || cur) / tt * 100) : 0) + '%';
+        const ttFmt = Math.floor(tt), curFmt = Math.floor(aud.currentTime || cur);
+        const tf = (t, v) => { const mm = Math.floor(t); return String(Math.floor(mm/60)) + ':' + String(v%60 || 0).padStart(2,'0'); }
+        const sub=bar.querySelector('.np-sub');
+        if (sub) sub.textContent = t + ' • ' + tf(curFmt, curFmt) + ' / ' + tf(ttFmt, ttFmt);
+      });
+      if (!aud.paused) requestAnimationFrame(window._npUpdate);
+    };
+    window._npUpdate();
+  }
+  aud.onpause = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); hideNowPlaying(); };
+  aud.onended = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); if (window._cva === aud) window._cva = null; hideNowPlaying(); };
+  function hideNowPlaying() {
+    if (window._npAudio !== aud) return;
+    const bars = [document.getElementById('now-playing'), document.getElementById('now-playing-main')];
+    bars.forEach(bar => { if (bar) bar.classList.add('hidden'); });
+    window._npAudio = null; window._npName = null; window._npDur = null; window._npStart = null; window._npUpdate = null;
+  }
   aud.ontimeupdate = paint;
   return d;
 }
-if(!window._npBound){ window._npBound=true; document.addEventListener('click',(e)=>{ if(e.target.closest('#np-toggle')){ if(window._npAudio){ if(window._npAudio.paused) window._npAudio.play(); else window._npAudio.pause(); const bar=document.getElementById('now-playing'); if(bar){ const ic2=window._npAudio&&!window._npAudio.paused?'pause':'play'; bar.querySelector('#np-toggle').innerHTML=ic(ic2); luc(); } } } if(e.target.closest('#np-close')){ if(window._npAudio) window._npAudio.pause(); const bar=document.getElementById('now-playing'); if(bar) bar.classList.add('hidden'); window._npAudio=null; } }); }
+if(!window._npBound){ window._npBound=true;
+  document.addEventListener('click',(e)=>{
+    const bar=e.target.closest('#np-toggle') || e.target.closest('#np-toggle-main');
+    if(bar){
+      const id=bar.id;
+      if(window._npAudio){ if(window._npAudio.paused) window._npAudio.play(); else window._npAudio.pause(); }
+      if(id==='np-toggle-main'){ const ic2=window._npAudio&&!window._npAudio.paused?'pause':'play'; bar.innerHTML=ic(ic2); luc(); }
+      return;
+    }
+    const closeBtn=e.target.closest('#np-close') || e.target.closest('#np-close-main');
+    if(closeBtn){ if(window._npAudio) window._npAudio.pause(); const bars=[document.getElementById('now-playing'), document.getElementById('now-playing-main')]; bars.forEach(b=>{ if(b) b.classList.add('hidden'); }); window._npAudio=null; }
+  });
+}
 function pollEl(m) {
   const d = document.createElement('div'); d.className = 'poll'; const opts = m.poll.options;
   const votes = m.poll.votes || {};
@@ -1130,8 +1213,110 @@ function sendTyping(on) {
 $('composer-input').addEventListener('input', () => {
   const now = Date.now();
   if (now - lastTypingSentAt > 2000) { lastTypingSentAt = now; sendTyping(true); }
+  handleMentionAutocomplete();
 });
 $('composer-input').addEventListener('blur', () => sendTyping(false));
+
+/* MENTION AUTOCOMPLETE */
+let mentionState = { active: false, query: '', startPos: 0, selectedIdx: -1, users: [] };
+async function handleMentionAutocomplete() {
+  const inp = $('composer-input');
+  const pop = $('mention-pop');
+  const text = inp.value;
+  const pos = inp.selectionStart;
+  // find last @ before cursor
+  const before = text.slice(0, pos);
+  const atIdx = before.lastIndexOf('@');
+  if (atIdx === -1 || atIdx < before.lastIndexOf('\n')) { hideMentionPop(); return; }
+  const afterAt = before.slice(atIdx + 1);
+  if (/\s/.test(afterAt)) { hideMentionPop(); return; }
+  const query = afterAt.toLowerCase();
+  mentionState.active = true;
+  mentionState.query = query;
+  mentionState.startPos = atIdx;
+  mentionState.selectedIdx = -1;
+  // fetch users if query changed significantly
+  if (!mentionState.users.length || query.length === 1) {
+    try {
+      const r = await api('/api/users/search?q=' + encodeURIComponent(query));
+      const d = await r.json();
+      mentionState.users = d.users || [];
+    } catch (e) { mentionState.users = []; }
+  }
+  // filter locally
+  const filtered = mentionState.users.filter(u => u.username.toLowerCase().includes(query) || (u.displayName || '').toLowerCase().includes(query));
+  if (!filtered.length) { hideMentionPop(); return; }
+  renderMentionPop(filtered);
+  // position pop near cursor
+  const coords = getCursorCoordinates(inp, atIdx);
+  pop.style.left = coords.left + 'px';
+  pop.style.top = coords.top + 'px';
+  pop.classList.remove('hidden');
+}
+function renderMentionPop(users) {
+  const pop = $('mention-pop');
+  pop.innerHTML = users.slice(0, 10).map((u, i) => `
+    <div class="mention-item" data-idx="${i}" data-user="${esc(u.username)}">
+      ${avatarEl(u, 'xs').outerHTML}
+      <div class="mention-name">${esc(u.displayName || u.username)}</div>
+      <div class="mention-sub">@${esc(u.username)}</div>
+    </div>
+  `).join('');
+  pop.querySelectorAll('.mention-item').forEach(el => {
+    el.onclick = () => insertMention(el.dataset.user);
+    el.onmouseenter = () => { pop.querySelectorAll('.mention-item').forEach(x => x.classList.remove('sel')); el.classList.add('sel'); mentionState.selectedIdx = parseInt(el.dataset.idx); };
+  });
+}
+function hideMentionPop() {
+  mentionState.active = false;
+  mentionState.query = '';
+  mentionState.startPos = 0;
+  mentionState.selectedIdx = -1;
+  $('mention-pop').classList.add('hidden');
+}
+function insertMention(username) {
+  const inp = $('composer-input');
+  const text = inp.value;
+  const before = text.slice(0, mentionState.startPos);
+  const after = text.slice(inp.selectionStart);
+  inp.value = before + '@' + username + ' ' + after;
+  inp.focus();
+  inp.setSelectionRange(before.length + username.length + 2, before.length + username.length + 2);
+  hideMentionPop();
+  inp.dispatchEvent(new Event('input'));
+}
+function getCursorCoordinates(textarea, offset) {
+  // create a mirror div to measure cursor position
+  const mirror = document.createElement('div');
+  const style = getComputedStyle(textarea);
+  Object.assign(mirror.style, {
+    position: 'absolute', visibility: 'hidden', whiteSpace: 'pre-wrap',
+    font: style.font, fontSize: style.fontSize, lineHeight: style.lineHeight,
+    padding: style.padding, border: style.border, boxSizing: style.boxSizing,
+    width: textarea.clientWidth + 'px', letterSpacing: style.letterSpacing
+  });
+  mirror.textContent = textarea.value.slice(0, offset);
+  document.body.appendChild(mirror);
+  const rect = mirror.getBoundingClientRect();
+  const taRect = textarea.getBoundingClientRect();
+  mirror.remove();
+  return { left: rect.left - taRect.left + textarea.scrollLeft, top: rect.top - taRect.top + textarea.scrollTop + parseInt(style.lineHeight) };
+}
+// keydown handler for mention pop
+document.addEventListener('keydown', (e) => {
+  const pop = $('mention-pop');
+  if (pop.classList.contains('hidden')) return;
+  const items = pop.querySelectorAll('.mention-item');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); mentionState.selectedIdx = Math.min(mentionState.selectedIdx + 1, items.length - 1); updateMentionSelection(items); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); mentionState.selectedIdx = Math.max(mentionState.selectedIdx - 1, 0); updateMentionSelection(items); }
+  else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); if (mentionState.selectedIdx >= 0) insertMention(items[mentionState.selectedIdx].dataset.user); }
+  else if (e.key === 'Escape') { hideMentionPop(); }
+});
+function updateMentionSelection(items) {
+  items.forEach((el, i) => el.classList.toggle('sel', i === mentionState.selectedIdx));
+  if (items[mentionState.selectedIdx]) items[mentionState.selectedIdx].scrollIntoView({ block: 'nearest' });
+}
 function prepImage(f, done) {
   const t = String(f && f.type || '');
   if (!/^image\/(jpe?g|png|webp)$/i.test(t)) return done(f);
@@ -2098,7 +2283,7 @@ function renderDetails() {
   if (rid.startsWith('group:')) {
     const g = state.groups.find((x) => 'group:' + x.id === rid);
     if (g) {
-      if (g.owner === state.me.username) act.appendChild(mk('مدیریت گروه', 'settings', () => toast('مدیریت گروه')));
+      if (g.owner === state.me.username) act.appendChild(mk('مدیریت ' + ((g.type || 'group') === 'channel' ? 'کانال' : 'گروه'), 'settings', () => manageGroup(g)));
       act.appendChild(mk('لینک دعوت', 'link', async () => {
         try {
           const res = await api('/api/groups/' + g.id + '/invite');
@@ -2352,6 +2537,7 @@ function swallowNextClick(ms) {
 }
 /* ===================== MULTI-SELECT ===================== */
 var _selectMode = false, _selectedMsgs = new Set(), _dragSel = null, _touchDrag = null, _dragSelFrame = null;
+var _selAutoY = null, _selAutoRAF = null, _selBandTop = 0, _selBandBottom = 0;
 
 function selectedMsgsSorted() {
   const room = state.rooms[state.room] || { messages: [] };
@@ -2392,6 +2578,7 @@ function exitSelectMode() {
   _selectMode = false;
   _selectedMsgs.clear();
   _dragSel = null; _touchDrag = null; _dragSelFrame = null;
+  stopSelAutoScroll();
   document.body.classList.remove('drag-sel');
   renderSelectState();
   const bar = $('sel-toolbar'); if (bar) bar.classList.add('hidden');
@@ -2444,13 +2631,15 @@ function dragSelMove(e) {
   }
   if (!_dragSel.moved) return;
   e.preventDefault();
+  _selBandTop = Math.min(_dragSel.startY, e.clientY);
+  _selBandBottom = Math.max(_dragSel.startY, e.clientY);
   dragAutoScroll(e.clientY);
-  const band = [Math.min(_dragSel.startY, e.clientY), Math.max(_dragSel.startY, e.clientY)];
   if (_dragSelFrame) return;
-  _dragSelFrame = requestAnimationFrame(() => { _dragSelFrame = null; bandSelect(band[0], band[1], _dragSel && _dragSel.cached); });
+  _dragSelFrame = requestAnimationFrame(() => { _dragSelFrame = null; bandSelect(_selBandTop, _selBandBottom, _dragSel && _dragSel.cached); });
 }
 function dragSelUp(e) {
   const drag = _dragSel; _dragSel = null; _dragSelFrame = null;
+  stopSelAutoScroll();
   window.removeEventListener('pointermove', dragSelMove);
   window.removeEventListener('pointerup', dragSelUp);
   window.removeEventListener('pointercancel', dragSelUp);
@@ -2458,11 +2647,35 @@ function dragSelUp(e) {
   if (drag && drag.moved) swallowNextClick(350);
 }
 function dragAutoScroll(clientY) {
+  _selAutoY = clientY;
   const c = $('messages'); if (!c) return;
   const r = c.getBoundingClientRect();
-  const edge = 44;
-  if (clientY < r.top + edge) c.scrollTop -= 10;
-  else if (clientY > r.bottom - edge) c.scrollTop += 10;
+  const edge = 56;
+  let dy = 0;
+  if (clientY < r.top + edge) dy = -Math.ceil((r.top + edge - clientY) / 3);
+  else if (clientY > r.bottom - edge) dy = Math.ceil((clientY - (r.bottom - edge)) / 3);
+  if (dy) c.scrollTop += Math.max(-18, Math.min(18, dy));
+  if (_selAutoRAF == null) _selAutoRAF = requestAnimationFrame(selAutoTick);
+}
+function selAutoTick() {
+  _selAutoRAF = null;
+  if (_selAutoY == null) return;
+  const c = $('messages'); if (!c) return;
+  const r = c.getBoundingClientRect();
+  const edge = 56;
+  let dy = 0;
+  if (_selAutoY < r.top + edge) dy = -Math.ceil((r.top + edge - _selAutoY) / 3);
+  else if (_selAutoY > r.bottom - edge) dy = Math.ceil((_selAutoY - (r.bottom - edge)) / 3);
+  if (dy) {
+    c.scrollTop += Math.max(-18, Math.min(18, dy));
+    bandSelect(_selBandTop, _selBandBottom, null);
+  }
+  _selAutoRAF = requestAnimationFrame(selAutoTick);
+}
+function stopSelAutoScroll() {
+  _selAutoY = null;
+  if (_selAutoRAF) cancelAnimationFrame(_selAutoRAF);
+  _selAutoRAF = null;
 }
 function bandSelect(top, bottom, cachedArr) {
   const holder = _dragSel || _touchDrag;
@@ -2508,8 +2721,10 @@ function lpMove(e) {
     const dy = t.clientY - _touchDrag.startY;
     if (Math.abs(dy) > 8) {
       if (Math.abs(dy) > 24) { try { e.preventDefault(); } catch (err) {} }
+      _selBandTop = Math.min(_touchDrag.startY, t.clientY);
+      _selBandBottom = Math.max(_touchDrag.startY, t.clientY);
       dragAutoScroll(t.clientY);
-      bandSelect(Math.min(_touchDrag.startY, t.clientY), Math.max(_touchDrag.startY, t.clientY), null);
+      bandSelect(_selBandTop, _selBandBottom, null);
     }
     return;
   }
@@ -2519,6 +2734,7 @@ function lpMove(e) {
 }
 function lpEnd() {
   _touchDrag = null;
+  stopSelAutoScroll();
   clearTimeout(_lpTimer); _lpTimer = null; _lpStart = null;
 }
 function cancelLp() { clearTimeout(_lpTimer); _lpTimer = null; _lpStart = null; }
@@ -2766,8 +2982,12 @@ function openViewer(src, kind, origUrl) {
   const onUp=()=>{ if(!dragging) return; dragging=false; v.style.transition=''; if(Math.abs(dy)>90) v.remove(); else { if(el) el.style.transform=''; v.style.background=''; } dy=0; };
   v.addEventListener('touchstart',onDown,{passive:true}); v.addEventListener('touchmove',onMove,{passive:true}); v.addEventListener('touchend',onUp);
   v.addEventListener('mousedown',onDown); window.addEventListener('mousemove',onMove); window.addEventListener('mouseup',onUp);
+  // cleanup on remove
+  const cleanup=()=>{ window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); document.removeEventListener('keydown',escH); };
   // esc close
-  const escH=(e)=>{ if(e.key==='Escape'){ v.remove(); document.removeEventListener('keydown',escH); } }; document.addEventListener('keydown',escH);
+  const escH=(e)=>{ if(e.key==='Escape'){ v.remove(); cleanup(); } }; document.addEventListener('keydown',escH);
+  // observe removal for other close paths (close btn, click overlay, fs)
+  const mo=new MutationObserver(()=>{ if(!document.body.contains(v)){ cleanup(); mo.disconnect(); }}); mo.observe(document.body,{childList:true,subtree:true});
 }
 
 /* IN-APP DIALOGS (موبایل: بدون prompt/confirm مرورگر که روی iOS باز نمی‌شود) */
@@ -3291,8 +3511,21 @@ function showImpersonateBanner() {
 async function startGroup(isChannel) {
   const name = await uPrompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':');
   if (!name) return;
-  const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify({ name: name, type: isChannel ? 'channel' : 'group' }) })).json();
+  const body = { name: name, type: isChannel ? 'channel' : 'group' };
+  if (isChannel) {
+    const uid = await uPrompt('آیدی کانال (۳-۲۰ حرف/عدد/_، مثل my_channel):');
+    if (uid === null) return;
+    if (uid.trim()) body.username = uid.trim().replace(/^@/, '').toLowerCase();
+    const vis = await uPrompt('نوع کانال:\n1 = عمومی (همه ببینند/جستجو کنند)\n2 = خصوصی (فقط با لینک)');
+    if (vis === null) return;
+    body.visibility = String(vis).trim() === '1' ? 'public' : 'private';
+    const desc = await uPrompt('توضیح کانال (اختیاری):');
+    if (desc === null) return;
+    if (desc.trim()) body.description = desc.trim().slice(0, 200);
+  }
+  const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify(body) })).json();
   if (!d.group || !d.group.id) { toast(d.error || 'ساخت گروه ناموفق بود'); return; }
+  d.group.avatar = null;
   state.groups.push(d.group);
   if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups }));
   openRoom('group:' + d.group.id);
@@ -3304,10 +3537,10 @@ async function startGroup(isChannel) {
       const fd = new FormData(); fd.append('avatar', f);
       const res = await fetch('/api/groups/' + d.group.id + '/avatar', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd });
       const r = await res.json();
-      if (r.ok) { toast('آواتار گروه تنظیم شد'); const g = state.groups.find((x) => x.id === d.group.id); if (g) g.avatar = r.avatar; buildChatList(); }
+      if (r.ok) { toast('آواتار ' + (isChannel ? 'کانال' : 'گروه') + ' تنظیم شد'); const g = state.groups.find((x) => x.id === d.group.id); if (g) g.avatar = r.avatar; buildChatList(); }
       input.remove();
     };
-    if (await uConfirm('آیا می‌خواهید آواتار برای گروه انتخاب کنید؟')) input.click(); else input.remove();
+    if (await uConfirm('آیا می‌خواهید آواتار برای ' + (isChannel ? 'کانال' : 'گروه') + ' انتخاب کنید؟')) input.click(); else input.remove();
   }, 500);
 }
 
@@ -3357,6 +3590,89 @@ function renderView(id) {
 function gridCard(id, name, em) { return '<div class="grid-card" data-gc="' + id + '"><div class="gc-ic">' + em + '</div><div class="gc-name">' + name + '</div></div>'; }
 function groupsHTML(type) { const gs = state.groups.filter((g) => g.type === type); if (!gs.length) return '<div class="placeholder">' + (type === 'channel' ? 'کانالی' : 'کامیونیتی‌ای') + ' یافت نشد. از منوی + ایجاد کنید.</div>'; return '<div class="group-list">' + gs.map((g) => '<div class="group-card" data-gid="' + g.id + '">' + avatarEl({ displayName: g.name }, 'md').outerHTML + '<div class="gc-name">' + esc(g.name) + '</div><div class="gc-sub">' + (Array.isArray(g.members) ? g.members.length : 0) + ' عضو</div></div>').join('') + '</div>'; }
 function bindGroupCards(wrap) { wrap.querySelectorAll('.group-card').forEach((c) => { c.onclick = () => { const gid = c.dataset.gid; const me = state.me.username; const isMember = (() => { const g = state.groups.find((x) => x.id === gid); return g && g.members && g.members.some((m) => m.username === me); })(); if (isMember) openRoom('group:' + gid); else toast('ابتدا به گروه بپیوندید'); }; }); }
+
+function manageGroup(g) {
+  if (!g) return;
+  const isCh = (g.type || 'group') === 'channel';
+  const kindLbl = isCh ? 'کانال' : 'گروه';
+  const pop = document.createElement('div'); pop.className = 'u-pop';
+  pop.innerHTML =
+    '<div class="u-pop-box mg-pop" style="width:min(420px,92vw)">' +
+      '<div class="u-pop-title">مدیریت ' + kindLbl + '</div>' +
+      '<div class="mg-row"><label>نام</label><input class="inp" data-k="name" value="' + esc(g.name || '') + '" maxlength="30" /></div>' +
+      (isCh ? '<div class="mg-row"><label>آیدی (شناسه)</label><input class="inp" data-k="uname" value="' + esc(g.username || '') + '" placeholder="بدون @ — ۳ تا ۲۰ حرف/عدد/_" maxlength="20" dir="ltr" /></div>' : '') +
+      (isCh ? '<div class="mg-row"><label>نوع کانال</label><div class="mg-seg">' +
+        '<button class="btn sm" data-k="vis-pub" data-v="public">عمومی</button>' +
+        '<button class="btn sm" data-k="vis-prv" data-v="private">خصوصی</button></div></div>' : '') +
+      '<div class="mg-row"><label>توضیح</label><input class="inp" data-k="desc" value="' + esc(g.description || '') + '" maxlength="200" /></div>' +
+      '<div class="mg-row mg-avatar"><label>عکس پروفایل</label><div class="mg-av-row"><span class="mg-av" data-k="avprev"></span>' +
+        '<button class="btn sm" data-k="avpick">انتخاب عکس</button>' +
+        '<button class="btn sm ghost" data-k="avclr">حذف</button></div></div>' +
+      '<div class="u-pop-actions"><button class="btn sm ghost" data-k="0">انصراف</button><button class="btn sm" data-k="1">ذخیره</button></div>' +
+    '</div>';
+  document.body.appendChild(pop);
+  const avPrev = pop.querySelector('[data-k="avprev"]');
+  avPrev.className = 'av md mg-av';
+  if (g.avatar) { const i = document.createElement('img'); i.src = g.avatar; avPrev.appendChild(i); } else avPrev.textContent = initial(g.name);
+  let picked = null;
+  pop.querySelector('[data-k="avpick"]').onclick = () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.onchange = (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      picked = f;
+      const url = URL.createObjectURL(f);
+      avPrev.innerHTML = '';
+      const i = document.createElement('img'); i.src = url; avPrev.appendChild(i);
+    };
+    inp.click();
+  };
+  pop.querySelector('[data-k="avclr"]').onclick = () => { picked = 'clear'; avPrev.innerHTML = ''; avPrev.textContent = initial(g.name); };
+  const visState = g.visibility || 'private';
+  const paintVis = () => {
+    pop.querySelectorAll('[data-k^="vis-"]').forEach((b) => {
+      const on = b.dataset.v === visState;
+      b.classList.toggle('primary', on);
+      b.classList.toggle('ghost', !on);
+    });
+  };
+  pop.querySelector('[data-k="vis-pub"]').onclick = () => { visState = 'public'; paintVis(); };
+  pop.querySelector('[data-k="vis-prv"]').onclick = () => { visState = 'private'; paintVis(); };
+  paintVis();
+  pop.querySelector('[data-k="0"]').onclick = () => pop.remove();
+  pop.querySelector('[data-k="1"]').onclick = async () => {
+    const name = pop.querySelector('[data-k="name"]').value.trim();
+    const uname = isCh ? pop.querySelector('[data-k="uname"]').value.trim().replace(/^@/, '').toLowerCase() : null;
+    const desc = pop.querySelector('[data-k="desc"]').value.trim();
+    if (!name) { toast('نام الزامی است'); return; }
+    const body = { name };
+    if (isCh) {
+      body.username = uname || undefined;
+      body.visibility = visState;
+      body.description = desc || undefined;
+      if (picked === 'clear') body.avatar = '';
+    }
+    const btn = pop.querySelector('[data-k="1"]'); btn.disabled = true; btn.textContent = '…';
+    try {
+      const res = await api('/api/groups/' + g.id, { method: 'PATCH', body: JSON.stringify(body) });
+      const d = await res.json();
+      if (!d.ok) { toast(d.error || 'ذخیره ناموفق'); btn.disabled = false; btn.textContent = 'ذخیره'; return; }
+      Object.assign(g, d.group || {});
+      if (picked && picked !== 'clear') {
+        const fd = new FormData(); fd.append('avatar', picked);
+        const ares = await fetch('/api/groups/' + g.id + '/avatar', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd });
+        const ar = await ares.json();
+        if (ar.ok) g.avatar = ar.avatar;
+      }
+      pop.remove();
+      toast(kindLbl + ' ذخیره شد');
+      renderRoomHeader(); buildChatList(); renderDetails();
+      if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups }));
+    } catch (e) { toast('خطا: ' + e.message); btn.disabled = false; btn.textContent = 'ذخیره'; }
+  };
+  luc();
+}
 function getTasks() { try { return JSON.parse(localStorage.getItem('vx_tasks') || '[]'); } catch (e) { return []; } }
 function setTasks(t) { localStorage.setItem('vx_tasks', JSON.stringify(t)); }
 function renderTasks(wrap) {

@@ -1486,10 +1486,23 @@ app.post('/api/groups', auth, (req, res) => {
     if (owned >= maxOwned) return res.status(403).json({ error: req.user.isPremium ? 'سقف ساخت: ۱۰ گروه/کانال' : 'حساب رایگان: حداکثر ۲ گروه/کانال — پرمیوم شو ⭐' });
   }
   const g = { id: crypto.randomBytes(6).toString('hex'), type, name, owner: req.user.username, members: [{ username: req.user.username, role: 'owner' }], createdAt: Date.now(), avatar: null };
+  if (type === 'channel') {
+    const rawU = String((req.body || {}).username || '').trim().replace(/^@/, '').toLowerCase();
+    if (rawU) {
+      if (!/^[a-z0-9_]{3,20}$/.test(rawU)) return res.status(400).json({ error: 'ایدی کانال ۳-۲۰ حرف/عدد/_' });
+      if (db.groups.some((x) => x.username === rawU)) return res.status(409).json({ error: 'این ایدی قبلا گرفته شده' });
+      g.username = rawU;
+    }
+    const vis = String((req.body || {}).visibility || 'private');
+    if (!['public', 'private'].includes(vis)) return res.status(400).json({ error: 'نوع نامعتبر' });
+    g.visibility = vis;
+  }
+  const desc = String((req.body || {}).description || '').trim().slice(0, 200);
+  if (desc) g.description = desc;
   db.groups.push(g);
   saveDB();
   broadcastGroups();
-  res.json({ ok: true, group: { id: g.id, name: g.name, type } });
+  res.json({ ok: true, group: { id: g.id, name: g.name, type, username: g.username || null, visibility: g.visibility || null, description: g.description || null } });
 });
 
 app.post('/api/groups/:id/join', auth, (req, res) => {
@@ -1613,12 +1626,17 @@ app.patch('/api/groups/:id', auth, (req, res)=>{
   const g=findGroup(req.params.id);
   if(!g) return res.status(404).json({error:'یافت نشد'});
   if(g.owner!==req.user.username && !req.user.isAdmin) return res.status(403).json({error:'فقط مالک'});
-  const {name, username, visibility} = req.body||{};
+  const {name, username, visibility, description, avatar} = req.body||{};
   if(typeof name==='string'){
     const n=name.trim();
     if(n.length<2||n.length>30) return res.status(400).json({error:'نام ۲ تا ۳۰ کاراکتر'});
     g.name=n;
   }
+  if(typeof description==='string'){
+    const ds=description.trim();
+    g.description = ds ? ds.slice(0,200) : undefined;
+  }
+  if(typeof avatar==='string'){ g.avatar = null; }
   if(typeof username==='string'){
     let u=username.trim().replace(/^@/,'').toLowerCase();
     if(u){
