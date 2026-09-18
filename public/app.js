@@ -766,6 +766,13 @@ function renderMessagesBatch(messages) {
       wrap.classList.add('no-av');
     }
     const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.dataset.id = m.id; bubble.dataset.from = m.from || '';
+    // inline reply quote (quoted message preview)
+    if (m.replyTo && m.replyTo.id) {
+      bubble.appendChild(replyRef(m.replyTo));
+    } else if (m.replyToId) {
+      const orig = (state.rooms[state.room] || {}).messages.find((x) => x.id === m.replyToId);
+      if (orig) bubble.appendChild(replyRef(orig));
+    }
     bubble.appendChild(bodyEl(m));
     const meta = document.createElement('div'); meta.className = 'msg-meta';
     const timeHtml = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>';
@@ -886,7 +893,6 @@ function replyRef(rt) {
 }
 function bodyEl(m) {
   const b = document.createElement('div'); b.className = 'msg-body';
-  if (m.replyTo) { b.appendChild(replyRef(m.replyTo)); }
   if (m.kind === 'image' || m.kind === 'video') { b.appendChild(mediaEl(m)); }
   else if (m.kind === 'album') { b.appendChild(albumEl(m)); }
   else if (m.kind === 'voice') { b.appendChild(voiceEl(m)); }
@@ -895,6 +901,7 @@ function bodyEl(m) {
   else if (m.kind === 'poll') { b.appendChild(pollEl(m)); }
   else if (m.kind === 'checklist') { b.appendChild(checklistEl(m)); }
   else { b.innerHTML = formatText(m.content || ''); }
+  if (m.edited || m.editedAt) { const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; b.appendChild(t); }
   return b;
 }
 /* MARKDOWN TEXT FORMATTING (inline: bold, italic, code, strikethrough, links, mentions) */

@@ -1497,8 +1497,9 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 
 /* in-bubble reply reference */
 .reply-ref{display:flex;flex-direction:column;gap:1px;max-width:280px;
-  padding:3px 9px;margin-bottom:5px;border-inline-start:3px solid var(--primary);border-radius:6px;
-  background:rgba(var(--primary-rgb),.08);cursor:pointer;overflow:hidden;transition:background .15s;}
+    padding:3px 9px;margin-bottom:5px;border-inline-start:3px solid var(--primary);border-radius:6px;
+    background:rgba(var(--primary-rgb),.08);cursor:pointer;overflow:hidden;transition:background .15s;}
+.bubble > .reply-ref{margin-bottom:8px;}
 .reply-ref:hover{background:rgba(var(--primary-rgb),.14);}
 .reply-ref .rr-from{display:flex;align-items:center;gap:4px;color:var(--primary);font-size:11.5px;font-weight:700;
   line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
