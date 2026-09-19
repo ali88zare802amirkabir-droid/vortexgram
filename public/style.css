@@ -1143,7 +1143,7 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 .voice-sending .voice-loading .voice-play{background:var(--outline-variant);color:var(--on-surface);animation:none;}
 
 /* archive */
-.arch-head{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;color:var(--on-surface-variant);font-size:13px;border-top:1px solid var(--border);margin-top:6px;}
+.arch-head{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;color:var(--on-surface-variant);font-size:13px;border-bottom:1px solid var(--border);margin-bottom:4px;}
 .arch-head:hover{color:var(--primary);}
 .chat-item.archived{opacity:.6;}
 

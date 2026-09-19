@@ -580,12 +580,12 @@ function buildChatList() {
   const active = rooms.filter((r) => !r.archived);
   const archived = rooms.filter((r) => r.archived);
   if (!active.length && !archived.length) { wrap.innerHTML = '<div class="empty" style="padding:30px"><div class="ic">💬</div><div>چتی یافت نشد</div></div>'; return; }
-  active.forEach((r) => wrap.appendChild(chatItemEl(r)));
   if (archived.length) {
     const head = document.createElement('div'); head.className = 'arch-head'; head.innerHTML = ic('archive') + '<span>آرشیو (' + archived.length + ')</span>'; head.onclick = () => { state.archivedOpen = !state.archivedOpen; buildChatList(); };
     wrap.appendChild(head);
     if (state.archivedOpen) archived.forEach((r) => { const el = chatItemEl(r); el.classList.add('archived'); wrap.appendChild(el); });
   }
+  active.forEach((r) => wrap.appendChild(chatItemEl(r)));
   applyIcons(wrap);
 }
 function chatItemEl(r) {
