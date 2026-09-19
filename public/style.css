@@ -822,11 +822,11 @@ a{color:var(--primary);text-decoration:none;}
 .ctx-item .icon{color:var(--outline);}
 .ctx-item.danger .icon{color:var(--danger);}
 /* ===== MESSAGE CONTEXT MENU (desktop floating + mobile sheet) ===== */
-.msg-ctx{position:fixed;z-index:270;background:var(--surface-container-highest);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);padding:5px;width:min(264px,calc(100vw - 16px));max-width:min(320px,calc(100vw - 16px));overflow-y:auto;animation:ctxIn .12s var(--ease);outline:none;color:var(--on-surface);}
-.msg-ctx .ctx-reactions{background:var(--surface-container);border:1px solid var(--border);border-radius:10px;padding:5px;margin:0 0 4px;gap:3px;}
-.msg-ctx .ctx-reac{width:31px;height:31px;font-size:20px;border-radius:8px;flex:none;}
-.msg-ctx .ctx-item{min-height:40px;padding:10px 12px;font-size:13px;}
-.msg-sheet{position:fixed;left:0;right:0;bottom:0;z-index:271;background:var(--surface-container-highest);border-top:1px solid var(--border);border-radius:18px 18px 0 0;padding:12px 14px calc(16px + env(safe-area-inset-bottom));box-shadow:var(--shadow-lg);animation:sheetUp .22s var(--ease);overflow-y:auto;max-height:75vh;outline:none;color:var(--on-surface);}
+.msg-ctx{position:fixed;z-index:270;background:var(--surface-container-highest);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);padding:4px;width:min(264px,calc(100vw - 16px));max-width:min(320px,calc(100vw - 16px));overflow-y:auto;animation:ctxIn .12s var(--ease);outline:none;color:var(--on-surface);}
+.msg-ctx .ctx-reactions{background:var(--surface-container);border:1px solid var(--border);border-radius:9px;padding:4px;margin:0 0 3px;gap:2px;}
+.msg-ctx .ctx-reac{width:27px;height:27px;font-size:18px;border-radius:7px;flex:none;}
+.msg-ctx .ctx-item{min-height:34px;padding:8px 10px;font-size:12.5px;}
+.msg-sheet{position:fixed;left:0;right:0;bottom:0;z-index:271;background:var(--surface-container-highest);border-top:1px solid var(--border);border-radius:18px 18px 0 0;padding:10px 12px calc(12px + env(safe-area-inset-bottom));box-shadow:var(--shadow-lg);animation:sheetUp .22s var(--ease);overflow-y:auto;max-height:75vh;outline:none;color:var(--on-surface);}
 .ctx-scrim{position:fixed;inset:0;background:rgba(0,0,0,.40);z-index:269;animation:fadeCtx .15s var(--ease);}
 .ctx-reactions{display:flex;gap:5px;justify-content:center;padding:6px 4px 10px;}
 .ctx-reac{width:44px;height:44px;font-size:24px;display:grid;place-items:center;border-radius:12px;background:transparent;border:1px solid transparent;cursor:pointer;transition:transform .12s var(--ease),background .12s,border-color .12s;outline:none;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;}
@@ -841,19 +841,19 @@ a{color:var(--primary);text-decoration:none;}
 .ctx-actions .ctx-item{border-radius:8px;padding:9px 11px;font-size:13px;min-height:38px;}
 .ctx-title{font-weight:700;padding:10px 12px;font-size:13.5px;color:var(--on-surface);}
 .msg-sheet .ctx-actions{padding:4px 0 0;}
-.msg-sheet .ctx-actions .ctx-item{padding:13px 16px;font-size:14.5px;min-height:48px;}
-.msg-sheet .ctx-reactions{padding:8px 4px 14px;gap:8px;}
-.msg-sheet .ctx-reac{width:48px;height:48px;font-size:26px;}
+.msg-sheet .ctx-actions .ctx-item{padding:10px 13px;font-size:13px;min-height:40px;}
+.msg-sheet .ctx-reactions{padding:6px 4px 10px;gap:6px;}
+.msg-sheet .ctx-reac{width:38px;height:38px;font-size:22px;}
 .msg-ctx.mobile{width:min(292px,calc(100vw - 20px));max-width:min(292px,calc(100vw - 20px));}
-.msg-ctx.mobile .ctx-actions .ctx-item{min-height:48px;padding:13px 16px;font-size:14.5px;}
-.msg-ctx.mobile .ctx-reactions{gap:7px;padding:6px 4px 8px;}
-.msg-ctx.mobile .ctx-reac{width:44px;height:44px;font-size:24px;}
+.msg-ctx.mobile .ctx-actions .ctx-item{min-height:40px;padding:10px 13px;font-size:13px;}
+.msg-ctx.mobile .ctx-reactions{gap:5px;padding:5px 4px 6px;}
+.msg-ctx.mobile .ctx-reac{width:38px;height:38px;font-size:22px;}
 .msg-ctx.mobile .ctx-sep{margin:14px 4px;background:transparent;height:0;}
 .msg-sheet .ctx-sep{margin:14px 4px;background:transparent;height:0;}
 /* responsive message menu: 2-col grid on desktop keeps it short, no visible scrollbars */
-.msg-ctx:not(.mobile){width:min(300px,calc(100vw - 16px));max-width:min(320px,calc(100vw - 16px));}
+.msg-ctx:not(.mobile){width:min(258px,calc(100vw - 16px));max-width:min(258px,calc(100vw - 16px));}
 .msg-ctx:not(.mobile) .ctx-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;}
-.msg-ctx:not(.mobile) .ctx-actions .ctx-item{min-height:40px;padding:9px 10px;font-size:12.5px;gap:8px;}
+.msg-ctx:not(.mobile) .ctx-actions .ctx-item{min-height:34px;padding:7px 9px;font-size:12px;gap:6px;}
 .msg-ctx,.msg-sheet,.ctx-menu,.rr-pop,.react-pop,.emoji-pop,.reac-pop{scrollbar-width:none;-ms-overflow-style:none;}
 .msg-ctx::-webkit-scrollbar,.msg-sheet::-webkit-scrollbar,.ctx-menu::-webkit-scrollbar,.rr-pop::-webkit-scrollbar,.react-pop::-webkit-scrollbar,.emoji-pop::-webkit-scrollbar,.reac-pop::-webkit-scrollbar{width:0;height:0;display:none;}
 /* ===== iOS-glass message menu & reaction pickers ===== */
