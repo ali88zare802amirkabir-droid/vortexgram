@@ -153,9 +153,19 @@
     <div id="scrim" class="hidden"></div>
   </div>
 
+  <div id="pencil-menu" class="pencil-menu hidden" role="menu" aria-label="منوی ساخت گروه/کانال">
+    <div class="pencil-menu-inner">
+      <button class="pencil-menu-close" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
+      <div class="pencil-menu-section">
+        <div class="pencil-menu-item" data-type="group"><i data-lucide="square-pen" class="icon"></i><span> گروه جدید</span></div>
+        <div class="pencil-menu-item" data-type="channel"><i data-lucide="folder" class="icon"></i><span> کانال جدید</span></div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=136"></script>
+  <script src="app.js?v=137"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
   var q = new URLSearchParams(location.search);
@@ -175,14 +185,5 @@
   window.addEventListener('appinstalled', function () { var b = window.__pwaBtn; if (b) b.remove(); });
 })();
 </script>
-  <div id="pencil-menu" class="pencil-menu hidden" role="menu" aria-label="منوی ساخت گروه/کانال">
-    <div class="pencil-menu-inner">
-      <button class="pencil-menu-close" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
-      <div class="pencil-menu-section">
-        <div class="pencil-menu-item" data-type="group"><i data-lucide="square-pen" class="icon"></i><span> گروه جدید</span></div>
-        <div class="pencil-menu-item" data-type="channel"><i data-lucide="folder" class="icon"></i><span> کانال جدید</span></div>
-      </div>
-    </div>
-  </div>
 </body>
 </html>

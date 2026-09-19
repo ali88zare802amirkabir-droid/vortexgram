@@ -396,7 +396,7 @@ document.addEventListener('click', (e) => {
   const menu = $('pencil-menu');
   if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target) && !e.target.closest('#nav-pencil')) menu.classList.add('hidden');
 });
-$('pencil-menu').addEventListener('click', (e) => {
+const pmMenu = $('pencil-menu'); if (pmMenu) pmMenu.addEventListener('click', (e) => {
   const item = e.target.closest('.pencil-menu-item');
   if (item && item.dataset.type) {
     $('pencil-menu').classList.add('hidden');
