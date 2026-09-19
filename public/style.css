@@ -850,6 +850,12 @@ a{color:var(--primary);text-decoration:none;}
 .msg-ctx.mobile .ctx-reac{width:44px;height:44px;font-size:24px;}
 .msg-ctx.mobile .ctx-sep{margin:14px 4px;background:transparent;height:0;}
 .msg-sheet .ctx-sep{margin:14px 4px;background:transparent;height:0;}
+/* responsive message menu: 2-col grid on desktop keeps it short, no visible scrollbars */
+.msg-ctx:not(.mobile){width:min(300px,calc(100vw - 16px));max-width:min(320px,calc(100vw - 16px));}
+.msg-ctx:not(.mobile) .ctx-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;}
+.msg-ctx:not(.mobile) .ctx-actions .ctx-item{min-height:40px;padding:9px 10px;font-size:12.5px;gap:8px;}
+.msg-ctx,.msg-sheet,.ctx-menu,.rr-pop,.react-pop,.emoji-pop,.reac-pop{scrollbar-width:none;-ms-overflow-style:none;}
+.msg-ctx::-webkit-scrollbar,.msg-sheet::-webkit-scrollbar,.ctx-menu::-webkit-scrollbar,.rr-pop::-webkit-scrollbar,.react-pop::-webkit-scrollbar,.emoji-pop::-webkit-scrollbar,.reac-pop::-webkit-scrollbar{width:0;height:0;display:none;}
 .msg-selected{border-radius:18px;outline:2px solid var(--primary);outline-offset:3px;}
 body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;}
 .msg.menu-open-target{border-radius:16px;box-shadow:0 0 0 2px rgba(var(--primary-rgb),.32),0 0 0 7px rgba(var(--primary-rgb),.07);transition:box-shadow .18s var(--ease);}
