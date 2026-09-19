@@ -107,6 +107,14 @@ const state = {
 };
 const MSG_RENDER_LIMIT = 100;
 
+/* surface any leaked error visibly instead of a silently dead UI */
+window.addEventListener('error', function (ev) {
+  try { console.error('UNCAUGHT:', ev.error || ev.message); } catch (e) {}
+});
+window.addEventListener('unhandledrejection', function (ev) {
+  try { console.error('UNHANDLED PROMISE:', ev.reason); } catch (e) {}
+});
+
 /* AUTH */
 const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-name'), authUname = $('auth-username');
 const stepPhone = $('auth-step-phone'), stepCode = $('auth-step-code'), stepName = $('auth-step-name'), stepPass = $('auth-step-pass');
@@ -4099,12 +4107,17 @@ if (isCapacitor) {
 }
 
 (async function init() {
-  bindCtxReposition();
-  initMultiSelect();
-  if (state.token) {
-    try { const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + state.token } }); if (r.ok) { const d = await r.json(); if (d.me) { state.me = d.me; enterApp(); } else logout(true); } else logout(true); }
-    catch (e) { showAuth(); }
-  } else { showAuth(); }
-  const requestNotifOnce = () => { if ('Notification' in window && Notification.permission === 'default') { Notification.requestPermission(); window.removeEventListener('click', requestNotifOnce, true); } };
-  window.addEventListener('click', requestNotifOnce, true);
+  try {
+    bindCtxReposition();
+    initMultiSelect();
+    if (state.token) {
+      try { const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + state.token } }); if (r.ok) { const d = await r.json(); if (d.me) { state.me = d.me; enterApp(); } else logout(true); } else logout(true); }
+      catch (e) { console.error('init: /api/me failed', e); showAuth(); }
+    } else { showAuth(); }
+    const requestNotifOnce = () => { if ('Notification' in window && Notification.permission === 'default') { Notification.requestPermission(); window.removeEventListener('click', requestNotifOnce, true); } };
+    window.addEventListener('click', requestNotifOnce, true);
+  } catch (e) {
+    console.error('init crashed:', e);
+    try { showAuth(); } catch (e2) { alert('VORTEX: خطا هنگام راه‌اندازی — ' + e.message); }
+  }
 })();

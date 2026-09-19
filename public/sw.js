@@ -1,5 +1,5 @@
-var CACHE = 'vortex-v126';
-var SHELL = ['/', '/manifest.json', '/style.css?v=125', '/app.js?v=135', '/icons.js?v=86', '/effects.js?v=78'];
+var CACHE = 'vortex-v127';
+var SHELL = ['/', '/manifest.json', '/style.css?v=126', '/app.js?v=136', '/icons.js?v=86', '/effects.js?v=78'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
@@ -15,8 +15,15 @@ self.addEventListener('activate', function (e) {
 //  - پاسخ‌های /api/ و فایل‌های /uploads/ هرگز در کشِ مشترکِ بین‌کاربری ذخیره نمی‌شوند
 //    (در غیر این صورت داده‌ی خصوصی یک کاربر برای کاربر بعدیِ همین مرورگر در دسترس بود).
 //  - فقط شِلِ عمومی اپ، گالری عمومی /img/ و assetها کش می‌شوند.
+
+// استراتژی: همیشه «شبکه اول، کش به‌عنوان پشتیبان» (stale-while-revalidate).
+// هرگز یک پاسخ خراب/قدیمی asset دیروزی در کش نمی‌ماند و برنامه «مرده» نمی‌شود.
 function isPrivate(url) {
   return url.pathname.indexOf('/api/') === 0 || url.pathname.indexOf('/uploads/') === 0;
+}
+
+function cachePut(req, r) {
+  if (r && r.ok) { var cl = r.clone(); caches.open(CACHE).then(function (c) { c.put(req, cl); }); }
 }
 
 self.addEventListener('fetch', function (e) {
@@ -32,29 +39,26 @@ self.addEventListener('fetch', function (e) {
   }
 
   if (e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).catch(function () {
-      if (url.pathname === '/' || url.pathname === '/index.html') return caches.match('/');
-      return new Response('offline', { status: 503, statusText: 'Offline' });
-    }));
-    return;
-  }
-
-  // گالری عمومی /img/ و assetها: کش اول، به‌روزرسانی در پس‌زمینه
-  if (url.pathname.indexOf('/img/') === 0) {
-    e.respondWith(caches.match(e.request).then(function (hit) {
-      var fresh = fetch(e.request).then(function (r) {
-        if (r && r.ok) { var cl = r.clone(); caches.open(CACHE).then(function (c) { c.put(e.request, cl); }); }
-        return r;
-      }).catch(function () { return new Response('', { status: 503, statusText: 'Offline' }); });
-      return hit || fresh;
-    }));
-    return;
-  }
-
-  e.respondWith(caches.match(e.request).then(function (m) {
-    return m || fetch(e.request).then(function (r) {
-      if (r && r.ok) { var cl = r.clone(); caches.open(CACHE).then(function (c) { c.put(e.request, cl); }); }
+    // شبکه اول؛ در موفقیت، HTML تازه هم در کش می‌نشیند تا fallback آینده هیچ‌وقت کهنه نباشد.
+    e.respondWith(fetch(e.request).then(function (r) {
+      cachePut(e.request, r);
       return r;
+    }).catch(function () {
+      if (url.pathname === '/' || url.pathname === '/index.html') return caches.match('/');
+      return caches.match(e.request).then(function (m) { return m || new Response('offline', { status: 503, statusText: 'Offline' }); });
+    }));
+    return;
+  }
+
+  // assetها و گالری: شبکه اول با fallback کش
+  e.respondWith(fetch(e.request).then(function (r) {
+    cachePut(e.request, r);
+    return r;
+  }).catch(function () {
+    return caches.match(e.request).then(function (m) {
+      if (m) return m;
+      if (url.pathname.indexOf('/img/') === 0) return new Response('', { status: 503, statusText: 'Offline' });
+      return new Response('offline', { status: 503, statusText: 'Offline' });
     });
   }));
 });
