@@ -856,6 +856,38 @@ a{color:var(--primary);text-decoration:none;}
 .msg-ctx:not(.mobile) .ctx-actions .ctx-item{min-height:40px;padding:9px 10px;font-size:12.5px;gap:8px;}
 .msg-ctx,.msg-sheet,.ctx-menu,.rr-pop,.react-pop,.emoji-pop,.reac-pop{scrollbar-width:none;-ms-overflow-style:none;}
 .msg-ctx::-webkit-scrollbar,.msg-sheet::-webkit-scrollbar,.ctx-menu::-webkit-scrollbar,.rr-pop::-webkit-scrollbar,.react-pop::-webkit-scrollbar,.emoji-pop::-webkit-scrollbar,.reac-pop::-webkit-scrollbar{width:0;height:0;display:none;}
+/* ===== iOS-glass message menu & reaction pickers ===== */
+.msg-ctx,.msg-sheet,.react-pop,.rr-pop,.ctx-menu,.emoji-pop,.reac-pop{
+  background:var(--surface-container-highest);
+  background:color-mix(in srgb,var(--surface-container-highest) 55%,transparent);
+  backdrop-filter:blur(28px) saturate(1.8);
+  -webkit-backdrop-filter:blur(28px) saturate(1.8);
+  border-color:color-mix(in srgb,var(--border) 60%,transparent);
+  box-shadow:0 20px 60px rgba(0,0,0,.5),0 2px 12px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.14);
+}
+.msg-ctx .ctx-reactions,.msg-sheet .ctx-reactions{
+  background:color-mix(in srgb,var(--surface-container-high) 55%,transparent);
+  border-color:color-mix(in srgb,var(--border) 60%,transparent);
+  overflow-x:auto;
+  scrollbar-width:none;
+  mask-image:linear-gradient(to right,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+  -webkit-mask-image:linear-gradient(to right,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+}
+.msg-ctx .ctx-item:hover,.msg-ctx .ctx-item:focus-visible,.rr-pop .rr-emoji:hover,.react-pop .rp-btn:hover,.react-pop .rp-btn:focus-visible,.ctx-reac:hover,.ctx-reac:focus-visible{background:color-mix(in srgb,var(--surface-container-high) 70%,transparent);}
+.ctx-menu .ctx-item:hover{background:color-mix(in srgb,var(--surface-container-high) 70%,transparent);}
+/* reactions scroll with iOS edge-fade (no scrollbar) */
+.react-pop{
+  mask-image:linear-gradient(to right,transparent 0,#000 16px,#000 calc(100% - 16px),transparent 100%);
+  -webkit-mask-image:linear-gradient(to right,transparent 0,#000 16px,#000 calc(100% - 16px),transparent 100%);
+}
+.rr-pop{
+  mask-image:linear-gradient(to bottom,transparent 0,#000 16px,#000 calc(100% - 16px),transparent 100%);
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 16px,#000 calc(100% - 16px),transparent 100%);
+}
+.emoji-pop .emoji-grid{
+  mask-image:linear-gradient(to bottom,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+}
 .msg-selected{border-radius:18px;outline:2px solid var(--primary);outline-offset:3px;}
 body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;}
 .msg.menu-open-target{border-radius:16px;box-shadow:0 0 0 2px rgba(var(--primary-rgb),.32),0 0 0 7px rgba(var(--primary-rgb),.07);transition:box-shadow .18s var(--ease);}
