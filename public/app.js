@@ -639,7 +639,9 @@ function openRoom(rid) {
     if (canRenderCache) {
       $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
     } else if (hasPreview) {
-      $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
+      $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT));
+      // رومِ only-preview را «رندرنشده» نگه می‌داریم تا وقتی پاسخ history می‌رسد
+      // لیست کامل پیام‌ها جایگزین پیش‌نمایش شود (نه فقط یک پیام).
     }
     if (!cacheFresh) state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
   } else {
