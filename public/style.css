@@ -981,6 +981,7 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 
 @media (min-width:1025px){
   #app{display:grid;grid-template-columns:auto 320px minmax(0,1fr) 340px;grid-template-rows:minmax(0,1fr) auto;grid-template-areas:"nav list conv details" "dock dock dock dock";overflow:visible;overflow-x:visible;}
+  #app:has(#details-panel:empty),#app:has(#details-panel.hidden){grid-template-columns:auto 320px minmax(0,1fr);grid-template-areas:"nav list conv" "dock dock dock";}
   #chat-list-column{position:relative;inset:auto;width:auto;height:auto;z-index:auto;transform:none !important;background:var(--surface-container-low);}
   #conversation{position:relative;inset:auto;width:auto;height:auto;z-index:auto;transform:none !important;}
   #nav-sidebar{position:relative;inset:auto;width:72px;height:auto;transform:none !important;z-index:auto;transition:width .22s var(--ease);box-shadow:none;border-inline-start:none;border-inline-end:1px solid var(--border);background:var(--surface-container-lowest);}
@@ -1018,6 +1019,7 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 /* desktop mid-width: less greedy rails so chat keeps its width */
 @media (min-width:1025px) and (max-width:1150px){
   #app{grid-template-columns:auto 260px minmax(0,1fr) 300px;}
+  #app:has(#details-panel:empty),#app:has(#details-panel.hidden){grid-template-columns:auto 260px minmax(0,1fr);}
 }
 /* small phones: tighten composer, headers and tool buttons */
 @media (max-width:420px){
