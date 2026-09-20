@@ -241,6 +241,7 @@ function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
   renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
   showImpersonateBanner();
+  if (isMobile()) vxPush();
   if (state.me.isAdmin) {
     api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {});
     api('/api/admin/requests').then((r) => r.json()).then((d) => { const list = (d.requests || []).filter((s) => s.status === 'pending'); state.signupCount = list.length; renderNav(); }).catch(() => {});
@@ -410,7 +411,7 @@ function switchNav(id) {
   state.nav = id;
   if (isMobile()) $('nav-sidebar').classList.remove('m-open');
   if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('conversation').classList.remove('chat-open'); } }
-  else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) $('conversation').classList.add('chat-open'); }
+  else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) { $('conversation').classList.add('chat-open'); vxPush(); } }
   document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === id));
 }
 let viewHost = null;
@@ -629,7 +630,7 @@ function openRoom(rid) {
   if (isMobile()) { $('details-panel').classList.remove('open'); } else { $('details-panel').classList.add('hidden'); }
   renderRoomHeader(); markRead(rid);
   setMode('chats');
-  if (isMobile()) { $('details-panel').classList.remove('open'); $('conversation').classList.add('chat-open'); showScrim(false); }
+  if (isMobile()) { $('details-panel').classList.remove('open'); $('conversation').classList.add('chat-open'); showScrim(false); vxPush(); }
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
@@ -656,16 +657,10 @@ function renderRoomHeader() {
   if (state.room && state.room.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === state.room); if (g && g.avatar) avSrc = g.avatar; }
   const av = avatarEl(avSrc ? { avatar: avSrc, displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm');
   av.id = 'conv-av'; const old = $('conv-av'); if (old) old.replaceWith(av);
-  $('conv-name').onclick = $('conv-av').onclick = () => {
-    if (!state.room) return;
-    if (state.room.startsWith('dm:')) {
-      const other = state.room.slice(3).split('|').find((p) => p !== state.me.username);
-      if (other && other !== BOT_USERNAME) openProfile(other, state.room);
-    } else { toast('پروفایل گروه از بخش اطلاعات قابل مشاهده است'); }
-  };
+  $('conv-name').onclick = $('conv-av').onclick = () => { if (!state.room) return; openRoomInfo(state.room); };
   $('conv-name').style.cursor = 'pointer';
 }
-$('conv-info').onclick = () => { if (isMobile()) { const open = !$('details-panel').classList.contains('open'); $('details-panel').classList.toggle('open', open); showScrim(open); renderDetails(); } else { $('details-panel').classList.toggle('hidden'); renderDetails(); } };
+$('conv-info').onclick = () => { if (!state.room) return; openRoomInfo(state.room); };
 $('conv-back').onclick = () => { state.room = null; buildChatList(); setMode('chats'); if (isMobile()) { $('conversation').classList.remove('chat-open'); } };
 $('scrim').onclick = () => closeDrawers();
 $('conv-search').onclick = () => { const sb = $('conv-searchbox'); const wasHidden = sb.classList.contains('hidden'); sb.classList.toggle('hidden'); if (wasHidden) { $('conv-search-input').value = ''; $('conv-search-input').focus(); searchChatMessages(''); } else { searchChatMessages(''); } };
@@ -2326,6 +2321,176 @@ function renderDetails() {
   }
   p.appendChild(act); luc();
 }
+
+/* ===================== ROOM INFO (گروه / کانال / افراد) ===================== */
+let _roomInfoRid = null;
+function roomInfoCtx(rid) {
+  const isG = !!rid && rid.startsWith('group:');
+  const g = isG ? state.groups.find((x) => 'group:' + x.id === rid) : null;
+  const isCh = isG && !!g && (g.type || 'group') === 'channel';
+  const kindLbl = isCh ? 'کانال' : 'گروه';
+  const other = isG ? null : rid.slice(3).split('|').find((p) => p !== state.me.username);
+  const u = (!isG && other) ? state.users.find((x) => x.username === other) : null;
+  return { isG, g, isCh, kindLbl, other, u };
+}
+function togRow(key, label, icon, flags) {
+  return '<div class="dp-row">' + ic(icon) + '<span>' + label + '</span><label class="switch"><input type="checkbox" data-flag="' + key + '" ' + (flags[key] ? 'checked' : '') + '><span class="slider"></span></label></div>';
+}
+function roomInfoBodyHTML(rid) {
+  const c = roomInfoCtx(rid);
+  const flags = chatFlags(rid) || {};
+  let h = '<div class="dp-head">';
+  if (c.isG) h += avatarEl(c.g && c.g.avatar ? { avatar: c.g.avatar, displayName: roomTitle(rid) } : { displayName: roomTitle(rid) }, 'lg').outerHTML;
+  else h += avatarEl(c.u || { displayName: roomTitle(rid) }, 'lg').outerHTML;
+  h += '<div class="dp-name">' + esc(roomTitle(rid)) + '</div>';
+  h += '<div class="dp-sub">' + esc(roomOnline(rid)) + '</div></div>';
+
+  h += '<div class="dp-sec"><div class="dp-sec-title">' + ic('info') + ' اطلاعات</div>';
+  if (c.isG) {
+    const chLbl = c.isCh ? 'کانال' : 'گروه';
+    let adm = '';
+    if (c.g && c.g.owner === state.me.username) adm = ' · ادمین';
+    else if (c.g && c.g.members && c.g.members.some((x) => x && (x.username === state.me.username || x === state.me.username))) adm = ' · عضو';
+    h += '<div class="dp-row">' + ic(c.isCh ? 'megaphone' : 'users') + '<span>نوع</span><b style="margin-inline-start:auto">' + chLbl + adm + '</b></div>';
+    h += '<div class="dp-row">' + ic('users') + '<span>' + (c.isCh ? 'دنبالکنندهها' : 'اعضا') + '</span><b style="margin-inline-start:auto">' + (c.g ? c.g.members.length + ' نفر' : '—') + '</b></div>';
+    if (c.g && c.g.username) h += '<div class="dp-row">' + ic('hash') + '<span>شناسه</span><b style="margin-inline-start:auto">@' + esc(c.g.username) + '</b></div>';
+    if (c.g && c.g.description) h += '<div class="dp-row" style="align-items:flex-start">' + ic('info') + '<span style="white-space:normal">' + esc(c.g.description) + '</span></div>';
+  } else if (c.other) {
+    h += '<div class="dp-row">' + ic('hash') + '<span>نام کاربری</span><b style="margin-inline-start:auto">@' + esc(c.other) + '</b></div>';
+    if (c.u) {
+      const onl = !!c.u.online;
+      const badge = (c.u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (c.u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (c.u.banned ? ' <span class="badge ban">مسدود</span>' : '');
+      h += '<div class="dp-row">' + ic('wifi') + '<span>وضعیت</span><b style="margin-inline-start:auto">' + (onl ? 'آنلاین' : 'آفلاین') + '</b></div>';
+      if (c.u.bio) h += '<div class="dp-row" style="align-items:flex-start">' + ic('info') + '<span style="white-space:normal">' + esc(c.u.bio) + '</span></div>';
+      if (c.u.phone && (state.me.isAdmin || c.u.username === state.me.username)) h += '<div class="dp-row">' + ic('phone') + '<span>شماره</span><b style="margin-inline-start:auto" dir="ltr">' + esc(c.u.phone) + '</b></div>';
+      if (badge) h += '<div class="dp-row">' + ic('star') + '<span>نشانها</span><span style="margin-inline-start:auto">' + badge + '</span></div>';
+    } else {
+      h += '<div class="dp-row">' + ic('user') + '<span>' + (c.other === BOT_USERNAME ? BOT_NAME : 'کاربر') + '</span></div>';
+    }
+  } else {
+    h += '<div class="dp-row">' + ic('message-square') + '<span>گفتگو</span></div>';
+  }
+  h += '</div>';
+
+  h += '<div class="dp-sec"><div class="dp-sec-title">' + ic('settings') + ' تنظیمات چت</div>';
+  h += togRow('pinned', 'پین کردن چت', 'pin', flags);
+  h += togRow('muted', 'بیصدا', 'volume-x', flags);
+  h += togRow('hidden', 'مخفی کردن', 'eye-off', flags);
+  h += togRow('locked', 'قفل چت', 'lock', flags);
+  h += '</div>';
+
+  const pins = (state.pinned[rid] || []);
+  if (pins.length) {
+    h += '<div class="dp-sec"><div class="dp-sec-title">' + ic('pin') + ' پیامهای پینشده</div>';
+    pins.forEach((id) => {
+      const msg = (state.rooms[rid] || {}).messages.find((x) => x.id === id);
+      if (!msg) return;
+      h += '<div class="dp-pin" data-pin="' + esc(id) + '">' + esc(previewText(msg)) + '</div>';
+    });
+    h += '</div>';
+  }
+
+  h += '<div class="dp-sec"><div class="dp-sec-title">' + ic('zap') + ' عملیات</div>';
+  if (!c.isG) {
+    if (c.other && c.other !== BOT_USERNAME) {
+      h += '<div class="dp-act" data-act="profile">' + ic('user') + '<span>مشاهده پروفایل کامل</span></div>';
+      const isBlocked = state.me.blocked && state.me.blocked.includes(c.other);
+      h += '<div class="dp-act" data-act="block">' + ic(isBlocked ? 'user-check' : 'user-x') + '<span>' + (isBlocked ? 'آنبلاک کردن' : 'مسدود کردن') + '</span></div>';
+    }
+    h += '<div class="dp-act" data-act="start-chat">' + ic('message-square') + '<span>شروع چت جدید</span></div>';
+    h += '<div class="dp-act danger" data-act="delete">' + ic('trash-2') + '<span>پاک کردن چت</span></div>';
+  } else if (c.g) {
+    if (c.g.owner === state.me.username) h += '<div class="dp-act" data-act="manage">' + ic('settings') + '<span>مدیریت ' + c.kindLbl + '</span></div>';
+    h += '<div class="dp-act" data-act="invite">' + ic('link') + '<span>لینک دعوت</span></div>';
+    h += '<div class="dp-act danger" data-act="clear">' + ic('trash-2') + '<span>پاک کردن تاریخچه</span></div>';
+  }
+  h += '</div>';
+  return h;
+}
+function roomInfoWire(rid, root) {
+  root.querySelectorAll('input[data-flag]').forEach((inp) => {
+    inp.onchange = () => { setFlag(rid, inp.dataset.flag, inp.checked); toast('اعمال شد'); };
+  });
+  root.querySelectorAll('.dp-pin[data-pin]').forEach((el) => {
+    el.onclick = () => {
+      closeRoomInfo();
+      const msgEl = document.querySelector('[data-id="' + el.dataset.pin + '"]');
+      if (msgEl) { msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    };
+  });
+  const openProfileF = root.querySelector('[data-act="profile"]');
+  if (openProfileF) openProfileF.onclick = () => { closeRoomInfo(); const other = rid.startsWith('dm:') ? rid.slice(3).split('|').find((p) => p !== state.me.username) : null; if (other) openProfile(other, rid); };
+  const startChat = root.querySelector('[data-act="start-chat"]');
+  if (startChat) startChat.onclick = () => { closeRoomInfo(); openDM(rid.startsWith('dm:') ? rid.slice(3).split('|').find((p) => p !== state.me.username) : null); };
+  const block = root.querySelector('[data-act="block"]');
+  if (block) block.onclick = () => { const other = rid.startsWith('dm:') ? rid.slice(3).split('|').find((p) => p !== state.me.username) : null; toggleBlock(other).then(() => { if (_roomInfoOpen()) refreshRoomInfo(); }); };
+  const del = root.querySelector('[data-act="delete"]');
+  if (del) del.onclick = () => { closeRoomInfo(false); deleteChat(rid); };
+  const mg = root.querySelector('[data-act="manage"]');
+  if (mg) mg.onclick = () => { const ctx = roomInfoCtx(rid); if (ctx.g) { closeRoomInfo(); manageGroup(ctx.g); } };
+  const inv = root.querySelector('[data-act="invite"]');
+  if (inv) inv.onclick = () => {
+    const ctx = roomInfoCtx(rid);
+    if (!ctx.g) return;
+    api('/api/groups/' + ctx.g.id + '/invite').then((r) => r.json()).then((d) => {
+      if (!d.ok) { toast(d.error || 'خطا در دریافت لینک'); return; }
+      const link = location.origin + d.link;
+      navigator.clipboard.writeText(link).then(() => toast('لینک دعوت کپی شد')).catch(() => {});
+      uConfirm('لینک دعوت:\n' + link + '\n\nکپی شود؟').then((ok) => { if (ok) navigator.clipboard.writeText(link).catch(() => {}); });
+    }).catch(() => toast('خطا در دریافت لینک'));
+  };
+  const clr = root.querySelector('[data-act="clear"]');
+  if (clr) clr.onclick = async () => { if (await uConfirm('تاریخچه پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; toast('تاریخچه پاک شد'); } };
+  luc();
+}
+function closeRoomInfo(returnBack) {
+  const bd = document.querySelector('.ri-backdrop'); if (bd) bd.remove();
+  if (viewHost && !viewHost.classList.contains('hidden') && viewHost.querySelector('.roominfo-view')) {
+    if (returnBack === false) {
+      state.profileReturnRoom = null; state.profileReturnNav = null;
+      viewHost.innerHTML = '';
+      setMode('chats');
+    } else {
+      profileGoBack();
+    }
+  }
+}
+function _roomInfoOpen() { return !!document.querySelector('.ri-backdrop') || (viewHost && !viewHost.classList.contains('hidden') && viewHost.querySelector('.roominfo-view')); }
+function refreshRoomInfo() { if (_roomInfoOpen() && _roomInfoRid) { if (document.querySelector('.ri-backdrop')) renderRoomInfoModal(_roomInfoRid, true); else renderRoomInfoPage(_roomInfoRid, true); } }
+function openRoomInfo(rid) {
+  if (!rid) return;
+  _roomInfoRid = rid;
+  if (isMobile()) renderRoomInfoPage(rid); else renderRoomInfoModal(rid);
+  vxPush();
+}
+function renderRoomInfoModal(rid, silent) {
+  _roomInfoRid = rid;
+  const old = document.querySelector('.ri-backdrop'); if (old) old.remove();
+  const bd = document.createElement('div'); bd.className = 'ri-backdrop';
+  const card = document.createElement('div'); card.className = 'ri-card';
+  const x = document.createElement('button'); x.className = 'ri-close'; x.setAttribute('aria-label', 'بستن'); x.innerHTML = ic('x');
+  x.onclick = () => bd.remove();
+  card.appendChild(x);
+  const body = document.createElement('div'); body.className = 'ri-body'; body.innerHTML = roomInfoBodyHTML(rid);
+  card.appendChild(body);
+  bd.appendChild(card);
+  bd.onclick = (e) => { if (e.target === bd) bd.remove(); };
+  document.body.appendChild(bd);
+  roomInfoWire(rid, body);
+  return bd;
+}
+function renderRoomInfoPage(rid, silent) {
+  _roomInfoRid = rid;
+  state.profileReturnRoom = rid;
+  state.profileReturnNav = 'chats';
+  setMode('view');
+  viewHost.classList.remove('hidden');
+  viewHost.innerHTML = '<div class="roominfo-view"><div class="roominfo-head"><button class="btn sm ghost" data-act="back">' + ic('chevron-right') + ' بازگشت</button></div><div class="roominfo-body"></div></div>';
+  const body = viewHost.querySelector('.roominfo-body');
+  body.innerHTML = roomInfoBodyHTML(rid);
+  viewHost.querySelector('[data-act="back"]').onclick = () => profileGoBack();
+  roomInfoWire(rid, body);
+}
 async function toggleBlock(other) {
   if (!other) return;
   const isBlocked = state.me.blocked && state.me.blocked.includes(other);
@@ -3312,6 +3477,7 @@ function profileGoBack() {
 }
 function renderProfile(username) {
   if (isMobile()) closeDrawers();
+  if (isMobile()) vxPush();
   let u = (state.me.username === username) ? state.me : (state.users || []).find((x) => x.username === username);
   if (!u) { api('/api/user/' + encodeURIComponent(username)).then((r) => r.json()).then((d) => { if (d.u) { state.users = state.users || []; if (!state.users.find((x) => x.username === d.u.username)) state.users.push(d.u); renderProfile(username); } else { setMode('view'); viewHost.innerHTML = '<div class="placeholder">پروفایل یافت نشد.</div>'; } }).catch(() => { setMode('view'); viewHost.innerHTML = '<div class="placeholder">خطا در بارگذاری پروفایل.</div>'; }); return; }
   setMode('view');
@@ -4090,16 +4256,42 @@ document.addEventListener('contextmenu', (e) => {
 });
 document.addEventListener('click', (e) => { if (!e.target.closest('.ctx-menu, .reac-pop, .msg-ctx, .msg-sheet, .ctx-scrim, .sheet-scrim')) { closeMsgCtx(); closeCtxMenus(); } });
 
-/* Capacitor / Android integration */
+/* ═══════════ BACK BUTTON / in-app navigation (Android & mobile browsers) ═══════════ */
 const isCapacitor = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+let _pinScreen = false;
+function _pinScreenOpen() { return !!$('pin-screen') && !$('pin-screen').classList.contains('hidden'); }
+/* یک entry در history برای نگه داشتن برنامه و رهگیری دکمه برگشت */
+function vxPush() {
+  if (!isMobile() || isCapacitor) return;
+  try { history.pushState({ vx: 1 }, ''); } catch (e) {}
+}
+/* سطحبندی بازگشت: سیستم، منوی موبایل، پروفایل/اطلاعات، چت، nav، ریشه */
+function vxBack(allowExit) {
+  if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return false;
+  if (_pinScreenOpen() && $('app').classList.contains('hidden')) return true;
+  const ri = document.querySelector('.ri-backdrop');
+  if (ri) { ri.remove();
+    if (viewHost && !viewHost.classList.contains('hidden') && viewHost.querySelector('.roominfo-view')) { viewHost.innerHTML = ''; setMode('chats'); } return true; }
+  const dp = $('details-panel');
+  if (isMobile() && dp && dp.classList.contains('open')) { dp.classList.remove('open'); showScrim(false); return true; }
+  const ns = $('nav-sidebar');
+  if (isMobile() && ns && ns.classList.contains('m-open')) { ns.classList.remove('m-open'); showScrim(false); return true; }
+  if (viewHost && !viewHost.classList.contains('hidden')) {
+    const back = viewHost.querySelector('[data-act="back"], #view-back');
+    if (back) { back.click(); return true; }
+    return true;
+  }
+  if (isMobile() && $('conversation').classList.contains('chat-open')) {
+    if (state.room) { state.room = null; $('conversation').classList.remove('chat-open'); $('chat-list-column').classList.add('m-open'); buildChatList(); }
+    return true;
+  }
+  if (state.nav !== 'chats') { switchNav('chats'); return true; }
+  return allowExit === true; /* روی ریشه هستیم؛ فقط با اجازهی صریح خروج */
+}
 if (isCapacitor) {
   document.addEventListener('backbutton', (e) => {
     e.preventDefault();
-    if (!$('auth-screen').classList.contains('hidden')) { return; }
-    const p = $('details-panel');
-    if (p && !p.classList.contains('hidden')) { p.classList.add('hidden'); return; }
-    if (state.nav !== 'chats') { switchNav('chats'); return; }
-    if (state.room) { state.room = null; $('conversation').classList.remove('chat-open'); $('chat-list-column').classList.add('m-open'); return; }
+    vxBack(false); /* در ریشه: بدون عمل (خروج با دکمهی خود اپ) */
   }, false);
   try {
     const Plugins = window.Capacitor.Plugins;
@@ -4108,6 +4300,21 @@ if (isCapacitor) {
       Plugins.StatusBar.setBackgroundColor({ color: '#031427' });
     }
   } catch (e) {}
+} else {
+  /* مرورگر (PWA): دکمهی فیزیکی برگشت = popstate. لایهها را میبندیم و اجازهی
+     خروج فقط با «دوبار پشتسرهم» داده میشود — تا برنامه به سادگی بسته نشود. */
+  let _exitTs = 0;
+  window.addEventListener('popstate', () => {
+    if (!isMobile()) return;
+    if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return;
+    if (_pinScreenOpen()) return;
+    if (vxBack(false)) { vxPush(); return; }
+    const now = Date.now();
+    if (now - _exitTs < 2200) return; /* دومی: اجازهی خروج */
+    _exitTs = now;
+    toast('برای بستن، دوباره دکمهی برگشت را بزنید');
+    vxPush();
+  });
 }
 
 (async function init() {
