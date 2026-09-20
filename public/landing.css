@@ -565,11 +565,11 @@ html.menu-open body { overflow: hidden; }
    ============================================================ */
 .hero {
   position: relative;
-  padding-block: clamp(64px, 9vw, 120px) clamp(40px, 6vw, 72px);
+  padding-block: clamp(48px, 6vw, 84px) clamp(28px, 4vw, 44px);
   overflow: hidden;
 }
 @media (min-width: 981px) {
-  .hero { min-height: min(94vh, 880px); }
+  .hero { min-height: min(88vh, 780px); }
 }
 
 .fx-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
@@ -609,7 +609,7 @@ html.menu-open body { overflow: hidden; }
   z-index: 2;
   display: grid;
   grid-template-columns: 1.05fr .95fr;
-  gap: clamp(32px, 5vw, 64px);
+  gap: clamp(24px, 3.5vw, 44px);
   align-items: center;
 }
 
@@ -624,7 +624,7 @@ html.menu-open body { overflow: hidden; }
   color: var(--accent);
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 .eyebrow::before {
   content: "";
@@ -640,7 +640,7 @@ html.menu-open body { overflow: hidden; }
   font-size: clamp(44px, 6.5vw, 84px);
   line-height: 1.14;
   letter-spacing: -.6px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 .grad {
   background: linear-gradient(90deg, var(--grad-a), var(--grad-b), var(--grad-a));
@@ -662,14 +662,14 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
   font-size: clamp(15px, 1.6vw, 17px);
   line-height: 2;
   max-width: 520px;
-  margin-bottom: 30px;
+  margin-bottom: 22px;
 }
 
 .hero-cta {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 26px;
+  margin-bottom: 20px;
 }
 
 .hero-badges {
@@ -990,7 +990,7 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
    Pillars
    ============================================================ */
 .pillars {
-  padding-block: 10px 40px;
+  padding-block: 6px 28px;
   border-top: 1px solid var(--hairline);
 }
 .pillar-grid {
@@ -1015,7 +1015,7 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
 /* ============================================================
    Sections shared
    ============================================================ */
-.section { padding-block: clamp(56px, 8vw, 88px); }
+.section { padding-block: clamp(40px, 5.5vw, 64px); }
 
 .section-kicker {
   display: flex;
@@ -1062,7 +1062,7 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
 .about-grid {
   display: grid;
   grid-template-columns: 1.05fr .95fr;
-  gap: clamp(32px, 5vw, 64px);
+  gap: clamp(24px, 3.5vw, 44px);
   align-items: start;
 }
 .about-copy .lede {
@@ -1231,7 +1231,7 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
 .security-grid {
   display: grid;
   grid-template-columns: 1.06fr .94fr;
-  gap: clamp(32px, 5vw, 64px);
+  gap: clamp(24px, 3.5vw, 44px);
   align-items: start;
 }
 .security-copy .lede {
@@ -1349,7 +1349,7 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
 /* ============================================================
    Final CTA
    ============================================================ */
-.final-cta { padding-block: 30px clamp(56px, 8vw, 88px); }
+.final-cta { padding-block: 24px clamp(40px, 5.5vw, 64px); }
 .aura-2 { inset: 0; }
 .aura-2::before {
   content: "";
@@ -1498,7 +1498,7 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
 @keyframes mq { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
 /* ---------- Stats ---------- */
-.stats { padding-block: 48px 56px; }
+.stats { padding-block: 34px 40px; }
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1683,7 +1683,7 @@ html.has-js.loaded .hero-visual { opacity: 1; transform: none; }
   .showcase-grid { grid-template-columns: 1fr; }
   .screen-card:last-child { display: block; }
   .sc-grid { grid-template-columns: 1fr; }
-  .section-sub { margin: 0 auto 32px; }
+  .section-sub { margin: 0 auto 24px; }
 
   .device { padding: 8px; border-radius: 38px; }
   .cw-body { min-height: 240px; }
