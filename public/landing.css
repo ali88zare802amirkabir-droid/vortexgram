@@ -148,7 +148,7 @@ p, ul, figure {
 
 ul { list-style: none; }
 
-:root { --max-w: 1160px; --ease: cubic-bezier(.2, .8, .25, 1); }
+:root { --max-w: 1360px; --ease: cubic-bezier(.2, .8, .25, 1); }
 .container {
   width: 100%;
   max-width: var(--max-w);
