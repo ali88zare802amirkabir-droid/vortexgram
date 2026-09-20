@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /app
 Disallow: /app/
 Disallow: /api/
 Disallow: /uploads/
@@ -9,4 +10,4 @@ Disallow: /img/profiles/
 Disallow: /landing
 Disallow: /join/
 
-Sitemap: https://66ae722b68435c.lhr.life/sitemap.xml
+Sitemap: https://vortexgram.onrender.com/sitemap.xml
