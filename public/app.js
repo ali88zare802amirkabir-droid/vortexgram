@@ -2456,6 +2456,8 @@ function openMsgCtx(m, anchor, pos) {
 
   var reacBar = document.createElement('div'); reacBar.className = 'ctx-reactions';
   reacBar.setAttribute('role', 'toolbar'); reacBar.setAttribute('aria-label', 'واکنش‌های سریع');
+  var reacHead = document.createElement('div'); reacHead.className = 'ctx-title'; reacHead.textContent = 'واکنش‌ها';
+  el.appendChild(reacHead);
   var rs = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {};
   var myReac = '';
   for (var ek in rs) { var us = Array.isArray(rs[ek]) ? rs[ek] : []; if (us.includes(state.me.username)) { myReac = ek; break; } }
