@@ -1,7 +1,8 @@
 /* ============================================================
-   VortexGram — Landing (v2)
-   Theme system (system/light/dark) + switcher + mobile menu.
-   ============================================================ */
+    VortexGram — Landing (v4)
+    Theme system (system/light/dark) + switcher + mobile menu.
+    Cinematic neon stage: canvas starfield, counters, reveal variants.
+    ============================================================ */
 (function () {
   'use strict';
 
@@ -189,12 +190,16 @@
 
   function initReveal() {
     root.classList.add('has-js');
-    var targets = Array.prototype.slice.call(document.querySelectorAll('main > section:not(.hero), .cta-box'));
+    var targets = Array.prototype.slice.call(document.querySelectorAll('main > section:not(.hero), .cta-box, [data-reveal]'));
     if (reduced || !('IntersectionObserver' in window)) {
       targets.forEach(function (el) { el.classList.add('in', 'reveal'); });
       return;
     }
-    targets.forEach(function (el) { el.classList.add('reveal'); });
+    targets.forEach(function (el) {
+      el.classList.add('reveal');
+      var v = (el.getAttribute('data-reveal') || '').trim();
+      if (v) el.classList.add('rv-' + v);
+    });
 
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
@@ -210,4 +215,153 @@
 
   initReveal();
   applyTheme();
+
+  /* ---------- Hero entrance ---------- */
+  if (reduced) {
+    root.classList.add('loaded');
+  } else {
+    document.addEventListener('DOMContentLoaded', function () {
+      requestAnimationFrame(function () { root.classList.add('loaded'); });
+    });
+  }
+
+  /* ---------- Scroll progress bar ---------- */
+  var progress = document.getElementById('scroll-progress');
+  if (progress && !reduced) {
+    var ticking = false;
+    function updateProgress() {
+      var h = document.documentElement;
+      var max = h.scrollHeight - h.clientHeight;
+      var p = max > 0 ? (h.scrollTop || document.body.scrollTop) / max : 0;
+      progress.style.transform = 'scaleX(' + p.toFixed(4) + ')';
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(updateProgress); }
+    }, { passive: true });
+    updateProgress();
+  }
+
+  /* ---------- Device tilt (desktop pointers only) ---------- */
+  var heroVis = document.querySelector('.hero-visual');
+  var deviceEl = document.querySelector('.device');
+  var canTilt = heroVis && deviceEl && !reduced &&
+                window.matchMedia && window.matchMedia('(pointer: fine)').matches &&
+                window.matchMedia('(hover: hover)').matches;
+  if (canTilt) {
+    var rx = 0, ry = 0, tiltRaf = null;
+    heroVis.addEventListener('pointermove', function (e) {
+      var r = heroVis.getBoundingClientRect();
+      var px = (e.clientX - r.left) / r.width - 0.5;
+      var py = (e.clientY - r.top) / r.height - 0.5;
+      rx = (py * -12).toFixed(2);
+      ry = (px * 14).toFixed(2);
+      if (deviceEl.style.transition) { deviceEl.style.transition = ''; }
+      if (!tiltRaf) {
+        tiltRaf = requestAnimationFrame(function () {
+          tiltRaf = null;
+          deviceEl.style.transform = 'perspective(900px) rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)';
+        });
+      }
+    });
+    heroVis.addEventListener('pointerleave', function () {
+      rx = 0; ry = 0;
+      deviceEl.style.transition = 'transform .45s var(--ease)';
+      deviceEl.style.transform = 'perspective(900px) rotateX(0deg) rotateY(0deg)';
+    });
+  }
+
+  /* ---------- Canvas starfield (cinematic neon) ---------- */
+  if (!reduced) {
+    var canvas = document.getElementById('fx-canvas');
+    if (canvas) {
+      var ctx = canvas.getContext('2d');
+      var stars = [];
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      var hero = document.querySelector('.hero');
+      var visible = true;
+      var rafId = null;
+
+      function resize() {
+        var r = hero.getBoundingClientRect();
+        canvas.width = r.width * dpr;
+        canvas.height = r.height * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        var isCoarse = window.matchMedia('(pointer: coarse)').matches;
+        var count = Math.min(isCoarse ? 60 : 130, Math.floor(r.width * r.height / 20000));
+        stars = Array.from({ length: count }, function () {
+          return {
+            x: Math.random() * r.width,
+            y: Math.random() * r.height,
+            r: Math.random() * 1.2 + 0.4,
+            s: Math.random() * 0.5 + 1.2,
+            ph: Math.random() * Math.PI * 2
+          };
+        });
+      }
+
+      function getStarColor() {
+        var theme = root.getAttribute('data-theme');
+        return theme === 'light' ? '#3a4a6a' : '#bfd8ff';
+      }
+
+      function draw(ts) {
+        if (!visible) { rafId = null; return; }
+        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+        var color = getStarColor();
+        for (var i = 0; i < stars.length; i++) {
+          var s = stars[i];
+          var a = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(ts / 1000 * s.s + s.ph));
+          ctx.globalAlpha = a;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        rafId = requestAnimationFrame(draw);
+      }
+
+      var ioHero = new IntersectionObserver(function (entries) {
+        visible = entries[0].isIntersecting;
+        if (visible && !rafId) draw(performance.now());
+      }, { rootMargin: '100px' });
+      ioHero.observe(hero);
+
+      window.addEventListener('resize', function () { resize(); });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && visible && !rafId) draw(performance.now());
+      });
+
+      resize();
+      draw(performance.now());
+    }
+  }
+
+  /* ---------- Animated counters (real stats) ---------- */
+  if (!reduced) {
+    var statNums = Array.prototype.slice.call(document.querySelectorAll('.stat-num[data-count]'));
+    if (statNums.length && 'IntersectionObserver' in window) {
+      var fmt = function (n) { return n.toLocaleString('fa-IR'); };
+      var ioStats = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) {
+            var el = en.target;
+            var target = parseInt(el.getAttribute('data-count'), 10);
+            var prefix = el.getAttribute('data-prefix') || '';
+            var t0 = performance.now();
+            var dur = 1200;
+            function tick(t) {
+              var p = Math.min(1, (t - t0) / dur);
+              var e = 1 - Math.pow(1 - p, 3);
+              el.textContent = prefix + fmt(Math.round(target * e));
+              if (p < 1) requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
+            ioStats.unobserve(el);
+          }
+        });
+      }, { threshold: 0.35 });
+      statNums.forEach(function (el) { ioStats.observe(el); });
+    }
+  }
 })();

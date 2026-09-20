@@ -1,5 +1,5 @@
-var CACHE = 'vortex-v143';
-var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=2', '/landing.js?v=2', '/privacy.html', '/terms.html', '/style.css?v=136', '/app.js?v=139', '/icons.js?v=86', '/effects.js?v=78'];
+var CACHE = 'vortex-v145';
+var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=4', '/landing.js?v=4', '/privacy.html', '/terms.html', '/style.css?v=136', '/app.js?v=139', '/icons.js?v=86', '/effects.js?v=78'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));

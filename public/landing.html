@@ -50,7 +50,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
-  <link rel="stylesheet" href="landing.css?v=2" />
+  <link rel="stylesheet" href="landing.css?v=4" />
 
   <script type="application/ld+json">
   {
@@ -81,6 +81,7 @@
 </head>
 <body>
   <a class="skip-link" href="#main">پرش به محتوا</a>
+  <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
 
   <!-- ============ HEADER ============ -->
   <header class="site-header" id="site-header">
@@ -170,12 +171,17 @@
   <main id="main">
 
     <!-- ============ HERO ============ -->
-    <section class="hero" id="top">
+    <section class="hero" id="top" data-hero>
       <div class="aura" aria-hidden="true"></div>
+      <canvas class="fx-canvas" id="fx-canvas" aria-hidden="true"></canvas>
+      <div class="vignette" aria-hidden="true"></div>
       <div class="container hero-grid">
         <div class="hero-copy">
           <p class="eyebrow">پیام‌رسان تحت وب · فارسی · رایگان</p>
-          <h1>پیام‌رسانی،<br /><span class="grad">به سبک جدید.</span></h1>
+          <h1 class="hero-title">
+            <span class="ht-line"><span class="ht-inner">پیام‌رسانی،</span></span>
+            <span class="ht-line"><span class="ht-inner grad">به سبک جدید.</span></span>
+          </h1>
           <p class="subhead">VortexGram یک پیام‌رسان تحت وب مدرن برای ارتباط سریع، ساده و امن است. بدون نصب و مستقیم در مرورگر — گفتگو کن، عکس و فایل بفرست و گروه بساز.</p>
           <div class="hero-cta">
             <a class="btn btn-primary btn-lg" href="/app">
@@ -245,11 +251,40 @@
           </div>
         </div>
       </div>
+      <a class="scroll-cue" href="#features" aria-label="دسترسی به امکانات">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </a>
     </section>
 
-    <!-- ============ VALUE PROPOSITION ============ -->
-    <section class="pillars" aria-label="ویژگی‌های کلیدی">
-      <div class="container pillar-grid">
+    <!-- ============ MARQUEE ============ -->
+    <div class="marquee" aria-label="امکانات VortexGram">
+      <div class="mq-track">
+        <div class="mq-group">
+          <span class="mq-item"><strong>چت بیدرنگ</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>تحت وب</strong> — بدون نصب</span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>پیام صوتی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>عکس و فایل</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>گروه و کانال</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>واکنش و نظرسنجی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>Vortex AI</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>نُه تم رنگی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>زبان فارسی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+        </div>
+        <div class="mq-group" aria-hidden="true">
+          <span class="mq-item"><strong>چت بیدرنگ</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>تحت وب</strong> — بدون نصب</span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>پیام صوتی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>عکس و فایل</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>گروه و کانال</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>واکنش و نظرسنجی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>Vortex AI</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>نُه تم رنگی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+          <span class="mq-item"><strong>زبان فارسی</strong></span><span class="mq-star" aria-hidden="true">✦</span>
+        </div>
+      </div>
+    </div>
+<section class="pillars" aria-label="ویژگی‌های کلیدی">
+      <div class="container pillar-grid stagger">
         <div class="pillar">
           <span class="pillar-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
           <div><strong>سریع و روان</strong><p>پیام‌ها بیدرنگ و از طریق اتصال زنده‌ی WebSocket ردوبدل می‌شوند.</p></div>
@@ -263,11 +298,35 @@
           <div><strong>کاملاً واکنش‌گرا</strong><p>از موبایل‌های کوچک تا مانیتورهای بزرگ؛ با ظاهری یکپارچه و مدرن.</p></div>
         </div>
         <div class="pillar">
-          <span class="pillar-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+          <span class="pillar-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
           <div><strong>تحت وب</strong><p>بدون نصب؛ فقط با باز کردن لینک در مرورگر شروع کن. قابلیت نصب به‌عنوان اپ هم دارد.</p></div>
         </div>
       </div>
     </section>
+
+    <!-- ============ STATS ============ -->
+    <section class="stats section-sm" aria-label="ارقام کلیدی">
+      <div class="container stats-grid" id="stats-grid">
+        <div class="stat-tile" data-reveal="zoom">
+          <b class="stat-num" data-count="9">۰</b>
+          <span class="stat-cap">تم رنگی سفارشی</span>
+        </div>
+        <div class="stat-tile" data-reveal="zoom">
+          <b class="stat-num" data-count="8">۰</b>
+          <span class="stat-cap">رنگ آکسانت</span>
+        </div>
+        <div class="stat-tile" data-reveal="zoom">
+          <b class="stat-num" data-count="30">۰</b>
+          <span class="stat-cap">روز اعتبار نشست</span>
+        </div>
+        <div class="stat-tile" data-reveal="zoom">
+          <b class="stat-num" data-count="22" data-prefix="+">+۰</b>
+          <span class="stat-cap">نقطهٔ محدودیت نرخ</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ VALUE PROPOSITION 2 (مارکتر) -->
 
     <!-- ============ ABOUT ============ -->
     <section class="about section" id="about">
@@ -279,8 +338,8 @@
           <p>محیط چت با زبان فارسی و چیدمان راست‌به‌چپ ساخته شده و از ظاهری لایه‌ای و شفاف با تم تیره و روشن بهره می‌برد. پیام‌ها با اتصال بیدرنگ ارسال می‌شوند، تصاویر و فایل‌ها به‌صورت محافظت‌شده ذخیره می‌شوند و امکاناتی مانند واکنش، پاسخ، گروه و کانال در دسترس است.</p>
           <p class="about-note"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> نسخه‌ی فعلی فعّالانه توسعه می‌یابد و برای استفاده‌ی روزمره کاملاً کاربردی است.</p>
         </div>
-        <div class="about-glass">
-          <ul class="ag-list" role="list">
+        <div class="about-glass" data-reveal="zoom">
+          <ul class="ag-list stagger" role="list">
             <li><span class="ag-ok" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></span> چت خصوصی و گروهی</li>
             <li><span class="ag-ok" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></span> ارسال عکس، ویدیو و فایل</li>
             <li><span class="ag-ok" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></span> پیام صوتی و ضبط صدا</li>
@@ -299,7 +358,7 @@
         <h2>امکانات VortexGram</h2>
         <p class="section-sub">همه‌ی این امکانات همین حالا داخل محصول فعال هستند؛ بدون دکمه‌های پرزرق‌وبرق و تبلیغاتی.</p>
 
-        <div class="feature-grid">
+        <div class="feature-grid stagger">
           <article class="feature-card">
             <span class="fc-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
             <h3>چت بیدرنگ</h3>
@@ -381,7 +440,7 @@
         <h2>محصول را ببین</h2>
         <p class="section-sub">همین‌ها که می‌بینی بخشی از محیط واقعی VortexGram است — همان تم تیره و ظاهر مدرن واقعی اپ.</p>
 
-        <div class="showcase-grid">
+        <div class="showcase-grid stagger">
           <figure class="screen-card">
             <div class="screen-shot dark-deck">
               <img src="img/screens/chat.webp" alt="نمایش صفحه چت VortexGram با پیام‌های متنی، صوتی و تصویری" width="640" height="1334" loading="lazy" decoding="async" />
@@ -414,7 +473,7 @@
           <h2>حریم خصوصی و امنیت</h2>
           <p class="lede">امنیت در VortexGram یک ادعای تبلیغاتی نیست؛ بخشی از معماری محصول است. این‌جا بدون اغراق می‌گوییم چه چیزهایی واقعاً انجام می‌شود:</p>
 
-          <ul class="security-list" role="list">
+          <ul class="security-list stagger" role="list">
             <li>
               <span class="sl-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
               <div><strong>هش استاندارد رمز عبور با scrypt</strong><p>رمزهای عبور با الگوریتم scrypt به‌صورت غیرقابل‌بازگشت هش می‌شوند؛ حتی سرور هم رمز اصلی را نمی‌داند.</p></div>
@@ -438,8 +497,8 @@
           </a>
         </div>
 
-        <div class="security-card">
-          <div class="sc-grid">
+        <div class="security-card" data-reveal="zoom">
+          <div class="sc-grid stagger">
             <div><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><b>scrypt</b><small>هش رمز عبور</small></div>
             <div><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><b>۳۰ روز</b><small>اعتبار نشست</small></div>
             <div><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><b>+۲۲</b><small>نقطه محدودیت نرخ</small></div>
@@ -532,6 +591,6 @@
     </div>
   </footer>
 
-  <script src="landing.js?v=2" defer></script>
+  <script src="landing.js?v=4" defer></script>
 </body>
 </html>
