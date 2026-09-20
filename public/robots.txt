@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /img/backgrounds/
+Disallow: /img/effects/
+Disallow: /img/profiles/
+Disallow: /landing
+Disallow: /join/
+
+Sitemap: https://66ae722b68435c.lhr.life/sitemap.xml

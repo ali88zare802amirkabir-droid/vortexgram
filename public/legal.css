@@ -1,0 +1,10 @@
+/* ===== Legal pages (privacy/terms) ===== */
+.legal{padding:calc(120px) 0 40px}
+.legal-inner{max-width:760px}
+.legal h1{font-size:clamp(28px,4.5vw,40px);font-weight:800;margin-bottom:8px;letter-spacing:-.3px}
+.legal-updated{color:var(--outline);font-size:13px;margin-bottom:38px}
+.legal section{margin-bottom:34px}
+.legal h2{font-size:20px;font-weight:700;margin-bottom:12px}
+.legal p,.legal li{color:var(--on-surface-variant);font-size:15px;line-height:2;margin-bottom:10px}
+.legal ul{padding-inline-start:22px}
+.legal li{margin-bottom:6px}

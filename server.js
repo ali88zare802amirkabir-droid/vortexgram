@@ -428,12 +428,28 @@ app.use('/uploads', (req, res) => {
   });
 });
 
+// ---------- public landing (/) + messenger (/app) ----------
+// صفحه‌ی عمومی: دامنه‌ی سایت -> لندینگ
+// پیام‌رسان همچنان در /app در دسترس است (PWA، دعوت‌نامه و اندروید).
+app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+app.get('/app', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+app.get('/landing', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
 
 // ---------- invite landing ----------
 function invitePage(refName, ref) {
   const e = String(refName == null ? '' : refName).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-  const href = ref ? '/?invite=' + encodeURIComponent(ref) : '/';
+  const href = ref ? '/app?invite=' + encodeURIComponent(ref) : '/app';
   return '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>دعوت به VORTEXGRAM</title><style>body{margin:0;font-family:Vazirmatn,Tahoma,sans-serif;background:#0a0e1a;color:#e8ecf6;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}*{box-sizing:border-box}.card{background:#12182a;border:1px solid #1f2a44;border-radius:20px;padding:42px 32px;max-width:400px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}.mark{font-size:44px;font-weight:800}.mark b{color:#6ea8fe}h1{font-size:20px;margin:14px 0 6px}p{color:#9aa8c7;font-size:14px;line-height:1.9;margin:0 0 24px;direction:rtl}a.btn{display:inline-block;background:#6ea8fe;color:#002e5c;padding:13px 30px;border-radius:12px;font-weight:800;text-decoration:none;font-size:15px}.sub{font-size:11px;color:#5b6b8f;margin-top:18px}</style></head><body><div class="card"><div class="mark">V<b>ORTEX</b></div><h1>فقط ' + e + ' مونده!</h1><p>' + e + ' شما را به <b>VORTEXGRAM</b> دعوت کرده تا باهم چت کنید. با یک کلیک وارد شو و گفتگو رو شروع کن.</p><a class="btn" href="' + href + '">ورود به VORTEXGRAM</a><div class="sub">پیام‌رسان گیمینگ — سریع، امن و رایگان</div></div></body></html>';
 }
 app.get('/invite', (req, res) => {
