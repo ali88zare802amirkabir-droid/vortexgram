@@ -697,61 +697,80 @@ html.has-js.loaded .ht-inner { transform: translateY(0); }
 .device {
   position: relative;
   width: min(300px, 80vw);
-  padding: 10px;
-  border-radius: 46px;
-  background: linear-gradient(160deg, #2b3040, #151824 55%, #10131c);
-  border: 1px solid rgba(255, 255, 255, .09);
-  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .65), 0 8px 24px rgba(0, 0, 0, .4),
-              0 0 0 1px rgba(110, 168, 255, .12), 0 0 50px -8px rgba(47, 123, 255, .35),
-              inset 0 1px 0 rgba(255, 255, 255, .14);
+  padding: 9px;
+  border-radius: 44px;
+  background: linear-gradient(180deg, #1e212e 0%, #0e1018 100%);
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow: 0 28px 64px -18px rgba(0, 0, 0, .72), 0 10px 28px rgba(0, 0, 0, .45),
+              inset 0 1px 0 rgba(255, 255, 255, .10), inset 0 -1px 0 rgba(0, 0, 0, .6);
   transition: transform .45s var(--ease);
 }
-.device:hover { transform: translateY(-6px); }
-@media (hover: none) {
-  .device { animation: deviceFloat 7s ease-in-out infinite; }
-}
-@keyframes deviceFloat { 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-10px); } }
-.device::after {
+.device::before {
   content: "";
   position: absolute;
-  inset: -1px;
+  inset: 0;
   border-radius: inherit;
-  background: linear-gradient(160deg, var(--neon-ring), transparent 35%, transparent 70%, rgba(105,60,220,.2));
-  z-index: -1;
-  filter: blur(14px);
-  opacity: .6;
+  padding: 1px;
+  background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.03) 45%, rgba(255,255,255,0) 70%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
   pointer-events: none;
 }
+.device:hover { transform: translateY(-4px); }
 
-.device-bar {
-  content: "";
+.device-notch {
   position: absolute;
-  top: 18px;
+  top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  width: 96px;
-  height: 24px;
+  width: 88px;
+  height: 26px;
   border-radius: 999px;
-  background: #05070c;
+  background: #000;
   z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
 }
-.device-bar span {
-  width: 7px;
-  height: 7px;
+.notch-camera {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: #232838;
+  background: radial-gradient(circle at 35% 35%, #2a3a5a 0%, #0d1320 55%, #000 100%);
+  border: 1px solid #1a2338;
+  box-shadow: 0 0 0 1px #000, inset 0 1px 1px rgba(100,140,200,.25);
+  flex-shrink: 0;
 }
-.device-bar span:first-child { box-shadow: inset 0 1px 2px rgba(0, 0, 0, .9); }
+.notch-speaker {
+  width: 36px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #0a0d14 0%, #1a1f2e 50%, #0d111c 100%);
+  border: 1px solid rgba(255,255,255,.04);
+  box-shadow: inset 0 1px 1px rgba(0,0,0,.8);
+}
+.device-side-btn {
+  position: absolute;
+  left: -2px;
+  width: 3px;
+  background: #2a2e3d;
+  border-radius: 0 2px 2px 0;
+  box-shadow: inset 1px 0 1px rgba(255,255,255,.08);
+}
+.device-side-btn.mute { top: 78px; height: 28px; }
+.device-side-btn.vol-up { top: 114px; height: 54px; }
+.device-side-btn.vol-down { top: 174px; height: 54px; }
+.device-side-btn.power { left: auto; right: -2px; top: 132px; height: 74px; border-radius: 2px 0 0 2px; }
 
 .chat-window {
-  border-radius: 36px;
+  border-radius: 34px;
   overflow: hidden;
   background: var(--chat-bg);
-  border: 1px solid var(--hairline);
+  border: 1px solid rgba(0,0,0,.18);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
 }
 
 .cw-head {
