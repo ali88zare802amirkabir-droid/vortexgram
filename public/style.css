@@ -351,7 +351,7 @@ a{color:var(--primary);text-decoration:none;}
 
 /* ===================== APP GRID ===================== */
 #app{position:relative;z-index:1;display:block;width:100%;height:100vh;height:100dvh;overflow:hidden;overflow-x:hidden;background:var(--surface);}
-#nav-sidebar{grid-area:nav;} #chat-list-column{grid-area:list;} #conversation{grid-area:conv;} #details-panel{grid-area:details;} #command-dock{grid-area:dock;}
+#nav-sidebar{grid-area:nav;} #chat-list-column{grid-area:list;} #conversation{grid-area:conv;} #command-dock{grid-area:dock;}
 
 /* ===================== NAV ===================== */
 #nav-sidebar{width:72px;padding:12px 8px;display:flex;flex-direction:column;gap:4px;background:var(--surface-container-lowest);border-inline-end:1px solid var(--border);transition:width .22s var(--ease);overflow:hidden;position:relative;}
@@ -657,8 +657,7 @@ a{color:var(--primary);text-decoration:none;}
 .emoji-pop.docked{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(620px,calc(100vw - 20px));max-width:none;max-height:300px;inset-inline-start:auto;}
 .emoji-pop.docked .emoji-grid{max-height:220px;grid-template-columns:repeat(10,1fr);}
 
-/* ===================== DETAILS ===================== */
-#details-panel{background:var(--surface-container-low);border-inline-start:1px solid var(--border);display:flex;flex-direction:column;min-height:0;overflow-y:auto;padding-top:10px;}
+/* ===================== DETAILS → ROOM INFO (shared .dp-* styles used by modal/page) ===================== */
 .dp-close{position:absolute;top:12px;inset-inline-end:12px;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;color:var(--on-surface-variant);cursor:pointer;z-index:2;background:var(--surface-container);}
 .dp-close:hover{color:var(--primary);}
 .dp-head{padding:22px 18px 14px;text-align:center;border-bottom:1px solid var(--border);position:relative;}
@@ -985,8 +984,6 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 #nav-sidebar.m-open .nav-badge{display:grid;}
 #nav-sidebar.m-open .nav-logo{justify-content:flex-start;padding:6px 8px 14px;}
 #nav-sidebar.m-open .nav-logo b{display:inline;}
-#details-panel{position:fixed;top:0;bottom:0;left:0;width:min(86vw,340px);z-index:50;transform:translateX(-100%);transition:transform .22s var(--ease);box-shadow:var(--shadow-lg);}
-#details-panel.open{transform:none;}
 #command-dock{position:absolute;left:0;right:0;bottom:0;z-index:2;padding-bottom:env(safe-area-inset-bottom);overflow-x:auto;}
 #scrim{position:fixed;inset:0;background:rgba(0,0,0,.40);z-index:40;}
 #scrim.hidden{display:none;}
@@ -996,12 +993,10 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 .view-head{position:sticky;top:0;background:var(--surface);z-index:3;border-bottom:1px solid var(--border);}
 
 @media (min-width:1025px){
-  #app{display:grid;grid-template-columns:auto 320px minmax(0,1fr) 340px;grid-template-rows:minmax(0,1fr) auto;grid-template-areas:"nav list conv details" "dock dock dock dock";overflow:visible;overflow-x:visible;}
-  #app:has(#details-panel:empty),#app:has(#details-panel.hidden){grid-template-columns:auto 320px minmax(0,1fr);grid-template-areas:"nav list conv" "dock dock dock";}
+  #app{display:grid;grid-template-columns:auto 320px minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;grid-template-areas:"nav list conv" "dock dock dock";overflow:visible;overflow-x:visible;}
   #chat-list-column{position:relative;inset:auto;width:auto;height:auto;z-index:auto;transform:none !important;background:var(--surface-container-low);}
   #conversation{position:relative;inset:auto;width:auto;height:auto;z-index:auto;transform:none !important;}
   #nav-sidebar{position:relative;inset:auto;width:72px;height:auto;transform:none !important;z-index:auto;transition:width .22s var(--ease);box-shadow:none;border-inline-start:none;border-inline-end:1px solid var(--border);background:var(--surface-container-lowest);}
-  #details-panel{position:relative;inset:auto;width:auto;height:auto;z-index:auto;transform:none !important;box-shadow:none;}
   #command-dock{position:relative;inset:auto;z-index:auto;padding-bottom:0;overflow-x:visible;}
   .mobile-only{display:none !important;}
   .back-btn{display:none;}
@@ -1034,8 +1029,7 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 }
 /* desktop mid-width: less greedy rails so chat keeps its width */
 @media (min-width:1025px) and (max-width:1150px){
-  #app{grid-template-columns:auto 260px minmax(0,1fr) 300px;}
-  #app:has(#details-panel:empty),#app:has(#details-panel.hidden){grid-template-columns:auto 260px minmax(0,1fr);}
+  #app{grid-template-columns:auto 260px minmax(0,1fr);}
 }
 /* small phones: tighten composer, headers and tool buttons */
 @media (max-width:420px){

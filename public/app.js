@@ -64,7 +64,7 @@ function detectLowEnd() {
 const LOW_END = detectLowEnd();
 if (LOW_END && document.documentElement) document.documentElement.setAttribute('data-lowend', '1');
 function showScrim(v) { const s = $('scrim'); if (s) s.classList.toggle('hidden', !v); }
-function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); $('details-panel').classList.remove('open'); showScrim(false); }
+function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); showScrim(false); }
 
 /* MOBILE KEYBOARD — جلوگیری از بالا پریدن چت هنگام باز شدن کیبورد */
 (function () {
@@ -421,8 +421,8 @@ function setMode(mode) {
   $('conv-empty').classList.toggle('hidden', chat ? !!state.room : true);
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
-  if (chat) { $('chat-list-column').classList.remove('hidden'); $('details-panel').classList.remove('hidden'); }
-  else { $('chat-list-column').classList.add('hidden'); $('details-panel').classList.add('hidden'); }
+  if (chat) { $('chat-list-column').classList.remove('hidden'); }
+  else { $('chat-list-column').classList.add('hidden'); }
 }
 
 /* DOCK */
@@ -479,7 +479,7 @@ function handleWS(d) {
     }
     case 'added-to': toast('به «' + (d.name || 'گروه') + '» اضافه شدی'); buildChatList(); break;
     case 'ai-thinking': if (d.roomId === state.room) { const sub = $('conv-sub'); if (sub) sub.textContent = 'هوش مصنوعی در حال فکر کردن…'; } break;
-    case 'pinned-updated': state.pinned[d.roomId] = d.ids; renderDetails(); break;
+    case 'pinned-updated': state.pinned[d.roomId] = d.ids; break;
     case 'room-deleted': {
       delete state.rooms[d.roomId];
       delete state.chatState[d.roomId];
@@ -489,7 +489,6 @@ function handleWS(d) {
       if (state.room === d.roomId) {
         state.room = null;
         const m = $('messages'); if (m) m.innerHTML = '';
-        const dp = $('details-panel'); if (dp) { dp.classList.add('hidden'); dp.classList.remove('open'); }
         showScrim(false);
       }
       buildChatList();
@@ -627,10 +626,9 @@ function openRoom(rid) {
   state.room = rid; state.replyTo = null;
   setReply(null);
   document.querySelectorAll('.chat-item').forEach((e) => e.classList.toggle('active', e.dataset.roomId === rid));
-  if (isMobile()) { $('details-panel').classList.remove('open'); } else { $('details-panel').classList.add('hidden'); }
   renderRoomHeader(); markRead(rid);
   setMode('chats');
-  if (isMobile()) { $('details-panel').classList.remove('open'); $('conversation').classList.add('chat-open'); showScrim(false); vxPush(); }
+  if (isMobile()) { $('conversation').classList.add('chat-open'); showScrim(false); vxPush(); }
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
@@ -702,8 +700,6 @@ function onNewMessage(m) {
   if (rid === state.room) { addMessage(m); if (m.from === state.me.username || isNearBottom()) scrollBottom(); markRead(rid); renderReplyCounts(state.room); }
   else { r.unread = computeUnread(rid, r); beep(); pushNotification(m); }
   scheduleChatListRefresh(rid === state.room ? 120 : 250);
-  const dp = $('details-panel');
-  if (rid === state.room && dp && dp.style.display !== 'none' && !dp.classList.contains('hidden')) renderDetails();
 }
 function pushNotification(m) {
   if (m.from === state.me.username || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -2280,49 +2276,7 @@ function showTyping(d) {
 }
 function markRead(rid) { if (!rid) return; if (!state.readState[rid]) state.readState[rid] = {}; state.readState[rid][state.me.username] = Date.now(); if (state.rooms[rid]) state.rooms[rid].unread = 0; scheduleChatListRefresh(120); if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'read', roomId: rid })); }
 
-/* DETAILS PANEL */
-function renderDetails() {
-  const p = $('details-panel'); const rid = state.room; if (!rid) return; p.classList.remove('hidden'); p.innerHTML = '';
-  const close = document.createElement('div'); close.className = 'dp-close'; close.innerHTML = ic('x'); close.onclick = () => p.classList.add('hidden'); p.appendChild(close);
-  const head = document.createElement('div'); head.className = 'dp-head'; head.innerHTML = avatarEl(rid.startsWith('group:') ? { displayName: roomTitle(rid) } : { displayName: roomTitle(rid) }, 'lg').outerHTML + '<div class="dp-name">' + esc(roomTitle(rid)) + '</div><div class="dp-sub">' + esc(roomOnline(rid)) + '</div>'; p.appendChild(head);
-  const flags = chatFlags(rid); const tog = (label, key, icon) => { const r = document.createElement('div'); r.className = 'dp-row'; r.innerHTML = ic(icon || 'bell') + '<span>' + label + '</span><label class="switch"><input type="checkbox" ' + (flags[key] ? 'checked' : '') + '><span class="slider"></span></label>'; r.querySelector('input').onchange = () => setFlag(rid, key, r.querySelector('input').checked); p.appendChild(r); };
-  tog('پین کردن چت', 'pinned', 'pin'); tog('بی‌صدا', 'muted', 'volume-x'); tog('مخفی کردن', 'hidden', 'eye-off'); tog('قفل چت', 'locked', 'lock');
-  const pins = (state.pinned[rid] || []); if (pins.length) { const sec = document.createElement('div'); sec.className = 'dp-sec'; sec.innerHTML = '<div class="dp-sec-title">' + ic('pin') + ' پیام‌های پین‌شده</div>'; pins.forEach((id) => { const msg = (state.rooms[rid] || {}).messages.find((x) => x.id === id); if (!msg) return; const it = document.createElement('div'); it.className = 'dp-pin'; it.innerHTML = '<span>' + esc(previewText(msg)) + '</span>'; it.onclick = () => { const el = document.querySelector('[data-id="' + id + '"]'); if (el) el.scrollIntoView(); }; sec.appendChild(it); }); p.appendChild(sec); }
-  const act = document.createElement('div'); act.className = 'dp-sec'; act.innerHTML = '<div class="dp-sec-title">عملیات</div>';
-  const mk = (label, icon, fn) => { const r = document.createElement('div'); r.className = 'dp-act'; r.innerHTML = ic(icon) + '<span>' + label + '</span>'; r.onclick = fn; return r; };
-  if (rid.startsWith('dm:')) act.appendChild(mk('پاک کردن چت', 'trash-2', () => deleteChat(rid)));
-  else act.appendChild(mk('پاک کردن تاریخچه', 'trash-2', async () => { if (await uConfirm('پاک شود؟')) { $('messages').innerHTML = ''; state.lastDay = null; } }));
-  if (rid.startsWith('group:')) {
-    const g = state.groups.find((x) => 'group:' + x.id === rid);
-    if (g) {
-      if (g.owner === state.me.username) act.appendChild(mk('مدیریت ' + ((g.type || 'group') === 'channel' ? 'کانال' : 'گروه'), 'settings', () => manageGroup(g)));
-      act.appendChild(mk('لینک دعوت', 'link', async () => {
-        try {
-          const res = await api('/api/groups/' + g.id + '/invite');
-          const d = await res.json();
-          if (d.ok) {
-            const link = location.origin + d.link;
-            navigator.clipboard.writeText(link).then(() => toast('لینک دعوت کپی شد')).catch(() => {});
-            if (await uConfirm('لینک دعوت:\n' + link + '\n\nآیا می‌خواهید کپی شود؟')) {
-              navigator.clipboard.writeText(link).catch(() => {});
-            }
-          }
-        } catch (e) { toast('خطا در دریافت لینک'); }
-      }));
-    }
-  }
-  act.appendChild(mk('مشاهده پروفایل', 'user', () => { const other = rid.startsWith('dm:') ? rid.slice(3).split('|').find((p) => p !== state.me.username) : null; if (other) openProfile(other, state.room || rid); else toast('نمایش پروفایل برای گروه در دسترس نیست'); }));
-  if (rid.startsWith('dm:')) {
-    const other = rid.slice(3).split('|').find((p) => p !== state.me.username);
-    if (other && other !== BOT_USERNAME) {
-      const isBlocked = state.me.blocked && state.me.blocked.includes(other);
-      act.appendChild(mk(isBlocked ? 'آنبلاک کردن' : 'مسدود کردن', isBlocked ? 'user-check' : 'user-x', () => toggleBlock(other)));
-    }
-  }
-  p.appendChild(act); luc();
-}
 
-/* ===================== ROOM INFO (گروه / کانال / افراد) ===================== */
 let _roomInfoRid = null;
 function roomInfoCtx(rid) {
   const isG = !!rid && rid.startsWith('group:');
@@ -2497,13 +2451,13 @@ async function toggleBlock(other) {
   if (isBlocked) {
     const res = await api('/api/unblock', { method: 'POST', body: JSON.stringify({ username: other }) });
     const d = await res.json();
-    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); renderDetails(); }
+    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر آنبلاک شد'); buildChatList(); }
     else toast(d.error || 'خطا در آنبلاک');
   } else {
     if (!(await uConfirm('آیا می‌خواهید این کاربر را مسدود کنید؟'))) return;
     const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
     const d = await res.json();
-    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
+    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); }
     else toast(d.error || 'خطا در مسدودسازی');
   }
 }
@@ -2545,7 +2499,7 @@ async function deleteChat(rid) {
   if (choices.block && isDm && other) {
     const res = await api('/api/block', { method: 'POST', body: JSON.stringify({ username: other }) });
     const d = await res.json();
-    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); renderDetails(); }
+    if (d.ok) { state.me.blocked = d.blocked; toast('کاربر مسدود شد'); buildChatList(); }
   }
   if (choices.leave && isGroup && !choices.del) {
     const gid = rid.slice(6);
@@ -3852,8 +3806,8 @@ function manageGroup(g) {
       }
       pop.remove();
       toast(kindLbl + ' ذخیره شد');
-      renderRoomHeader(); buildChatList(); renderDetails();
-      if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups }));
+       renderRoomHeader(); buildChatList();
+       if (state.ws) state.ws.send(JSON.stringify({ type: 'groups', groups: state.groups }));
     } catch (e) { toast('خطا: ' + e.message); btn.disabled = false; btn.textContent = 'ذخیره'; }
   };
   luc();
@@ -4223,7 +4177,6 @@ function applyEffect(eff, color) {
 function closeAllOverlays() {
   if (document.querySelector('.msg-sheet, .msg-ctx, .ctx-scrim')) { closeMsgCtx(); closeCtxMenus(); return true; }
   if ($('emoji-pop') && !$('emoji-pop').classList.contains('hidden')) { $('emoji-pop').classList.add('hidden'); return true; }
-  if ($('details-panel') && !$('details-panel').classList.contains('hidden')) { $('details-panel').classList.add('hidden'); return true; }
   return false;
 }
 window.addEventListener('keydown', (e) => {
@@ -4272,8 +4225,6 @@ function vxBack(allowExit) {
   const ri = document.querySelector('.ri-backdrop');
   if (ri) { ri.remove();
     if (viewHost && !viewHost.classList.contains('hidden') && viewHost.querySelector('.roominfo-view')) { viewHost.innerHTML = ''; setMode('chats'); } return true; }
-  const dp = $('details-panel');
-  if (isMobile() && dp && dp.classList.contains('open')) { dp.classList.remove('open'); showScrim(false); return true; }
   const ns = $('nav-sidebar');
   if (isMobile() && ns && ns.classList.contains('m-open')) { ns.classList.remove('m-open'); showScrim(false); return true; }
   if (viewHost && !viewHost.classList.contains('hidden')) {
