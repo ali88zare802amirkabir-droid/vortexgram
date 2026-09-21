@@ -1719,3 +1719,99 @@ html.has-js.loaded .hero-visual { opacity: 1; transform: none; }
   .header-actions > .btn { display: none; }
   .brand-name { font-size: 18px; }
 }
+
+/* ============================================================
+   Mobile refinements (v8)
+   ============================================================ */
+
+/* Hero: scroll-cue becomes an in-flow indicator below the phone
+   instead of floating over the device wireframe. */
+@media (max-width: 980px) {
+  .scroll-cue {
+    position: relative;
+    left: auto;
+    transform: none;
+    margin: 32px auto 0;
+    z-index: 3;
+  }
+}
+
+/* ---- Features: cards become one auto-rotating strip on phones ----
+   JS adds .is-strip (only when motion is allowed), clones the cards
+   for a seamless -50% marquee loop — same feel as the top marquee. */
+@keyframes featMq {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@media (max-width: 640px) {
+  .features .container {
+    position: relative;
+    max-width: 100vw;
+    overflow: hidden;
+    padding-inline: 0;
+  }
+
+  html.has-js .feature-grid.is-strip {
+    display: flex;
+    flex-wrap: nowrap;
+    width: max-content;
+    gap: 14px;
+    padding-inline: 22px 20px;
+    animation: featMq 54s linear infinite;
+  }
+  html.has-js .feature-grid.is-strip:hover { animation-play-state: paused; }
+  html.has-js .feature-grid.is-strip .feature-card {
+    flex: 0 0 auto;
+    width: min(264px, 72vw);
+  }
+
+  .features .container::before,
+  .features .container::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 34px;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .3s ease;
+  }
+  .features .container::before {
+    inset-inline-start: 0;
+    background: linear-gradient(to right, var(--bg), transparent);
+  }
+  .features .container::after {
+    inset-inline-end: 0;
+    background: linear-gradient(to left, var(--bg), transparent);
+  }
+  html.has-js .features .container:has(.is-strip)::before,
+  html.has-js .features .container:has(.is-strip)::after { opacity: 1; }
+}
+
+/* ---- Showcase: swipeable snap gallery on phones ---- */
+@media (max-width: 640px) {
+  .showcase .container {
+    position: relative;
+    max-width: 100vw;
+    overflow: hidden;
+  }
+  .showcase-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 14px;
+    padding: 4px 22px 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .showcase-grid::-webkit-scrollbar { display: none; }
+  .screen-card {
+    flex: 0 0 78%;
+    scroll-snap-align: center;
+  }
+  .screen-card:last-child { display: block; }
+  .screen-shot img { aspect-ratio: 640 / 1180; }
+}

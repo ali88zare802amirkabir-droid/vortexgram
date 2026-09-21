@@ -364,4 +364,45 @@
       statNums.forEach(function (el) { ioStats.observe(el); });
     }
   }
+
+  /* ---------- Features: mobile auto-rotating strip ----------
+     On phones (≤640px) the feature cards become one seamless
+     marquee band, cloned in half for the -50% loop. skips the
+     effect entirely when reduced-motion is requested. */
+  var featGrid = document.querySelector('.feature-grid');
+  if (featGrid && !reduced && window.matchMedia) {
+    var featMQ = window.matchMedia('(max-width: 640px)');
+    var featClones = null;
+
+    function buildFeatStrip() {
+      if (featMQ.matches) {
+        if (!featClones) {
+          var cards = Array.prototype.slice.call(featGrid.querySelectorAll('.feature-card'));
+          var originals = cards.filter(function (c) { return !c.hasAttribute('data-clone'); });
+          if (!originals.length) return;
+          featClones = originals.map(function (c) {
+            var cl = c.cloneNode(true);
+            cl.setAttribute('data-clone', '');
+            cl.setAttribute('aria-hidden', 'true');
+            return cl;
+          });
+          var frag = document.createDocumentFragment();
+          featClones.forEach(function (cl) { frag.appendChild(cl); });
+          featGrid.appendChild(frag);
+          featGrid.classList.add('is-strip');
+        }
+      } else if (featClones) {
+        featClones.forEach(function (cl) { cl.remove(); });
+        featClones = null;
+        featGrid.classList.remove('is-strip');
+      }
+    }
+
+    buildFeatStrip();
+    var featRT = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(featRT);
+      featRT = setTimeout(buildFeatStrip, 150);
+    });
+  }
 })();
