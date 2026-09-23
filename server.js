@@ -417,7 +417,11 @@ const uploadsStatic = express.static(UPLOAD_DIR, {
   setHeaders: (res, p) => {
     const ext = p.slice(p.lastIndexOf('.'));
     if (MIME_BY_EXT[ext]) res.setHeader('Content-Type', MIME_BY_EXT[ext]);
-    res.setHeader('Cache-Control', 'no-store');
+    // نام هر فایل آپلودشده یک شناسه‌ی تصادفی یکتا دارد و محتوای یک URL هرگز تغییر
+    // نمی‌کند؛ پس پاسخ را بلندمدت در کشِ همین مرورگر (private) نگه می‌داریم تا
+    // بازدید/دانلود دوباره، فایل را از شبکه دریافت نکند. private یعنی هرگز در
+    // کشِ مشترکِ بین‌کاربری (پروکسی/CDN) قرار نمی‌گیرد.
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   },
 });
 app.use('/uploads', (req, res) => {
@@ -436,6 +440,12 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
 app.get('/app', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+// لینک دعوت گروه/کانال: اپ را باز می‌کند و اپ `vx_group_invite` را از
+// مسیر می‌خواند تا پس از لاگین، به‌صورت خودکار عضو شود.
+app.get('/join/:token', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -1489,7 +1499,7 @@ function publicGroups(username) {
     const me = memberOf(g, username);
     return {
       id: g.id, type: g.type || 'group', name: g.name, owner: g.owner,
-      members: g.members.length,
+      members: (g.members || []).map((m) => ({ username: m.username, role: m.role })),
       joined: true,
       myRole: me ? me.role : null,
     };
@@ -1651,6 +1661,28 @@ app.post('/api/groups/join/:token', auth, (req, res) => {
   saveDB();
   broadcastGroups();
   res.json({ ok: true, group: { id: g.id, name: g.name, type: g.type } });
+});
+
+// ---------- جستجوی گروه/کانال ----------
+// فقط گروه/کانالی قابل پیدا شدن است که ایدی عمومی (username) داشته باشد
+// (برای کانال باید visibility=public هم باشد)؛ بقیه فقط با لینک دعوت وارد می‌شوند.
+app.get('/api/groups/search', auth, (req, res) => {
+  if (!authRateOk('gsearch:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'کمی آرام‌تر' });
+  const q = String(req.query.q || '').trim().toLowerCase();
+  if (q.length < 1) return res.json({ groups: [] });
+  const isAdmin = !!req.user.isAdmin;
+  const out = db.groups
+    .filter((g) => {
+      if (isAdmin) return true;
+      if (memberOf(g, req.user.username)) return false;
+      if (!g.username) return false;
+      if ((g.type || 'group') === 'channel' && g.visibility !== 'public') return false;
+      return true;
+    })
+    .filter((g) => (g.username || '').includes(q) || g.name.toLowerCase().includes(q) || (g.id || '').toLowerCase() === q)
+    .slice(0, 15)
+    .map((g) => ({ id: g.id, name: g.name, type: g.type || 'group', username: g.username || null, description: g.description || null, members: (g.members || []).length, avatar: g.avatar || null }));
+  res.json({ groups: out });
 });
 
 // channel/group edit: rename, username, visibility

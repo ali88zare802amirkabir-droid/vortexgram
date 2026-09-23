@@ -165,12 +165,14 @@
 
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=141"></script>
+  <script src="app.js?v=143"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
   var q = new URLSearchParams(location.search);
   var inv = q.get('invite') || '';
   if (inv) { localStorage.setItem('vx_inviter', inv.replace('@', '').toLowerCase().slice(0, 50)); history.replaceState(null, '', location.pathname); }
+  var jm = location.pathname.match(/^\/join\/([A-Za-z0-9_-]+)/);
+  if (jm) { localStorage.setItem('vx_group_invite', jm[1].slice(0, 60)); history.replaceState(null, '', '/app'); }
   var def = null;
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault(); def = e;

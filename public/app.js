@@ -99,7 +99,7 @@ function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); showScrim
 const state = {
   token: localStorage.getItem('ft_token') || null, me: null, ws: null,
   groups: [], users: [], chatState: {}, readState: {}, pinned: {},
-  room: null, replyTo: null, rooms: {}, chatFilter: 'all', search: '', nav: 'chats', notifications: [],
+  room: null, replyTo: null, rooms: {}, chatFilter: 'all', search: '', nav: 'chats', notifications: [], groupSearch: [],
   deletedIds: new Set(), renderedRooms: new Set(),
   fontScale: parseInt(localStorage.getItem('vx_fontsize') || '14', 10),
   profileReturnRoom: null,
@@ -445,12 +445,12 @@ function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(proto + '://' + location.host); state.ws = ws;
   ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: state.token }));
-  ws.onmessage = (ev) => { try { handleWS(JSON.parse(ev.data)); } catch (e) {} };
+  ws.onmessage = (ev) => { try { handleWS(JSON.parse(ev.data)); } catch (e) { try { console.error('WS:', e && e.stack ? e.stack : e); } catch (e2) {} } };
   ws.onclose = () => setTimeout(() => { if (state.token && $('app') && !$('app').classList.contains('hidden')) connectWS(); }, 2500);
 }
 function handleWS(d) {
   switch (d.type) {
-    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); pr.messages = [pv]; pr.last = pv; pr.unread = pv.unread || 0; pr.previewOnly = true; } loadReactionConfig(); renderNav(); renderDock(); buildChatList(); handleInviteFollow(); break;
+    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); pr.messages = [pv]; pr.last = pv; pr.unread = pv.unread || 0; pr.previewOnly = true; } loadReactionConfig(); renderNav(); renderDock(); buildChatList(); handleInviteFollow(); handleGroupInvite(); break;
     case 'users': state.users = d.users || []; scheduleChatListRefresh(); break;
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
@@ -552,6 +552,18 @@ function handleInviteFollow() {
   const rid = 'dm:' + [state.me.username, inviter].sort().join('|');
   setTimeout(() => openRoom(rid), 400);
 }
+function handleGroupInvite() {
+  const token = localStorage.getItem('vx_group_invite');
+  if (!token || !state.me) return;
+  localStorage.removeItem('vx_group_invite');
+  api('/api/groups/join/' + encodeURIComponent(token), { method: 'POST' }).then(async (r) => {
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { toast((d.error || 'لینک دعوت نامعتبر')); return; }
+    toast('به «' + (d.group && d.group.name || 'گروه') + '» پیوستی');
+    buildChatList();
+    if (d.group && d.group.id) setTimeout(() => openRoom('group:' + d.group.id), 500);
+  }).catch(() => toast('خطا در پیوستن به گروه'));
+}
 function cachePreview(rid, msgs) { const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.messages = msgs; r.last = msgs[msgs.length - 1] || null; r.unread = 0; r.previewOnly = false; r.lastSync = Date.now(); }
 function fetchPreviews() { allRoomIds().forEach((rid, i) => setTimeout(() => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'history', roomId: rid })); }, i * 60)); }
 
@@ -579,7 +591,12 @@ function buildChatList() {
   rooms.sort((a, b) => (b.pinned - a.pinned) || (b.lastTime - a.lastTime));
   const active = rooms.filter((r) => !r.archived);
   const archived = rooms.filter((r) => r.archived);
-  if (!active.length && !archived.length) { wrap.innerHTML = '<div class="empty" style="padding:30px"><div class="ic">💬</div><div>چتی یافت نشد</div></div>'; return; }
+  if (state.search && state.groupSearch.length) {
+    const head = document.createElement('div'); head.className = 'arch-head'; head.innerHTML = ic('search') + '<span>گروه‌ها و کانال‌های یافت‌شده</span>';
+    wrap.appendChild(head);
+    state.groupSearch.forEach((g) => wrap.appendChild(groupSearchItemEl(g)));
+  }
+  if (!active.length && !archived.length && !(state.search && state.groupSearch.length)) { wrap.innerHTML = '<div class="empty" style="padding:30px"><div class="ic">💬</div><div>چتی یافت نشد</div></div>'; return; }
   if (archived.length) {
     const head = document.createElement('div'); head.className = 'arch-head'; head.innerHTML = ic('archive') + '<span>آرشیو (' + archived.length + ')</span>'; head.onclick = () => { state.archivedOpen = !state.archivedOpen; buildChatList(); };
     wrap.appendChild(head);
@@ -597,12 +614,29 @@ function chatItemEl(r) {
   it.onclick = () => openRoom(r.rid); it.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, r.rid); };
   return it;
 }
+function groupSearchItemEl(g) {
+  const isJoined = state.groups.some((x) => x.id === g.id);
+  const it = document.createElement('div'); it.className = 'chat-item'; it.dataset.gid = g.id;
+  const av = avatarEl(g.avatar ? { avatar: g.avatar, displayName: g.name } : { displayName: g.name }, 'md');
+  const kind = (g.type === 'channel' ? 'کانال' : 'گروه');
+  const sub = kind + ' • ' + (g.members || 0) + ' عضو' + (g.description ? ' • ' + esc(String(g.description).slice(0, 40)) : '');
+  it.innerHTML = '<div class="ci-av">' + av.outerHTML + '</div><div class="ci-body"><div class="ci-row1"><div class="ci-name">' + esc(g.name) + (g.username ? ' <span style="font-size:10px;opacity:.7" dir="ltr">@' + esc(g.username) + '</span>' : '') + '</div></div><div class="ci-row2"><div class="ci-last">' + sub + '</div></div></div><button class="btn sm" style="margin-inline:8px;flex:0 0 auto">' + (isJoined ? 'ورود' : 'عضویت') + '</button>';
+  it.onclick = () => {
+    if (isJoined) { openRoom('group:' + g.id); return; }
+    api('/api/groups/' + g.id + '/join', { method: 'POST' }).then((r) => r.json().catch(() => ({}))).then((d) => {
+      if (!d.ok) { toast((d && d.error) || 'خطا در عضویت'); return; }
+      toast('عضویت انجام شد');
+      setTimeout(() => openRoom('group:' + g.id), 300);
+    }).catch(() => toast('خطا در عضویت'));
+  };
+  return it;
+}
 function computeUnread(rid, r) {
   if (!r) return 0;
   if (r.previewOnly) return r.unread || 0;
   if (!r.last) return 0; const rs = state.readState[rid] || {}; const read = rs[state.me.username] || 0; if (r.last.time <= read) return 0; return r.messages.filter((m) => m.time > read && m.from !== state.me.username).length;
 }
-function roomMembers(rid) { if (rid.startsWith('dm:')) return rid.slice(3).split('|'); if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members : []; } return []; }
+function roomMembers(rid) { if (rid.startsWith('dm:')) return rid.slice(3).split('|'); if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g && Array.isArray(g.members) ? g.members : []; } return []; }
 function isReadByOther(rid, m) { const rs = state.readState[rid] || {}; return roomMembers(rid).some((u) => u !== state.me.username && (rs[u] || 0) >= m.time); }
 function refreshReadTicks(rid) { if (rid !== state.room) return; const r = state.rooms[rid]; if (!r) return; document.querySelectorAll('#messages .bubble').forEach((b) => { const m = r.messages.find((x) => x.id === b.dataset.id); if (!m || m.from !== state.me.username) return; const span = b.querySelector('.msg-meta .msg-time'); if (!span) return; const tick = span.querySelector('svg'); const want = isReadByOther(rid, m); const has = !!tick; if (want && !has) { span.insertAdjacentHTML('afterbegin', ic('check-check')); applyIcons(span); } else if (!want && has) { tick.remove(); span.insertAdjacentHTML('afterbegin', ic('check')); applyIcons(span); } }); }
 function previewText(m) {
@@ -616,7 +650,16 @@ function msgSenderName(m) {
   return m.fromName || (u && u.displayName) || uid || '';
 }
 $('cl-tabs').addEventListener('click', (e) => { const t = e.target.closest('.cl-tab'); if (!t) return; document.querySelectorAll('.cl-tab').forEach((x) => x.classList.remove('active')); t.classList.add('active'); state.chatFilter = t.dataset.tab; buildChatList(); });
-$('cl-search-input').addEventListener('input', (e) => { state.search = e.target.value; buildChatList(); });
+$('cl-search-input').addEventListener('input', (e) => { state.search = e.target.value; scheduleGroupSearch(state.search); buildChatList(); });
+let _gsTimer = null;
+function scheduleGroupSearch(q) {
+  clearTimeout(_gsTimer);
+  const s = String(q || '').trim();
+  if (s.length < 1) { state.groupSearch = []; return; }
+  _gsTimer = setTimeout(() => {
+    api('/api/groups/search?q=' + encodeURIComponent(s)).then((r) => r.json()).then((d) => { if ((d || {}).groups) { state.groupSearch = d.groups; buildChatList(); } }).catch(() => { if (state.groupSearch.length) { state.groupSearch = []; buildChatList(); } });
+  }, 280);
+}
 $('cl-new').onclick = (e) => { e.stopPropagation(); openNewMenu(e.currentTarget); };
 $('cl-menu').onclick = () => { const open = !$('nav-sidebar').classList.contains('m-open'); $('nav-sidebar').classList.toggle('m-open', open); showScrim(open); };
 /* PART 2 — conversation, messages, composer, details */
@@ -751,6 +794,7 @@ function renderMessagesBatch(messages) {
   const rmap = replyCountMap(messages);
   
   for (const m of messages) {
+    try {
     const d = new Date(m.time); const ds = d.toLocaleDateString('fa-IR');
     if (ds !== state.lastDay) {
       state.lastDay = ds;
@@ -813,6 +857,16 @@ function renderMessagesBatch(messages) {
       setTimeout(() => wrap.classList.remove('emoji-enter'), 500);
     }
     frag.appendChild(wrap);
+    } catch (err) {
+      try { console.error('msg render fail', m && m.id, err); } catch (e) {}
+      const fb = document.createElement('div');
+      fb.className = 'msg ' + ((m && m.from === state.me.username) ? 'mine' : '') + ' no-av';
+      if (m && m.id) fb.dataset.id = m.id;
+      const fbub = document.createElement('div'); fbub.className = 'bubble'; fbub.dataset.id = m && m.id; fbub.dataset.from = m && m.from;
+      fbub.textContent = (m && (m.content || m.name)) || '⚠️';
+      fb.appendChild(fbub);
+      frag.appendChild(fb);
+    }
   }
   
   msgs.appendChild(frag);
@@ -969,6 +1023,7 @@ function fileEl(m) {
     btn.innerHTML = ''; btn.appendChild(ring);
     sizeEl.classList.remove('err-txt');
     sizeEl.textContent = startSize;
+    const src = m.src || m.url || '';
     const ok = (blb) => {
       dlSet(ring, 100);
       const url = URL.createObjectURL(blb);
@@ -983,7 +1038,15 @@ function fileEl(m) {
       btn.innerHTML = ic('refresh-cw');
       btn.onclick = () => { sizeEl.classList.remove('err-txt'); sizeEl.textContent = startSize; start(); };
     };
-    fetchMediaStream(m.src || m.url, (p) => dlSet(ring, p), ok, fail);
+    // فایلی که قبلا دانلود شده در کشِ IndexedDB نگه داشته می‌شود (مثل عکس/ویدیو)؛
+    // دفعه‌ی بعد بدون دانلود مجدد از همین کش داده می‌شود. ایدرز فایل یکتاست و عوض نمی‌شود.
+    vxIdbGet(src).then((blb) => {
+      if (blb) return ok(blb);
+      fetchMediaStream(src, (p) => dlSet(ring, p), (blb) => {
+        try { memCacheSet(src, URL.createObjectURL(blb)); } catch (e) {}
+        ok(blb);
+      }, fail);
+    });
   }
   btn.onclick = start;
   return d;
@@ -2304,7 +2367,7 @@ function roomInfoBodyHTML(rid) {
     const chLbl = c.isCh ? 'کانال' : 'گروه';
     let adm = '';
     if (c.g && c.g.owner === state.me.username) adm = ' · ادمین';
-    else if (c.g && c.g.members && c.g.members.some((x) => x && (x.username === state.me.username || x === state.me.username))) adm = ' · عضو';
+    else if (c.g && Array.isArray(c.g.members) && c.g.members.some((x) => x && (x.username === state.me.username || x === state.me.username))) adm = ' · عضو';
     h += '<div class="dp-row">' + ic(c.isCh ? 'megaphone' : 'users') + '<span>نوع</span><b style="margin-inline-start:auto">' + chLbl + adm + '</b></div>';
     h += '<div class="dp-row">' + ic('users') + '<span>' + (c.isCh ? 'دنبالکنندهها' : 'اعضا') + '</span><b style="margin-inline-start:auto">' + (c.g ? c.g.members.length + ' نفر' : '—') + '</b></div>';
     if (c.g && c.g.username) h += '<div class="dp-row">' + ic('hash') + '<span>شناسه</span><b style="margin-inline-start:auto">@' + esc(c.g.username) + '</b></div>';
