@@ -119,6 +119,9 @@ window.addEventListener('unhandledrejection', function (ev) {
 const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-name'), authUname = $('auth-username');
 const stepPhone = $('auth-step-phone'), stepCode = $('auth-step-code'), stepName = $('auth-step-name'), stepPass = $('auth-step-pass');
 const authError = $('auth-error');
+// Bug Hunt: ورود/ثبت‌نام با شماره موبایل + OTP موقتاً غیرفعال است (با سرور هم‌گام).
+// فعال‌سازی مجدد: true را به false برگردان — کدهای OTP پاک نشده‌اند.
+const AUTH_PHONE_OFF = true;
 let authPhoneVal = '', authBusy = false;
 function showAuthStep(s) { stepPhone.classList.toggle('hidden', s !== 'phone'); stepCode.classList.toggle('hidden', s !== 'code'); stepName.classList.toggle('hidden', s !== 'name'); if (stepPass) stepPass.classList.toggle('hidden', s !== 'pass'); authError.textContent = ''; }
 function authErr(m, ok) { authError.textContent = m; authError.style.color = ok ? 'var(--success)' : 'var(--danger)'; }
@@ -141,6 +144,7 @@ async function autoCompleteRegister(phone, code) {
   return false;
 }
 $('auth-send').onclick = async () => {
+  if (AUTH_PHONE_OFF) { showAuthStep('pass'); return authErr('ورود با شماره موبایل (OTP) موقتاً غیرفعال است'); }
   if (authBusy) return;
   const raw = authPhone.value.trim();
   const phone = normalizePhoneDisplay(raw);
@@ -166,6 +170,7 @@ $('auth-send').onclick = async () => {
   } catch (e) { authErr('خطا در برقراری ارتباط با سرور — مطمئن شو سرور روشن است', true); authBusyState(false); }
 };
 $('auth-verify').onclick = async () => {
+  if (AUTH_PHONE_OFF) { showAuthStep('pass'); return authErr('ورود با شماره موبایل (OTP) موقتاً غیرفعال است'); }
   if (authBusy) return;
   const code = authCode.value.trim();
   if (!/^\d{6}$/.test(code)) return authErr('کد باید ۶ رقمی باشد');
@@ -188,6 +193,7 @@ $('auth-verify').onclick = async () => {
   } catch (e) { authBusyState(false); authErr('خطا در برقراری ارتباط با سرور — دوباره تلاش کن', true); }
 };
 $('auth-finish').onclick = async () => {
+  if (AUTH_PHONE_OFF) { showAuthStep('pass'); return authErr('ورود با شماره موبایل (OTP) موقتاً غیرفعال است'); }
   if (authBusy) return;
   const displayName = authName.value.trim();
   if (displayName.length < 2) return authErr('نام نمایشی حداقل ۲ حرف باشد');
@@ -198,7 +204,7 @@ $('auth-finish').onclick = async () => {
   } catch (e) { authErr(e.message); authBusyState(false); }
 };
 $('auth-to-pass').onclick = () => showAuthStep('pass');
-$('auth-pass-to-phone').onclick = () => showAuthStep('phone');
+$('auth-pass-to-phone').onclick = () => { if (AUTH_PHONE_OFF) authErr('ورود با شماره موبایل (OTP) موقتاً غیرفعال است — از نام کاربری و رمز عبور استفاده کن'); else showAuthStep('phone'); };
 $('auth-pass-login').onclick = async () => {
   if (authBusy) return;
   const username = $('auth-pass-username').value.trim();
@@ -221,6 +227,17 @@ authName.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-fin
 const authPU = $('auth-pass-username'), authPP = $('auth-pass-password');
 if (authPU) authPU.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-pass-login').click(); });
 if (authPP) authPP.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auth-pass-login').click(); });
+
+// Bug Hunt: Phone+OTP بسته — پنل شماره به‌صورت غیرفعال/هشدار نمایش داده می‌شود و پیش‌فرض ورود رمز عبور است.
+if (AUTH_PHONE_OFF) {
+  const offNote = $('auth-phone-off');
+  if (offNote) offNote.classList.remove('hidden');
+  $('auth-phone').disabled = true;
+  $('auth-send').disabled = true;
+  const ptp = $('auth-pass-to-phone');
+  if (ptp) ptp.textContent = 'ورود با شماره موبایل (غیرفعال)';
+  showAuthStep('pass');
+}
 
 /* APPEARANCE */
 function applyAppearance() {

@@ -37,6 +37,10 @@ if (HIDE_CODE && !devCodeEnabled) {
 // مستقیم وارد می‌شود و شماره‌ی جدید فقط نام/آیدی می‌خواهد.
 const noOtpEnabled = String(process.env.VX_NO_OTP || '').trim() === '1';
 if (noOtpEnabled) console.warn('VX_NO_OTP enabled — phone login without code (TEST MODE, do not use in production)');
+// ==== Bug Hunt: ورود/ثبت‌نام با شماره موبایل + OTP موقتاً غیرفعال است ====
+// فقط مسیرهای Phone+OTP بسته می‌شود؛ Username+Password (register/login) دست‌نخورده است.
+// فعال‌سازی مجدد: true را به false برگردان — هیچ کد OTP پاک نشده است.
+const phoneAuthDisabled = true;
 // پشت پراکسی (مثل Render) تنها وقتی TRUST_PROXY ست شود X-Forwarded-For بکار می‌رود.
 const TRUST_PROXY = String(process.env.TRUST_PROXY || '0');
 
@@ -534,6 +538,7 @@ app.post('/api/logout', auth, (req, res) => {
 function genCode() { return String(crypto.randomInt(0, 1000000)).padStart(6, '0'); }
 
 app.post('/api/send-code', async (req, res) => {
+  if (phoneAuthDisabled) return res.status(403).json({ error: 'ورود با شماره موبایل موقتاً غیرفعال است — از نام کاربری و رمز عبور استفاده کن', disabled: 'phone-otp' });
   const phone = normalizePhone((req.body || {}).phone);
   if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
   if (!authRateOk('send-code:' + phone, 5, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
@@ -562,6 +567,7 @@ app.post('/api/send-code', async (req, res) => {
 });
 
 app.post('/api/verify-code', (req, res) => {
+  if (phoneAuthDisabled) return res.status(403).json({ error: 'ورود با شماره موبایل موقتاً غیرفعال است — از نام کاربری و رمز عبور استفاده کن', disabled: 'phone-otp' });
   const phone = normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '');
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
@@ -585,6 +591,7 @@ app.post('/api/verify-code', (req, res) => {
 });
 
 app.post('/api/complete-register', (req, res) => {
+  if (phoneAuthDisabled) return res.status(403).json({ error: 'ورود با شماره موبایل موقتاً غیرفعال است — از نام کاربری و رمز عبور استفاده کن', disabled: 'phone-otp' });
   if (!authRateOk('comp-register:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const phone = normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '');

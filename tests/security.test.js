@@ -144,26 +144,25 @@ test('security: swtest removed, JSON 404, logout invalidation, sessions out of d
   });
 });
 
-test('security: OTP code shown in page by default; VX_HIDE_CODE=1 re-gates it', async (t) => {
-  // پیش‌فرض (این دمو) → کد در همان صفحه برمی‌گردد و OTP اجباری می‌ماند
-  await withServer(t, { seed: {} }, async ({ base }) => {
+test('security: Phone+OTP disabled for Bug Hunt — send/verify/complete-register return 403, no code ever issued', async (t) => {
+  // Bug Hunt: مسیر Phone+OTP موقتاً بسته است (phoneAuthDisabled در server.js).
+  // وقتی دوباره فعال شد (flag → false) این تست باید به حالت قبلی (200 + devCode) برگردد.
+  await withServer(t, {}, async ({ base }) => {
     const r = await api(base, 'POST', '/api/send-code', null, { phone: '09121234567' });
-    assert.strictEqual(r.status, 200, 'send-code ok');
-    assert.match(String(r.d.devCode || ''), /^\d{6}$/, 'code visible in page by default');
-    const ok = await api(base, 'POST', '/api/verify-code', null, { phone: '09121234567', code: r.d.devCode });
-    assert.strictEqual(ok.status, 200, 'correct code accepted');
-    assert.strictEqual(ok.d.needsName, true, 'new phone proceeds to name');
-    const bad = await api(base, 'POST', '/api/verify-code', null, { phone: '09121234567', code: '000000' });
-    assert.strictEqual(bad.status, 401, 'wrong code still blocked');
+    assert.strictEqual(r.status, 403, 'send-code blocked while phone auth disabled');
+    assert.strictEqual(r.d.disabled, 'phone-otp', 'disabled marker present');
+    assert.strictEqual(r.d.devCode, undefined, 'no OTP code is ever issued');
+    const v = await api(base, 'POST', '/api/verify-code', null, { phone: '09121234567', code: '123456' });
+    assert.strictEqual(v.status, 403, 'verify-code blocked');
+    const cr = await api(base, 'POST', '/api/complete-register', null, { phone: '09121234567', code: '123456', displayName: 'X', username: 'x' });
+    assert.strictEqual(cr.status, 403, 'complete-register blocked');
   });
 
-  // production + VX_HIDE_CODE=1 → کد هرگز برنگردد و OTP اجباری بماند
-  await withServer(t, { server: { NODE_ENV: 'production', VX_HIDE_CODE: '1' }, seed: {} }, async ({ base }) => {
+  // production + VX_HIDE_CODE=1 → همچنان 403 و بدون هیچ کد (مسیر کلاً بسته است)
+  await withServer(t, { server: { NODE_ENV: 'production', VX_HIDE_CODE: '1' } }, async ({ base }) => {
     const r = await api(base, 'POST', '/api/send-code', null, { phone: '09121234567' });
-    assert.strictEqual(r.status, 200, 'send-code ok (prod)');
-    assert.strictEqual(r.d.devCode, undefined, 'devCode NOT returned with VX_HIDE_CODE=1');
-    const v = await api(base, 'POST', '/api/verify-code', null, { phone: '09121234567', code: '000000' });
-    assert.strictEqual(v.status, 401, 'wrong code blocked in locked-down production');
+    assert.strictEqual(r.status, 403, 'send-code blocked in prod too');
+    assert.strictEqual(r.d.devCode, undefined, 'no code leaked in prod');
   });
 });
 

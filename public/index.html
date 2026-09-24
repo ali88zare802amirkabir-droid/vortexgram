@@ -25,6 +25,7 @@
       <div class="brand">VORTEX<b>Messenger</b></div>
       <p class="tag">// پروتکل گیمینگ ۲۱۲۶ — پیام‌رسان نسل بعدی</p>
       <div id="auth-step-phone">
+        <p id="auth-phone-off" class="hint hidden" style="text-align:center;color:var(--danger);margin-bottom:10px;font-weight:600">ورود با شماره موبایل (OTP) موقتاً غیرفعال است — از «ورود با رمز عبور» استفاده کن.</p>
         <input id="auth-phone" type="tel" inputmode="numeric" placeholder="شماره موبایل (۰۹۱۲۳۴۵۶۷۸۹)" maxlength="11" autocomplete="tel" />
         <button class="primary" id="auth-send">دریافت کد</button>
         <button class="auth-switch" id="auth-to-pass">ورود با رمز عبور</button>
@@ -165,7 +166,7 @@
 
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=143"></script>
+  <script src="app.js?v=144"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
   var q = new URLSearchParams(location.search);
