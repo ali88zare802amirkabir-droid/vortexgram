@@ -37,10 +37,10 @@ if (HIDE_CODE && !devCodeEnabled) {
 // مستقیم وارد می‌شود و شماره‌ی جدید فقط نام/آیدی می‌خواهد.
 const noOtpEnabled = String(process.env.VX_NO_OTP || '').trim() === '1';
 if (noOtpEnabled) console.warn('VX_NO_OTP enabled — phone login without code (TEST MODE, do not use in production)');
-// ==== Bug Hunt: ورود/ثبت‌نام با شماره موبایل + OTP موقتاً غیرفعال است ====
-// فقط مسیرهای Phone+OTP بسته می‌شود؛ Username+Password (register/login) دست‌نخورده است.
-// فعال‌سازی مجدد: true را به false برگردان — هیچ کد OTP پاک نشده است.
-const phoneAuthDisabled = true;
+// ==== Phone+OTP (ورود/ثبت‌نام با شماره موبایل) ====
+// برای غیرفعال‌سازی موقت (مثل Bug Hunt): true را به جای false بگذار تا
+// هر سه مسیر OTP فقط 403 برگردانند — بدون حذف هیچ کدی.
+const phoneAuthDisabled = false;
 // پشت پراکسی (مثل Render) تنها وقتی TRUST_PROXY ست شود X-Forwarded-For بکار می‌رود.
 const TRUST_PROXY = String(process.env.TRUST_PROXY || '0');
 

@@ -119,9 +119,8 @@ window.addEventListener('unhandledrejection', function (ev) {
 const authPhone = $('auth-phone'), authCode = $('auth-code'), authName = $('auth-name'), authUname = $('auth-username');
 const stepPhone = $('auth-step-phone'), stepCode = $('auth-step-code'), stepName = $('auth-step-name'), stepPass = $('auth-step-pass');
 const authError = $('auth-error');
-// Bug Hunt: ورود/ثبت‌نام با شماره موبایل + OTP موقتاً غیرفعال است (با سرور هم‌گام).
-// فعال‌سازی مجدد: true را به false برگردان — کدهای OTP پاک نشده‌اند.
-const AUTH_PHONE_OFF = true;
+// Phone+OTP فعال است. برای غیرفعال‌سازی موقت (مثل Bug Hunt): true بگذار (هم‌گام با server.js).
+const AUTH_PHONE_OFF = false;
 let authPhoneVal = '', authBusy = false;
 function showAuthStep(s) { stepPhone.classList.toggle('hidden', s !== 'phone'); stepCode.classList.toggle('hidden', s !== 'code'); stepName.classList.toggle('hidden', s !== 'name'); if (stepPass) stepPass.classList.toggle('hidden', s !== 'pass'); authError.textContent = ''; }
 function authErr(m, ok) { authError.textContent = m; authError.style.color = ok ? 'var(--success)' : 'var(--danger)'; }
