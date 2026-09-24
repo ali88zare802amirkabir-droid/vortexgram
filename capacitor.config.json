@@ -1,0 +1,19 @@
+{
+  "appId": "ir.vortexgram.app",
+  "appName": "VORTEXGRAM",
+  "webDir": "public",
+  "server": {
+    "url": "https://66ae722b68435c.lhr.life",
+    "androidScheme": "https",
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#031427"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

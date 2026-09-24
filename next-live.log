@@ -1,0 +1,12 @@
+npm notice run gold-ai-analyst-frontend@1.0.0 dev
+npm notice run next dev -p 3000
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3000
+
+ ✓ Starting...
+ ✓ Ready in 4.5s
+ ○ Compiling / ...
+ ✓ Compiled / in 5.9s (462 modules)
+ GET / 200 in 6294ms
+ GET / 200 in 65ms
+ GET / 200 in 66ms

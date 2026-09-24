@@ -1,0 +1,303 @@
+2026-08-29 12:38:28 tunnel-guard started
+12:39:37 tunnel unreachable but ssh alive (1) - will restart in 60s
+12:42:15 ssh dead, relaunching tunnel
+12:44:00 ssh dead, relaunching tunnel
+2026-08-29 12:47:55 tunnel-guard v2 started
+12:47:55 tunnel unreachable (ssh alive) - force-restarting ssh
+12:48:20 ssh down (#1) - relaunching
+12:48:20 relaunch did not survive - will retry in 5s
+12:48:35 ssh down (#2) - relaunching
+12:48:35 relaunch did not survive - will retry in 5s
+12:48:50 ssh down (#3) - relaunching
+12:48:50 relaunch did not survive - will retry in 5s
+12:49:05 ssh down (#4) - relaunching
+12:49:05 relaunch did not survive - will retry in 5s
+12:49:20 ssh down (#5) - relaunching
+12:49:20 relaunch did not survive - will retry in 5s
+12:49:35 ssh down (#6) - relaunching
+12:49:35 relaunch did not survive - will retry in 5s
+12:49:50 ssh down (#7) - relaunching
+12:49:50 relaunch did not survive - will retry in 5s
+12:50:05 ssh down (#8) - relaunching
+12:50:05 relaunch did not survive - will retry in 5s
+12:50:20 ssh down (#9) - relaunching
+12:50:20 relaunch did not survive - will retry in 5s
+12:50:35 ssh down (#10) - relaunching
+12:50:35 relaunch did not survive - will retry in 5s
+12:50:51 ssh down (#11) - relaunching
+2026-08-29 12:51:17 tunnel-guard v2.1 started
+12:51:17 ssh down - relaunching
+12:51:17 relaunch did not survive (net reset?) - retry in 6s
+12:51:33 ssh down - relaunching
+12:51:33 relaunch did not survive (net reset?) - retry in 6s
+---marker---
+2026-08-29 12:52:14 tunnel-guard v2.1 started
+12:52:14 ssh down - relaunching
+12:52:14 relaunch did not survive (net reset?) - retry in 6s
+12:52:30 ssh down - relaunching
+12:52:30 relaunch did not survive (net reset?) - retry in 6s
+12:52:46 ssh down - relaunching
+12:52:46 relaunch did not survive (net reset?) - retry in 6s
+12:53:02 ssh down - relaunching
+12:53:02 relaunch did not survive (net reset?) - retry in 6s
+12:53:18 ssh down - relaunching
+12:53:18 relaunch did not survive (net reset?) - retry in 6s
+12:53:34 ssh down - relaunching
+12:53:34 relaunch did not survive (net reset?) - retry in 6s
+12:53:50 ssh down - relaunching
+12:53:50 relaunch did not survive (net reset?) - retry in 6s
+12:54:06 ssh down - relaunching
+12:54:06 relaunch did not survive (net reset?) - retry in 6s
+12:54:22 ssh down - relaunching
+12:54:22 relaunch did not survive (net reset?) - retry in 6s
+12:54:38 ssh down - relaunching
+2026-08-29 12:57:12 tunnel-guard v2.1 started
+13:20:32 ssh down - relaunching (next wait 15 s)
+13:20:32 relaunch did not survive - backoff 15 s
+13:20:59 ssh down - relaunching (next wait 30 s)
+13:20:59 relaunch did not survive - backoff 30 s
+13:21:41 ssh down - relaunching (next wait 45 s)
+13:21:41 relaunch did not survive - backoff 45 s
+13:22:39 ssh down - relaunching (next wait 60 s)
+13:22:39 relaunch did not survive - backoff 60 s
+13:23:51 ssh down - relaunching (next wait 60 s)
+13:23:51 relaunch did not survive - backoff 60 s
+13:25:03 ssh down - relaunching (next wait 60 s)
+13:25:03 relaunch did not survive - backoff 60 s
+13:26:15 ssh down - relaunching (next wait 60 s)
+13:26:15 relaunch did not survive - backoff 60 s
+2026-08-29 13:27:24 tunnel-guard v3 started
+13:27:24 ssh down - relaunching (backoff 15 s)
+13:27:24 relaunch did not survive - sleeping 15 s
+13:27:52 ssh down - relaunching (backoff 30 s)
+13:27:52 relaunch did not survive - sleeping 30 s
+13:28:34 ssh down - relaunching (backoff 45 s)
+13:28:34 relaunch did not survive - sleeping 45 s
+13:29:31 ssh down - relaunching (backoff 45 s)
+13:29:31 relaunch did not survive - sleeping 45 s
+13:30:28 ssh down - relaunching (backoff 45 s)
+13:30:28 relaunch did not survive - sleeping 45 s
+13:31:25 ssh down - relaunching (backoff 45 s)
+13:31:25 relaunch did not survive - sleeping 45 s
+13:32:22 ssh down - relaunching (backoff 45 s)
+13:32:22 relaunch did not survive - sleeping 45 s
+13:33:19 ssh down - relaunching (backoff 45 s)
+13:33:19 relaunch did not survive - sleeping 45 s
+13:34:16 ssh down - relaunching (backoff 45 s)
+13:34:16 relaunch did not survive - sleeping 45 s
+13:35:13 ssh down - relaunching (backoff 45 s)
+13:35:13 relaunch did not survive - sleeping 45 s
+13:36:10 ssh down - relaunching (backoff 45 s)
+13:36:10 relaunch did not survive - sleeping 45 s
+13:37:07 ssh down - relaunching (backoff 45 s)
+13:37:07 relaunch did not survive - sleeping 45 s
+13:38:04 ssh down - relaunching (backoff 45 s)
+13:38:04 relaunch did not survive - sleeping 45 s
+13:39:01 ssh down - relaunching (backoff 45 s)
+13:39:01 relaunch did not survive - sleeping 45 s
+13:39:58 ssh down - relaunching (backoff 45 s)
+13:39:58 relaunch did not survive - sleeping 45 s
+13:40:55 ssh down - relaunching (backoff 45 s)
+13:40:55 relaunch did not survive - sleeping 45 s
+13:41:52 ssh down - relaunching (backoff 45 s)
+13:41:52 relaunch did not survive - sleeping 45 s
+13:42:50 ssh down - relaunching (backoff 45 s)
+13:42:50 relaunch did not survive - sleeping 45 s
+13:43:47 ssh down - relaunching (backoff 45 s)
+13:43:47 relaunch did not survive - sleeping 45 s
+13:44:44 ssh down - relaunching (backoff 45 s)
+13:44:44 relaunch did not survive - sleeping 45 s
+13:45:41 ssh down - relaunching (backoff 45 s)
+13:45:41 relaunch did not survive - sleeping 45 s
+13:46:38 ssh down - relaunching (backoff 45 s)
+13:46:38 relaunch did not survive - sleeping 45 s
+13:47:35 ssh down - relaunching (backoff 45 s)
+13:47:35 relaunch did not survive - sleeping 45 s
+13:48:32 ssh down - relaunching (backoff 45 s)
+13:48:32 relaunch did not survive - sleeping 45 s
+13:49:29 ssh down - relaunching (backoff 45 s)
+13:49:29 relaunch did not survive - sleeping 45 s
+13:50:26 ssh down - relaunching (backoff 45 s)
+13:50:26 relaunch did not survive - sleeping 45 s
+13:51:23 ssh down - relaunching (backoff 45 s)
+13:51:35 new URL registered: https://3ba7c475b2cde2.lhr.life
+13:53:04 new URL registered: https://80923a30e18d2f.lhr.life
+13:54:00 ssh down - relaunching (backoff 15 s)
+13:54:00 relaunch did not survive - sleeping 15 s
+13:54:27 ssh down - relaunching (backoff 30 s)
+13:54:27 relaunch did not survive - sleeping 30 s
+13:55:09 ssh down - relaunching (backoff 45 s)
+13:55:09 relaunch did not survive - sleeping 45 s
+13:56:06 ssh down - relaunching (backoff 45 s)
+13:56:06 relaunch did not survive - sleeping 45 s
+13:57:03 ssh down - relaunching (backoff 45 s)
+13:57:03 relaunch did not survive - sleeping 45 s
+13:58:00 ssh down - relaunching (backoff 45 s)
+13:58:00 relaunch did not survive - sleeping 45 s
+13:58:57 ssh down - relaunching (backoff 45 s)
+13:58:57 relaunch did not survive - sleeping 45 s
+13:59:54 ssh down - relaunching (backoff 45 s)
+13:59:54 relaunch did not survive - sleeping 45 s
+14:00:51 ssh down - relaunching (backoff 45 s)
+2026-08-29 14:00:54 tunnel-guard v3 started
+14:00:54 ssh down - relaunching (backoff 15 s)
+14:01:06 new URL registered: https://80923a30e18d2f.lhr.life
+14:06:27 ssh down - relaunching (backoff 15 s)
+2026-08-29 14:08:23 tunnel-guard v3 started
+14:08:23 ssh down - relaunching (backoff 15 s)
+14:08:36 new URL registered: https://f16404614e396a.lhr.life
+14:10:33 ssh down - relaunching (backoff 15 s)
+14:15:36 ssh down - relaunching (backoff 15 s)
+14:15:49 new URL registered: https://93dd5cdc6a0f93.lhr.life
+14:17:18 ssh down - relaunching (backoff 15 s)
+14:17:30 new URL registered: https://7d668a47c956e6.lhr.life
+14:20:13 ssh down - relaunching (backoff 15 s)
+14:25:22 ssh down - relaunching (backoff 15 s)
+14:25:35 new URL registered: https://dbd833b0b9951b.lhr.life
+14:30:13 new URL registered: https://fa5b5101eed534.lhr.life
+14:50:05 new URL registered: https://dad91b7ac02e26.lhr.life
+14:56:09 ssh down - relaunching (backoff 15 s)
+14:56:21 new URL registered: https://07c204f256ea24.lhr.life
+15:04:22 LOCAL SERVER DOWN - restarting node
+15:04:24 node server relaunched
+15:08:12 ssh down - relaunching (backoff 15 s)
+15:08:24 new URL registered: https://d54a50e4453e66.lhr.life
+15:10:15 new URL registered: https://4bf21b4da40656.lhr.life
+15:23:26 ssh down - relaunching (backoff 15 s)
+15:23:26 relaunch did not survive - sleeping 15 s
+15:23:53 ssh down - relaunching (backoff 240 s)
+15:24:05 new URL registered: https://74353a37112bd5.lhr.life
+15:30:15 new URL registered: https://3705c9903c8fc8.lhr.life
+15:50:30 new URL registered: https://0eb2a52179fe4a.lhr.life
+18:11:45 ssh down - relaunching (backoff 15 s)
+18:11:57 new URL registered: https://8531b12769b215.lhr.life
+20:19:24 ssh down - relaunching (backoff 15 s)
+20:19:36 new URL registered: https://7231cc1db84927.lhr.life
+20:30:14 new URL registered: https://1576b2a130c301.lhr.life
+20:50:08 new URL registered: https://b8ad79489118a1.lhr.life
+21:10:09 new URL registered: https://a9d87096720426.lhr.life
+21:28:46 ssh down - relaunching (backoff 15 s)
+21:28:58 new URL registered: https://c8a02f901d6489.lhr.life
+2026-08-29 22:27:41 tunnel-guard v3 started
+22:27:41 ssh down - relaunching (backoff 15 s)
+22:27:54 new URL registered: https://c8a02f901d6489.lhr.life
+22:28:23 new URL registered: https://103fe9ec9b94f0.lhr.life
+22:30:18 new URL registered: https://ec9740e1ce6fda.lhr.life
+22:39:41 ssh down - relaunching (backoff 15 s)
+22:39:53 new URL registered: https://9a116eceeb7ae4.lhr.life
+22:50:08 new URL registered: https://4e1202d26b919f.lhr.life
+22:56:36 ssh down - relaunching (backoff 15 s)
+22:56:36 relaunch did not survive - sleeping 15 s
+22:57:03 ssh down - relaunching (backoff 240 s)
+22:57:15 new URL registered: https://78f7e5c1a8a8f5.lhr.life
+23:10:08 new URL registered: https://3db15fd47fd2aa.lhr.life
+23:15:52 ssh down - relaunching (backoff 15 s)
+23:16:04 new URL registered: https://faabe18838cf44.lhr.life
+23:30:10 new URL registered: https://a097d660616632.lhr.life
+23:42:42 ssh down - relaunching (backoff 15 s)
+23:42:54 new URL registered: https://60ad80a987fb9d.lhr.life
+06:41:59 ssh down - relaunching (backoff 15 s)
+06:42:11 new URL registered: https://49c9bbdd03c202.lhr.life
+06:50:18 new URL registered: https://a9ebf9aeac394d.lhr.life
+07:04:13 ssh down - relaunching (backoff 15 s)
+07:04:25 new URL registered: https://aac0653d7212cd.lhr.life
+07:10:16 new URL registered: https://de2080c036a19b.lhr.life
+07:30:22 new URL registered: https://95fc38eb5cc26c.lhr.life
+07:50:23 new URL registered: https://5873c309e051eb.lhr.life
+07:53:20 ssh down - relaunching (backoff 15 s)
+07:53:33 new URL registered: https://df6189822e73e0.lhr.life
+08:10:16 new URL registered: https://3336db446cf177.lhr.life
+08:30:06 new URL registered: https://9deea4480beec5.lhr.life
+08:50:27 new URL registered: https://be27afe8dce104.lhr.life
+08:52:48 ssh down - relaunching (backoff 15 s)
+08:53:00 new URL registered: https://165c0745a934b5.lhr.life
+09:10:05 new URL registered: https://96ede79c96332e.lhr.life
+09:30:19 new URL registered: https://f246ec11517130.lhr.life
+09:50:19 new URL registered: https://8acecfa8221f69.lhr.life
+10:10:26 new URL registered: https://6d1427167cd0ac.lhr.life
+10:28:04 LOCAL SERVER DOWN - restarting node
+10:28:06 node server relaunched
+10:30:27 new URL registered: https://99da5565d6a72e.lhr.life
+10:34:58 ssh down - relaunching (backoff 15 s)
+10:35:10 new URL registered: https://eca6acdaf26f23.lhr.life
+10:43:23 ssh down - relaunching (backoff 15 s)
+10:43:35 new URL registered: https://f6d8d593665a8e.lhr.life
+10:50:14 new URL registered: https://b20ee537fce2df.lhr.life
+10:52:55 ssh down - relaunching (backoff 15 s)
+10:53:07 new URL registered: https://66ae722b68435c.lhr.life
+11:00:31 ssh down - relaunching (backoff 15 s)
+11:00:31 relaunch did not survive - sleeping 15 s
+11:00:58 ssh down - relaunching (backoff 240 s)
+11:01:10 new URL registered: https://000dce03f4c08b.lhr.life
+11:10:21 new URL registered: https://5b395f98ac489a.lhr.life
+11:30:20 new URL registered: https://0ea55407b3bb97.lhr.life
+11:36:13 ssh down - relaunching (backoff 15 s)
+11:42:54 ssh down - relaunching (backoff 15 s)
+11:43:06 new URL registered: https://f9403cff52dff0.lhr.life
+11:47:16 ssh down - relaunching (backoff 15 s)
+11:48:05 new URL registered: https://238269ff1aa725.lhr.life
+11:50:25 new URL registered: https://f0153bc367539c.lhr.life
+12:10:28 new URL registered: https://107a655eda10ed.lhr.life
+12:13:26 ssh down - relaunching (backoff 15 s)
+12:13:38 new URL registered: https://141af3ebeded7b.lhr.life
+12:17:20 ssh down - relaunching (backoff 15 s)
+12:17:32 new URL registered: https://689a36ba8306de.lhr.life
+12:24:55 LOCAL SERVER DOWN - restarting node
+12:24:57 node server relaunched
+12:30:10 new URL registered: https://e1302e8ea85d18.lhr.life
+12:50:24 new URL registered: https://463ad098013437.lhr.life
+12:54:27 LOCAL SERVER DOWN - restarting node
+12:54:29 node server relaunched
+12:54:37 ssh down - relaunching (backoff 15 s)
+12:54:37 relaunch did not survive - sleeping 15 s
+12:55:04 LOCAL SERVER DOWN - restarting node
+12:55:06 node server relaunched
+12:55:14 ssh down - relaunching (backoff 240 s)
+12:55:26 new URL registered: https://05aef5940adcc2.lhr.life
+12:57:16 ssh down - relaunching (backoff 15 s)
+12:57:28 new URL registered: https://bedc70dc199440.lhr.life
+13:10:06 new URL registered: https://ad5390ccf2ff71.lhr.life
+13:30:17 new URL registered: https://fc7f2ad179bf9e.lhr.life
+13:50:10 new URL registered: https://db59515fca0d0f.lhr.life
+13:53:27 ssh down - relaunching (backoff 15 s)
+13:53:39 new URL registered: https://69edf926358b5d.lhr.life
+14:10:15 new URL registered: https://23f12497a0356c.lhr.life
+14:30:15 new URL registered: https://9565b354d7a2b8.lhr.life
+14:39:24 ssh down - relaunching (backoff 15 s)
+14:39:36 new URL registered: https://0a01faebe180c6.lhr.life
+14:50:22 new URL registered: https://c5f0f2164b9a5b.lhr.life
+15:10:11 new URL registered: https://dd045522815f90.lhr.life
+15:30:22 new URL registered: https://c421a900011460.lhr.life
+15:50:11 new URL registered: https://04199494f49c48.lhr.life
+16:10:16 new URL registered: https://cd9be1bcd41f82.lhr.life
+18:24:40 ssh down - relaunching (backoff 15 s)
+18:24:52 new URL registered: https://9ebe37b7bf0acd.lhr.life
+18:30:29 new URL registered: https://d4cd9b0a98d3d0.lhr.life
+18:50:18 new URL registered: https://6132ff5a87e03b.lhr.life
+18:53:50 ssh down - relaunching (backoff 15 s)
+18:54:02 new URL registered: https://33ef8d08e969c7.lhr.life
+19:10:10 new URL registered: https://f2fb8cb7514c94.lhr.life
+19:30:22 new URL registered: https://9e38b2664c2387.lhr.life
+19:50:24 new URL registered: https://d3e9bafecc32a7.lhr.life
+06:03:02 ssh down - relaunching (backoff 15 s)
+06:03:14 new URL registered: https://bf5c30ffe8884d.lhr.life
+06:08:46 ssh down - relaunching (backoff 15 s)
+06:08:58 new URL registered: https://47a2c5725b6aff.lhr.life
+06:10:07 new URL registered: https://1ecc9955fd25f0.lhr.life
+06:30:17 new URL registered: https://c6ce42c58cb620.lhr.life
+06:50:37 new URL registered: https://34917176f6e78f.lhr.life
+06:51:12 ssh down - relaunching (backoff 15 s)
+06:51:24 new URL registered: https://832a85fec3ba6d.lhr.life
+07:00:39 ssh down - relaunching (backoff 15 s)
+07:00:51 new URL registered: https://a0a013369baf77.lhr.life
+07:10:18 new URL registered: https://81fa87e5fc73c5.lhr.life
+07:30:21 new URL registered: https://e4d10d0331fa75.lhr.life
+07:50:20 new URL registered: https://d14ac7a5fddb2f.lhr.life
+11:41:53 ssh down - relaunching (backoff 15 s)
+11:42:05 new URL registered: https://6f5825937aff1b.lhr.life
+11:50:25 LOCAL SERVER DOWN - restarting node
+11:50:27 node server relaunched
+11:50:35 ssh down - relaunching (backoff 15 s)
+11:50:47 LOCAL SERVER DOWN - restarting node
+11:50:49 node server relaunched
+11:50:47 new URL registered: https://b2868170d09d53.lhr.life

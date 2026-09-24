@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <title>VORTEX Messenger</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#031427" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VORTEX" />
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="img/icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="style.css?v=133" />
+  <script src="icons.js?v=86"></script>
+</head>
+<body>
+  <div id="auth-screen">
+    <div class="auth-box">
+      <div class="brand">VORTEX<b>Messenger</b></div>
+      <p class="tag">// پروتکل گیمینگ ۲۱۲۶ — پیام‌رسان نسل بعدی</p>
+      <div id="auth-step-phone">
+        <input id="auth-phone" type="tel" inputmode="numeric" placeholder="شماره موبایل (۰۹۱۲۳۴۵۶۷۸۹)" maxlength="11" autocomplete="tel" />
+        <button class="primary" id="auth-send">دریافت کد</button>
+        <button class="auth-switch" id="auth-to-pass">ورود با رمز عبور</button>
+      </div>
+      <div id="auth-step-pass" class="hidden">
+        <input id="auth-pass-username" type="text" placeholder="نام کاربری" maxlength="20" autocomplete="username" />
+        <input id="auth-pass-password" type="password" placeholder="رمز عبور" maxlength="64" autocomplete="current-password" />
+        <button class="primary" id="auth-pass-login">ورود</button>
+        <button class="auth-switch" id="auth-pass-to-phone">ورود با شماره موبایل</button>
+      </div>
+      <div id="auth-step-code" class="hidden">
+        <p id="auth-phone-label" class="hint" style="text-align:center;margin-bottom:6px"></p>
+        <div id="auth-shown-code" class="auth-shown-code hidden"></div>
+        <input id="auth-code" type="text" inputmode="numeric" placeholder="کد ۶ رقمی" maxlength="6" autocomplete="one-time-code" />
+        <button class="primary" id="auth-verify">تایید کد</button>
+      </div>
+      <div id="auth-step-name" class="hidden">
+        <input id="auth-name" type="text" placeholder="نام نمایشی" maxlength="25" />
+        <input id="auth-username" type="text" placeholder="نام کاربری (اختیاری)" maxlength="20" />
+        <button class="primary" id="auth-finish">ساخت حساب</button>
+      </div>
+      <p id="auth-error" class="auth-error"></p>
+      <button class="auth-logout" id="auth-logout">خروج از حساب فعلی</button>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <aside id="nav-sidebar">
+<button class="nav-toggle" id="nav-toggle" title="باز/بسته"><i data-lucide="panel-left-open" class="icon"></i></button>
+        <button class="icon-btn" id="nav-pencil" title="ساخت گروه یا کانال" aria-label="ساخت گروه یا کانال"><i data-lucide="square-pen" class="icon"></i></button>
+        <div class="nav-logo"><span class="mark">V</span><b>VORTEX</b><small> Messenger</small></div>
+        <div class="nav-profile" id="nav-profile">
+        <div class="av sm" id="nav-av">?</div>
+        <div class="meta"><div class="nm" id="nav-name">...</div><div class="st">● آنلاین</div></div>
+      </div>
+      <div class="nav-sep"></div>
+      <div class="nav-scroll" id="nav-scroll"></div>
+    </aside>
+
+    <section id="chat-list-column">
+      <div class="cl-head">
+        <div class="cl-title">چت‌ها</div>
+        <button class="icon-btn" id="cl-new" title="چت جدید"><i data-lucide="square-pen" class="icon"></i></button>
+        <button class="icon-btn mobile-only" id="cl-menu" title="منو"><i data-lucide="menu" class="icon"></i></button>
+      </div>
+      <div class="cl-search"><i data-lucide="search" class="icon"></i><input id="cl-search-input" placeholder="جستجوی چت‌ها..." /></div>
+      <div class="cl-tabs" id="cl-tabs">
+        <div class="cl-tab active" data-tab="all">همه</div>
+        <div class="cl-tab" data-tab="unread">خوانده‌نشده</div>
+        <div class="cl-tab" data-tab="private">خصوصی</div>
+        <div class="cl-tab" data-tab="groups">گروه‌ها</div>
+        <div class="cl-tab" data-tab="channels">کانال‌ها</div>
+        <div class="cl-tab" data-tab="bots">ربات‌ها</div>
+      </div>
+      <div id="now-playing" class="now-playing hidden" aria-live="polite" style="position:stackbar;top:0;left:0;width:100%;z-index:50;background:var(--surface);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;gap:10px;justify-content:space-between;">
+        <div class="np-art"><i data-lucide="music" class="icon"></i></div>
+        <div class="np-meta"><div class="np-title">در حال پخش</div><div class="np-sub"></div></div>
+        <button class="np-btn" id="np-toggle" aria-label="توقف/پخش"><i data-lucide="pause" class="icon"></i></button>
+        <button class="np-btn ghost" id="np-close" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
+        <div class="np-prog"><div class="np-fill" id="np-fill"></div></div>
+      </div>
+<div class="cl-items" id="cl-items"></div>
+    </section>
+
+    <main id="conversation">
+      <div class="conv-empty" id="conv-empty"></div>
+      <div id="conv-main" class="hidden" style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div class="conv-head">
+          <button class="icon-btn mobile-only back-btn" id="conv-back" aria-label="بازگشت"><i data-lucide="chevron-right" class="icon"></i></button>
+          <div class="av md" id="conv-av"></div>
+          <div class="ti"><div class="nm" id="conv-name"></div><div class="sub" id="conv-sub"></div></div>
+          <div class="head-actions">
+            <button class="icon-btn" id="conv-search" title="جستجو" aria-label="جستجو در چت"><i data-lucide="search" class="icon"></i></button>
+            <button class="icon-btn" id="conv-info" title="اطلاعات" aria-label="اطلاعات چت"><i data-lucide="info" class="icon"></i></button>
+            <button class="icon-btn" id="conv-ai" title="هوش مصنوعی" aria-label="دستیار هوش مصنوعی"><i data-lucide="sparkles" class="icon"></i></button>
+          </div>
+          <div id="sel-toolbar" class="sel-toolbar hidden" role="toolbar" aria-label="انتخاب پیام">
+            <button class="icon-btn" id="sel-close" title="انصراف" aria-label="لغو انتخاب"><i data-lucide="x" class="icon"></i></button>
+            <span class="sel-count" id="sel-count"></span>
+            <span class="sel-spacer"></span>
+            <button class="icon-btn" id="sel-delete" title="حذف انتخاب‌شده‌ها" aria-label="حذف پیام‌های انتخاب‌شده" hidden><i data-lucide="trash-2" class="icon"></i></button>
+            <button class="sel-fwd" id="sel-forward" title="فوروارد همگی"><span class="sel-fwd-ic"><i data-lucide="forward" class="icon"></i></span><span class="sel-fwd-tx">فوروارد</span></button>
+          </div>
+        </div>
+        <div id="conv-searchbox" class="hidden" style="padding:8px 14px;border-bottom:1px solid var(--border)"><input id="conv-search-input" class="input" placeholder="جستجو در این چت..." /></div>
+        <div id="now-playing-main" class="now-playing-main hidden" style="position:sticky;top:0;background:var(--surface);z-index:30;border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;gap:10px;">
+          <div class="np-art"><i data-lucide="music" class="icon"></i></div>
+          <div class="np-meta"><div class="np-title" id="np-title-main">در حال پخش</div><div class="np-sub" id="np-sub-main"></div></div>
+          <button class="np-btn" id="np-toggle-main" aria-label="توقف/پخش"><i data-lucide="pause" class="icon"></i></button>
+          <button class="np-btn ghost" id="np-close-main" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
+          <div class="np-prog"><div class="np-fill" id="np-fill-main"></div></div>
+        </div>
+        <div id="messages"></div>
+        <button id="scroll-fab" class="scroll-fab hidden" title="رفتن به پایین"><i data-lucide="arrow-down" class="icon"></i></button>
+        <div id="reply-bar" class="hidden"></div>
+        <div class="composer" id="composer">
+          <div class="tools">
+            <button class="icon-btn" id="composer-attach" title="پیوست" aria-label="پیوست فایل"><i data-lucide="paperclip" class="icon"></i></button>
+            <input type="file" id="file-input" class="hidden" />
+            <button class="icon-btn" id="composer-emoji" title="ایموجی" aria-label="انتخاب ایموجی"><i data-lucide="smile" class="icon"></i></button>
+            <button class="icon-btn" id="composer-sticker" title="استیکر" aria-label="ارسال استیکر"><i data-lucide="sticker" class="icon"></i></button>
+            <button class="icon-btn" id="composer-mic" title="ضبط صدا" aria-label="ضبط پیام صوتی"><i data-lucide="mic" class="icon"></i></button>
+          </div>
+          <textarea id="composer-input" placeholder="پیام بنویس..." rows="1"></textarea>
+          <div id="mention-pop" class="mention-pop hidden"></div>
+          <button class="send-btn" id="composer-send"><i data-lucide="send" class="icon"></i></button>
+          <div id="rec-inline" class="rec-inline hidden">
+            <button class="rec-inline-btn rec-inline-del" id="rec-inline-del" title="لغو"><i data-lucide="trash-2" class="icon"></i></button>
+            <div class="rec-inline-center">
+              <div class="rec-inline-dot"></div>
+              <div class="rec-inline-time" id="rec-inline-time">0:00</div>
+              <div class="rec-inline-wave" id="rec-inline-wave"></div>
+            </div>
+            <button class="rec-inline-btn rec-inline-send" id="rec-inline-send" title="ارسال"><i data-lucide="send" class="icon"></i></button>
+            <button class="rec-inline-btn rec-inline-pause hidden" id="rec-inline-pause" title="مکث"><i data-lucide="pause" class="icon"></i></button>
+          </div>
+          <span id="rec-badge" class="rec-badge hidden"></span>
+          <div id="emoji-pop" class="emoji-pop hidden"></div>
+        </div>
+        <div id="upload-bar" class="hidden" style="height:4px;background:var(--surface)"><div id="upload-fill" style="height:100%;width:0;background:var(--accent)"></div></div>
+      </div>
+    </main>
+
+    <aside id="details-panel"></aside>
+    <div id="command-dock"></div>
+
+    <div id="scrim" class="hidden"></div>
+  </div>
+
+  <div id="pencil-menu" class="pencil-menu hidden" role="menu" aria-label="منوی ساخت گروه/کانال">
+    <div class="pencil-menu-inner">
+      <button class="pencil-menu-close" aria-label="بستن"><i data-lucide="x" class="icon"></i></button>
+      <div class="pencil-menu-section">
+        <div class="pencil-menu-item" data-type="group"><i data-lucide="square-pen" class="icon"></i><span> گروه جدید</span></div>
+        <div class="pencil-menu-item" data-type="channel"><i data-lucide="folder" class="icon"></i><span> کانال جدید</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <script src="effects.js?v=78"></script>
+  <script src="app.js?v=138"></script>
+  <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
+(function () {
+  var q = new URLSearchParams(location.search);
+  var inv = q.get('invite') || '';
+  if (inv) { localStorage.setItem('vx_inviter', inv.replace('@', '').toLowerCase().slice(0, 50)); history.replaceState(null, '', location.pathname); }
+  var def = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); def = e;
+    var b = document.createElement('button');
+    b.id = 'pwa-install';
+    b.textContent = 'نصب اپ VORTEX';
+    b.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;background:var(--primary,#6ea8fe);color:#002e5c;border:none;padding:10px 18px;border-radius:12px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.4);';
+    b.onclick = function () { if (def) { def.prompt(); } };
+    document.body.appendChild(b);
+    window.__pwaBtn = b;
+  });
+  window.addEventListener('appinstalled', function () { var b = window.__pwaBtn; if (b) b.remove(); });
+})();
+</script>
+</body>
+</html>
