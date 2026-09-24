@@ -62,3 +62,7 @@ vortexgram/
 swtest-result.txt
 public/swtest.html
 public/_effects-backup.css
+
+# Never (credentials / placeholders)
+*.sessions.json
+.env.example
