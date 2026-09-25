@@ -21,7 +21,13 @@
 </head>
 <body>
   <div id="auth-screen">
-    <div class="auth-box">
+    <div id="boot-splash">
+      <div class="brand">VORTEX<b>Messenger</b></div>
+      <p class="tag">// پروتکل گیمینگ ۲۱۲۶ — پیام‌رسان نسل بعدی</p>
+      <div class="boot-spinner"></div>
+      <p class="boot-hint">در حال اتصال…</p>
+    </div>
+    <div id="auth-box" class="auth-box hidden">
       <div class="brand">VORTEX<b>Messenger</b></div>
       <p class="tag">// پروتکل گیمینگ ۲۱۲۶ — پیام‌رسان نسل بعدی</p>
       <div id="auth-step-phone">
@@ -166,7 +172,7 @@
 
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
-  <script src="app.js?v=147"></script>
+  <script src="app.js?v=148"></script>
   <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
 (function () {
   var q = new URLSearchParams(location.search);

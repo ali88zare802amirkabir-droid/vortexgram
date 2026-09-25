@@ -133,7 +133,11 @@ function savePhoneProfile(phone, username, displayName) {
   const m = phoneProfiles(); m[phone] = { username, displayName };
   try { localStorage.setItem('vx_phone_accounts', JSON.stringify(m)); } catch (e) {}
 }
-function finishLogin(d) { if (d.me) savePhoneProfile(authPhoneVal, d.me.username, d.me.displayName); state.token = d.token; state.me = d.me; localStorage.setItem('ft_token', d.token); enterApp(); }
+// کش نشست: snapshot «من» + توکن در localStorage — تا با هر باز شدن اپ، یک‌راست برویم
+// داخل پیام‌رسان و نشست در پس‌زمینه راستی‌آزمایی شود (بدون فلش صفحهٔ شماره).
+function cacheMeNow() { try { localStorage.setItem('ft_me', JSON.stringify(state.me)); localStorage.setItem('ft_me_ts', String(Date.now())); } catch (e) {} }
+function cachedMe() { try { const r = localStorage.getItem('ft_me'); return r ? JSON.parse(r) : null; } catch (e) { return null; } }
+function finishLogin(d) { if (d.me) savePhoneProfile(authPhoneVal, d.me.username, d.me.displayName); state.token = d.token; state.me = d.me; localStorage.setItem('ft_token', d.token); cacheMeNow(); enterApp(); }
 async function autoCompleteRegister(phone, code) {
   const prof = phoneProfiles()[phone];
   if (!prof || !prof.username) return false;
@@ -3255,10 +3259,12 @@ function beep() {
     o.start(); o.stop(_beepCtx.currentTime + 0.12);
   } catch (e) {}
 }
-async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; try { if (state.token) await fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token } }); } catch (e) {} try { if (state.ws) state.ws.close(); } catch (e) {} clearRoomsCache(); localStorage.removeItem('ft_token'); location.reload(); }
+async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; try { if (state.token) await fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token } }); } catch (e) {} try { if (state.ws) state.ws.close(); } catch (e) {} clearRoomsCache(); localStorage.removeItem('ft_token'); localStorage.removeItem('ft_me'); localStorage.removeItem('ft_me_ts'); location.reload(); }
 $('auth-logout').onclick = logout;
 function showAuth() {
   $('auth-screen').classList.remove('hidden');
+  const sp = $('boot-splash'); if (sp) sp.classList.add('hidden');
+  const box = $('auth-box'); if (box) box.classList.remove('hidden');
   const lb = $('auth-logout');
   if (lb) lb.style.display = (localStorage.getItem('ft_token') || localStorage.getItem('ft_admin_token')) ? '' : 'none';
 }
@@ -3819,7 +3825,7 @@ function openGallery(dir, cb) {
 async function enterAsUser(username) {
   if (!(await uConfirm('وارد حساب @' + username + ' می‌شوید؟ پس از ورود می‌توانید با دکمه بازگشت به پنل ادمین برگردید.'))) return;
   localStorage.setItem('ft_admin_token', state.token);
-  api('/api/admin/impersonate', { method: 'POST', body: JSON.stringify({ username }) }).then((r) => r.json()).then((d) => { if (d.token) { localStorage.setItem('ft_token', d.token); location.reload(); } else toast(d.error || 'خطا'); });
+  api('/api/admin/impersonate', { method: 'POST', body: JSON.stringify({ username }) }).then((r) => r.json()).then((d) => { if (d.token) { localStorage.setItem('ft_token', d.token); localStorage.removeItem('ft_me'); localStorage.removeItem('ft_me_ts'); location.reload(); } else toast(d.error || 'خطا'); });
 }
 function showImpersonateBanner() {
   if (!localStorage.getItem('ft_admin_token')) return;
@@ -3827,7 +3833,7 @@ function showImpersonateBanner() {
   let b = $('imp-banner');
   if (!b) { b = document.createElement('div'); b.id = 'imp-banner'; b.className = 'imp-banner'; document.body.appendChild(b); }
   b.innerHTML = 'شما به عنوان @' + esc(me) + ' وارد شده‌اید <button id="imp-back">بازگشت به پنل ادمین</button>';
-  b.querySelector('#imp-back').onclick = () => { const t = localStorage.getItem('ft_admin_token'); if (t) { localStorage.setItem('ft_token', t); localStorage.removeItem('ft_admin_token'); location.reload(); } };
+  b.querySelector('#imp-back').onclick = () => { const t = localStorage.getItem('ft_admin_token'); if (t) { localStorage.setItem('ft_token', t); localStorage.removeItem('ft_admin_token'); localStorage.removeItem('ft_me'); localStorage.removeItem('ft_me_ts'); location.reload(); } };
 }
 async function startGroup(isChannel) {
   const name = await uPrompt('نام ' + (isChannel ? 'کانال' : 'گروه') + ':');
@@ -4450,13 +4456,35 @@ if (isCapacitor) {
   });
 }
 
+// راستی‌آزمایی نشست در پس‌زمینه: اگر نشست واقعاً مرده (۴۰۱) خروج؛ اگر شبکه در دسترس نبود
+// با کش ادامه می‌دهیم تا اپ حتی آفلاین هم باز شود.
+async function refreshMeSession() {
+  if (!state.token) return;
+  try {
+    const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + state.token } });
+    if (r.ok) {
+      const d = await r.json();
+      if (!d.me) { logout(true); return; }
+      if (JSON.stringify(d.me) !== JSON.stringify(state.me)) { state.me = d.me; cacheMeNow(); renderNav(); buildChatList(); }
+      else cacheMeNow();
+    } else if (r.status === 401) { logout(true); }
+  } catch (e) { console.warn('آفلاین: /api/me در دسترس نیست — ادامه با کش محلی', e); }
+}
 (async function init() {
   try {
     bindCtxReposition();
     initMultiSelect();
     if (state.token) {
-      try { const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + state.token } }); if (r.ok) { const d = await r.json(); if (d.me) { state.me = d.me; enterApp(); } else logout(true); } else logout(true); }
-      catch (e) { console.error('init: /api/me failed', e); showAuth(); }
+      const cached = cachedMe();
+      if (cached) {
+        /* یک‌راست داخل پیام‌رسان — بدون انتظار شبکه/بدون فلش صفحهٔ شماره */
+        state.me = cached; enterApp();
+        refreshMeSession();
+      } else {
+        /* توکن داریم ولی snapshot نداریم (اولین ورود لاگین قدیمی) — اسپلش تا تأیید */
+        try { const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + state.token } }); if (r.ok) { const d = await r.json(); if (d.me) { state.me = d.me; cacheMeNow(); enterApp(); } else logout(true); } else logout(true); }
+        catch (e) { console.error('init: /api/me failed', e); showAuth(); }
+      }
     } else { showAuth(); }
     const requestNotifOnce = () => { if ('Notification' in window && Notification.permission === 'default') { Notification.requestPermission(); window.removeEventListener('click', requestNotifOnce, true); } };
     window.addEventListener('click', requestNotifOnce, true);

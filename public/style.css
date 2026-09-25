@@ -818,6 +818,9 @@ a{color:var(--primary);text-decoration:none;}
 
 /* ===================== AUTH ===================== */
 #auth-screen{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:20px;background:var(--surface);}
+#boot-splash{display:grid;place-items:center;gap:10px;text-align:center;padding:20px;animation:pop .35s ease;}
+.boot-spinner{width:34px;height:34px;margin-top:12px;border-radius:50%;border:3px solid rgba(var(--primary-rgb),.22);border-top-color:var(--primary);animation:spin .8s linear infinite;}
+.boot-hint{color:var(--on-surface-variant);font-size:12.5px;margin-top:4px;animation:pulse 1.6s ease infinite;}
 .auth-box{width:min(400px,94vw);background:var(--surface-container);border:1px solid var(--border);border-radius:var(--radius-xl);padding:30px 26px;box-shadow:var(--shadow-lg);text-align:center;}
 .brand{font-size:30px;font-weight:800;letter-spacing:.5px;}
 .brand b{color:var(--primary);}

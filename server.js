@@ -640,6 +640,9 @@ function auth(req, res, next) {
   const username = getSession(token);
   const user = username && db.users.find((u) => u.username === username);
   if (!user || user.banned) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
+  // نشست متحرک: هر فعالیت، عمر نشست را جلو می‌برد — کاربر فعال هرگز اجباری به ورود مجدد نمی‌شود
+  const s = token && sessions.get(token);
+  if (s) s.exp = Date.now() + SESSION_TTL;
   setSessionCookie(res, token);
   req.user = user;
   next();
