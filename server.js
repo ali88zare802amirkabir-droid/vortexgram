@@ -474,7 +474,7 @@ app.get('/sitemap.xml', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));
 });
 
-app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
+app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => { const u = String(res.req.originalUrl || ''); if (u.indexOf('?v=') >= 0) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); else if (u.indexOf('/img/') === 0) res.setHeader('Cache-Control', 'public, max-age=86400'); else res.setHeader('Cache-Control', 'no-store'); } }));
 
 // ---------- invite landing ----------
 function invitePage(refName, ref) {
@@ -1496,7 +1496,7 @@ app.get('/api/images', auth, (req, res) => {
   res.json({ images: files });
 });
 app.use('/img', express.static(IMG_BASE, {
-  setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
+  setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=86400'),
 }));
 
 // ---------- groups & channels ----------
@@ -1934,11 +1934,16 @@ wss.on('connection', (ws, req) => {
     if (!username) return;
 
     if (data.type === 'history') {
-      if (!wsRateOk(username, 'history', 30, 60 * 1000)) return;
+      if (!wsRateOk(username, 'history', 40, 60 * 1000)) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
-      const msgs = enrichMsgBatch((db.messages[roomId] || []).slice(-100));
-      wsSend(ws, { type: 'history', roomId, messages: msgs });
+      const all = db.messages[roomId] || [];
+      let msgs;
+      const after = Number(data.after);
+      const incremental = Number.isFinite(after) && after > 0;
+      if (incremental) msgs = all.filter((m) => m.time > after);
+      else msgs = all;
+      wsSend(ws, { type: 'history', roomId, messages: enrichMsgBatch(msgs.slice(-100)), incremental: incremental || undefined });
       return;
     }
 

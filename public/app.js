@@ -255,7 +255,7 @@ applyAppearance();
 /* ENTER */
 function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
-  renderNav(); renderDock(); buildChatList(); connectWS(); applyVX();
+  renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); connectWS(); applyVX();
   showImpersonateBanner();
   if (isMobile()) vxPush();
   if (state.me.isAdmin) {
@@ -466,14 +466,28 @@ function connectWS() {
 }
 function handleWS(d) {
   switch (d.type) {
-    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); pr.messages = [pv]; pr.last = pv; pr.unread = pv.unread || 0; pr.previewOnly = true; } loadReactionConfig(); renderNav(); renderDock(); buildChatList(); handleInviteFollow(); handleGroupInvite(); break;
+    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); if (pr.messages.length && !pr.previewOnly) { if (pv && (!pr.last || pv.time > pr.last.time)) { const idx = pr.messages.findIndex((m) => m.id === pv.id); if (idx >= 0) pr.messages[idx] = pv; else { pr.messages.push(pv); pr.lastSync = Date.now(); } pr.last = pv; } pr.unread = pv && (pv.unread !== undefined) ? pv.unread : pr.unread; } else { pr.messages = pv ? [pv] : []; pr.last = pv || null; pr.unread = pv ? (pv.unread || 0) : 0; pr.previewOnly = true; } } loadReactionConfig(); renderNav(); renderDock(); buildChatList(); scheduleRoomsPersist(); handleInviteFollow(); handleGroupInvite(); break;
     case 'users': state.users = d.users || []; scheduleChatListRefresh(); break;
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
-    case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (d.username === state.me.username && state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); refreshReadTicks(d.roomId); break;
-    case 'history': if (d.roomId !== state.room) { cachePreview(d.roomId, d.messages); scheduleChatListRefresh(); break; } if (d.roomId) cachePreview(d.roomId, d.messages); if (!state.renderedRooms.has(d.roomId)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((d.messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(d.roomId); state.renderedRooms.add(d.roomId); } break;
-    case 'message': onNewMessage(d.message); break;
-    case 'message-updated': updateMessage(d); break;
+    case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (d.username === state.me.username && state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); scheduleRoomsPersist(); refreshReadTicks(d.roomId); break;
+    case 'history': {
+      const hrid = d.roomId;
+      if (d.incremental && state.rooms[hrid] && state.rooms[hrid].messages && state.rooms[hrid].messages.length && !state.rooms[hrid].previewOnly) {
+        mergeHistory(state.rooms[hrid], d.messages || []);
+        if (hrid !== state.room) { scheduleChatListRefresh(); scheduleRoomsPersist(); break; }
+        if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((state.rooms[hrid].messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); }
+        scheduleRoomsPersist();
+        break;
+      }
+      if (hrid !== state.room) { cachePreview(hrid, d.messages); scheduleChatListRefresh(); break; }
+      if (hrid) cachePreview(hrid, d.messages);
+      if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((d.messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); }
+      scheduleRoomsPersist();
+      break;
+    }
+    case 'message': onNewMessage(d.message); scheduleRoomsPersist(); break;
+    case 'message-updated': updateMessage(d); scheduleRoomsPersist(); break;
     case 'message-edited': {
       const rr = state.rooms[d.roomId]; if (rr) { const mm = rr.messages.find((x) => x.id === d.id); if (mm) { mm.content = d.content; mm.edited = true; } scheduleChatListRefresh(120); }
       const el = document.querySelector('[data-id="' + d.id + '"] .msg-body');
@@ -482,6 +496,7 @@ function handleWS(d) {
         const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; el.appendChild(t);
       }
       const em = document.querySelector('[data-id="' + d.id + '"] .msg-meta'); if (em && !em.querySelector('.msg-ed')) { const ed = document.createElement('span'); ed.className = 'msg-ed'; ed.textContent = 'ویرایش‌شده'; em.insertBefore(ed, em.firstChild); }
+      scheduleRoomsPersist();
       break;
     }
     case 'message-deleted': {
@@ -492,7 +507,7 @@ function handleWS(d) {
         else renderSelectBar();
       }
       const el = document.querySelector('[data-id="' + d.id + '"]'); if (el) el.remove();
-      const rr = state.rooms[d.roomId]; if (rr) { rr.messages = rr.messages.filter((m) => m.id !== d.id); rr.last = rr.messages[rr.messages.length - 1] || null; scheduleChatListRefresh(120); }
+      const rr = state.rooms[d.roomId]; if (rr) { rr.messages = rr.messages.filter((m) => m.id !== d.id); rr.last = rr.messages[rr.messages.length - 1] || null; scheduleChatListRefresh(120); scheduleRoomsPersist(); }
       refreshDeletedRefs(d.id);
       if (d.roomId === state.room) renderReplyCounts(d.roomId);
       break;
@@ -705,7 +720,10 @@ function openRoom(rid) {
       // رومِ only-preview را «رندرنشده» نگه می‌داریم تا وقتی پاسخ history می‌رسد
       // لیست کامل پیام‌ها جایگزین پیش‌نمایش شود (نه فقط یک پیام).
     }
-    if (!cacheFresh) state.ws.send(JSON.stringify({ type: 'history', roomId: rid }));
+    if (!cacheFresh) {
+      const lastT = canRenderCache ? (cachedMsgs[cachedMsgs.length - 1] && cachedMsgs[cachedMsgs.length - 1].time) : 0;
+      state.ws.send(JSON.stringify(lastT ? { type: 'history', roomId: rid, after: lastT } : { type: 'history', roomId: rid }));
+    }
   } else {
     $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
   }
@@ -758,7 +776,7 @@ function searchChatMessages(q) {
 }
 
 function onNewMessage(m) {
-  const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.previewOnly = false; r.messages.push(m); r.last = m; r.lastSync = Date.now();
+  const rid = m.roomId; const r = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); r.previewOnly = false; r.messages.push(m); if (r.messages.length > HISTORY_CAP) r.messages = r.messages.slice(-HISTORY_CAP); r.last = m; r.lastSync = Date.now();
   if (rid.startsWith('dm:') && m.from !== state.me.username && !getContacts()[m.from] && m.from !== BOT_USERNAME) { const c = getContacts(); const u = state.users.find((x) => x.username === m.from); c[m.from] = u ? (u.displayName || m.from) : m.from; saveContacts(c); }
   if (rid === state.room) { addMessage(m); if (m.from === state.me.username || isNearBottom()) scrollBottom(); markRead(rid); renderReplyCounts(state.room); }
   else { r.unread = computeUnread(rid, r); beep(); pushNotification(m); }
@@ -1004,6 +1022,7 @@ function mediaEl(m) {
   } else {
     const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
     attachImageTransfer(d, im, u);
+    warmMedia(u);
     d.appendChild(im);
   }
   if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
@@ -1023,6 +1042,7 @@ function albumEl(m) {
     } else {
       const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
       attachImageTransfer(item, im, url);
+      warmMedia(url);
       item.appendChild(im);
     }
     d.appendChild(item);
@@ -1470,6 +1490,85 @@ async function vxIdbPut(url, blobUrl){
 }
 async function vxIdbGet(url){
   try{ const db=await vxIdb(); return await new Promise((res,rej)=>{ const tx=db.transaction(VX_STORE,'readonly'); const rq=tx.objectStore(VX_STORE).get(url); rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>res(null); }); }catch(e){ return null; }
+}
+// دانلود و ذخیره‌ی مستقیم از آپلود (برای پیش‌بارگذاری عکس‌ها در پس‌زمینه)
+async function vxIdbPutFromUrl(url){
+  try{
+    const res = await fetch(url, { cache: 'force-cache' });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const db = await vxIdb(); const tx = db.transaction(VX_STORE, 'readwrite'); tx.objectStore(VX_STORE).put(blob, url);
+  }catch(e){}
+}
+/* ====== کش دائمی پیام‌ها/روم‌ها (IndexedDB) — بدون مصرف مجدد اینترنت در نشست‌های بعدی ====== */
+const HISTORY_CAP = 200;
+const ROOMS_IDB = 'vx-rooms', ROOMS_STORE = 'rooms';
+function roomsIdb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(ROOMS_IDB,1); r.onupgradeneeded=()=>{ try{ r.result.createObjectStore(ROOMS_STORE);}catch(e){} }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+let _roomsPersistTimer = null, _roomsLastWrite = 0;
+function scheduleRoomsPersist(delay){
+  if (!state.me || !state.me.username) return;
+  clearTimeout(_roomsPersistTimer);
+  _roomsPersistTimer = setTimeout(persistRooms, delay || 400);
+}
+async function persistRooms(){
+  clearTimeout(_roomsPersistTimer);
+  if (!state.me || !state.me.username) return;
+  const now = Date.now();
+  if (now - _roomsLastWrite < 250) { scheduleRoomsPersist(500); return; }
+  _roomsLastWrite = now;
+  try{
+    const db = await roomsIdb(); const tx = db.transaction(ROOMS_STORE, 'readwrite'); const st = tx.objectStore(ROOMS_STORE);
+    const owner = state.me.username;
+    let wrote = false;
+    for (const rid of Object.keys(state.rooms)) {
+      const r = state.rooms[rid]; if (!r || !r.messages || !r.messages.length) continue;
+      st.put({ owner, rid, messages: r.messages.slice(-HISTORY_CAP), last: r.last, unread: r.unread, previewOnly: r.previewOnly, lastSync: r.lastSync }, owner + '\u0000' + rid);
+      wrote = true;
+    }
+    if (wrote) await new Promise((res) => { tx.oncomplete = res; tx.onerror = res; tx.onabort = res; });
+  }catch(e){}
+}
+async function hydrateRooms(){
+  try{
+    const db = await roomsIdb(); const out = {};
+    const all = await new Promise((res,rej)=>{ const tx=db.transaction(ROOMS_STORE,'readonly'); const rq=tx.objectStore(ROOMS_STORE).getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>res([]); });
+    const owner = state.me.username;
+    for (const rec of all) {
+      if (!rec || rec.owner !== owner || !rec.rid || !rec.messages) continue;
+      out[rec.rid] = { messages: rec.messages.slice(-HISTORY_CAP), last: rec.last || null, unread: rec.unread || 0, previewOnly: !!rec.previewOnly, lastSync: rec.lastSync || 0 };
+      if (out[rec.rid].messages.length) out[rec.rid].previewOnly = false;
+    }
+    // روم‌هایی که پیش از این داخل حافظه «کامل» هستند (غیر پیش‌نمایش) تازه‌ترین‌اند و اولویت دارند؛
+    // پیش‌نمایش تکیِ WS هرگز جای کش کامل را نمی‌گیرد.
+    const inMem = state.rooms || {};
+    for (const rid in inMem) { const r = inMem[rid]; if (r && r.messages && r.messages.length && !r.previewOnly) out[rid] = r; }
+    state.rooms = out;
+  }catch(e){}
+}
+async function clearRoomsCache(){
+  try{ const db = await roomsIdb(); const tx = db.transaction(ROOMS_STORE, 'readwrite'); tx.objectStore(ROOMS_STORE).clear(); }catch(e){}
+}
+function mergeHistory(r, inc){
+  if (!r || !inc) return;
+  if (!r.messages || !Array.isArray(r.messages)) r.messages = [];
+  const byId = {};
+  for (const m of r.messages) if (m && m.id) byId[m.id] = m;
+  for (const m of inc) if (m && m.id) byId[m.id] = m;
+  const merged = Object.values(byId).sort((a, b) => (a.time || 0) - (b.time || 0));
+  r.messages = merged.slice(-HISTORY_CAP);
+  r.last = r.messages[r.messages.length - 1] || null;
+  r.previewOnly = false;
+  r.lastSync = Date.now();
+}
+/* پیش‌بارگذاری عکس‌های چت در پس‌زمینه: بار اول دانلود → در IDB می‌ماند → دفعات بعد بدون اینترنت، آنی */
+let _warmTail = Promise.resolve();
+const _warmSeen = new Set();
+function warmMedia(src){
+  if (!src || typeof src !== 'string' || src.indexOf('/uploads/') !== 0) return;
+  if (_warmSeen.has(src)) return; _warmSeen.add(src);
+  _warmTail = _warmTail.then(async () => {
+    try { if (await vxIdbGet(src)) return; await vxIdbPutFromUrl(src); } catch(e){}
+  });
 }
 const DL_C = 100.53;                    // محیط حلقه (2πr برای r=16 در viewBox 36)
 
@@ -3156,7 +3255,7 @@ function beep() {
     o.start(); o.stop(_beepCtx.currentTime + 0.12);
   } catch (e) {}
 }
-async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; try { if (state.token) await fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token } }); } catch (e) {} try { if (state.ws) state.ws.close(); } catch (e) {} localStorage.removeItem('ft_token'); location.reload(); }
+async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; try { if (state.token) await fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token } }); } catch (e) {} try { if (state.ws) state.ws.close(); } catch (e) {} clearRoomsCache(); localStorage.removeItem('ft_token'); location.reload(); }
 $('auth-logout').onclick = logout;
 function showAuth() {
   $('auth-screen').classList.remove('hidden');
