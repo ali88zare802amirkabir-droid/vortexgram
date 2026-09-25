@@ -476,7 +476,11 @@ function handleWS(d) {
     case 'message-updated': updateMessage(d); break;
     case 'message-edited': {
       const rr = state.rooms[d.roomId]; if (rr) { const mm = rr.messages.find((x) => x.id === d.id); if (mm) { mm.content = d.content; mm.edited = true; } scheduleChatListRefresh(120); }
-      const el = document.querySelector('[data-id="' + d.id + '"] .msg-body'); if (el) { const old = el.querySelector('.msg-edited'); if (old) old.remove(); }
+      const el = document.querySelector('[data-id="' + d.id + '"] .msg-body');
+      if (el && typeof d.content === 'string') {
+        el.innerHTML = formatText(d.content);
+        const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; el.appendChild(t);
+      }
       const em = document.querySelector('[data-id="' + d.id + '"] .msg-meta'); if (em && !em.querySelector('.msg-ed')) { const ed = document.createElement('span'); ed.className = 'msg-ed'; ed.textContent = 'ویرایش‌شده'; em.insertBefore(ed, em.firstChild); }
       break;
     }
