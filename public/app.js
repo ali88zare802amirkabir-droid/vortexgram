@@ -1087,7 +1087,7 @@ function fileEl(m) {
     vxIdbGet(src).then((blb) => {
       if (blb) return ok(blb);
       fetchMediaStream(src, (p) => dlSet(ring, p), (blb) => {
-        try { memCacheSet(src, URL.createObjectURL(blb)); } catch (e) {}
+        try { const bu = URL.createObjectURL(blb); memCacheSet(src, bu, blb); } catch (e) {}
         ok(blb);
       }, fail);
     });
@@ -1478,18 +1478,19 @@ if (convEl) {
 
 /* ====== MEDIA TRANSFER — حلقه‌ی پیشرفت آپلود/دانلود داخل خود چت (مثل تلگرام) ====== */
 const __memCache = new Map();          // url -> blob URL (برای عدم دانلود دوباره در همان نشست)
-function memCacheSet(k, v) {
+function memCacheSet(k, v, blob) {
   if (__memCache.size >= (LOW_END ? 20 : 80)) { const first = __memCache.keys().next().value; try { URL.revokeObjectURL(first); } catch (e) {} __memCache.delete(first); }
   __memCache.set(k, v);
-  try{ vxIdbPut(k, v); }catch(e){}
+  try { vxIdbPut(k, blob || v); } catch (e) {}
 }
 // IndexedDB persistent cache for media blobs (survives browser restart)
 const VX_IDB='vx-media', VX_STORE='blobs';
 function vxIdb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(VX_IDB,1); r.onupgradeneeded=()=>{ try{ r.result.createObjectStore(VX_STORE);}catch(e){} }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
-async function vxIdbPut(url, blobUrl){
+async function vxIdbPut(url, blobOrUrl){
   try{
-    const blob = await (await fetch(blobUrl)).blob();
+    const blob = (blobOrUrl && blobOrUrl instanceof Blob) ? blobOrUrl : await (await fetch(blobOrUrl)).blob();
     const db = await vxIdb(); const tx=db.transaction(VX_STORE,'readwrite'); tx.objectStore(VX_STORE).put(blob, url);
+    await new Promise((res) => { tx.oncomplete = res; tx.onerror = res; tx.onabort = res; });
   }catch(e){}
 }
 async function vxIdbGet(url){
@@ -1502,6 +1503,7 @@ async function vxIdbPutFromUrl(url){
     if (!res.ok) return;
     const blob = await res.blob();
     const db = await vxIdb(); const tx = db.transaction(VX_STORE, 'readwrite'); tx.objectStore(VX_STORE).put(blob, url);
+    await new Promise((r) => { tx.oncomplete = r; tx.onerror = r; tx.onabort = r; });
   }catch(e){}
 }
 /* ====== کش دائمی پیام‌ها/روم‌ها (IndexedDB) — بدون مصرف مجدد اینترنت در نشست‌های بعدی ====== */
@@ -1649,7 +1651,7 @@ function attachImageTransfer(holder, im, src) {
   if (cached) { im.src = cached; im.onclick = () => openViewer(cached, 'image', src); return; }
   // try IDB persistent cache
   vxIdbGet(src).then(b=>{
-    if(b){ const u=URL.createObjectURL(b); memCacheSet(src,u); im.src=u; holder.classList.remove('dl-loading'); const ov2=holder.querySelector('.dl-overlay'); if(ov2) ov2.remove(); im.onclick=()=>openViewer(u,'image',src); im.classList.add('loaded'); }
+    if(b){ const u=URL.createObjectURL(b); memCacheSet(src,u,b); im.src=u; holder.classList.remove('dl-loading'); const ov2=holder.querySelector('.dl-overlay'); if(ov2) ov2.remove(); im.onclick=()=>openViewer(u,'image',src); im.classList.add('loaded'); }
   });
   holder.classList.add('dl-loading');
   const ov = document.createElement('div'); ov.className = 'dl-overlay';
@@ -1669,7 +1671,7 @@ function attachImageTransfer(holder, im, src) {
     ov.appendChild(ring);
     ctl = fetchMediaStream(src, (p) => dlSet(ring, p), (blb) => {
       const burl = URL.createObjectURL(blb);
-      memCacheSet(src, burl);
+      memCacheSet(src, burl, blb);
       im.src = burl;
       holder.classList.remove('dl-loading');
       ov.remove();
@@ -1691,7 +1693,7 @@ function attachImageTransfer(holder, im, src) {
 function attachVideoTransfer(holder, v, src) {
   const cached = __memCache.get(src);
   if (cached) { v.src = cached; v.onclick=()=>openViewer(cached,'video',src); return; }
-  vxIdbGet(src).then(b=>{ if(b){ const u=URL.createObjectURL(b); memCacheSet(src,u); v.src=u; holder.classList.remove('dl-loading'); const ov2=holder.querySelector('.dl-overlay'); if(ov2) ov2.remove(); v.onclick=()=>openViewer(u,'video',src); } });
+  vxIdbGet(src).then(b=>{ if(b){ const u=URL.createObjectURL(b); memCacheSet(src,u,b); v.src=u; holder.classList.remove('dl-loading'); const ov2=holder.querySelector('.dl-overlay'); if(ov2) ov2.remove(); v.onclick=()=>openViewer(u,'video',src); } });
   holder.classList.add('dl-loading');
   const ov = document.createElement('div'); ov.className = 'dl-overlay';
   const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
@@ -1740,9 +1742,10 @@ function attachVideoTransfer(holder, v, src) {
         }
       }
       st.done = true;
-      const nu = URL.createObjectURL(new Blob(st.chunks, { type: ct }));
+      const finalBlob = new Blob(st.chunks, { type: ct });
+      const nu = URL.createObjectURL(finalBlob);
       v.src = nu;
-      memCacheSet(src, nu);
+      memCacheSet(src, nu, finalBlob);
       holder.classList.remove('dl-loading');
       ov.remove();
       if (st.playing) { try { v.play().catch(() => {}); } catch (e) {} }
@@ -4050,6 +4053,7 @@ const SETCATS = {
   account: { title: ic('user') + ' حساب', icon: 'user' },
   notifications: { title: ic('bell') + ' اعلان‌ها', icon: 'bell' },
   privacy: { title: ic('lock') + ' حریم خصوصی', icon: 'lock' },
+  storage: { title: ic('hard-drive') + ' حافظه و کش', icon: 'hard-drive' },
   skins: { title: ic('paintbrush') + ' اسکین‌ها و تم‌ها', icon: 'paintbrush' },
   logout: { title: ic('log-out') + ' خروج', icon: 'log-out' }
 };
@@ -4069,6 +4073,7 @@ function renderSettingsSub(cat, wrap) {
   else if (cat === 'account') renderAccSub(body);
   else if (cat === 'notifications') renderNotifSub(body);
   else if (cat === 'privacy') renderPrivSub(body);
+  else if (cat === 'storage') renderStorageSub(body);
   else if (cat === 'skins') renderSkinsSub(body);
   else if (cat === 'effects') renderEffectsSub(body);
   else if (cat === 'logout') logout();
@@ -4140,6 +4145,48 @@ function renderNotifSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان‌ها</h3><div class="settings-row"><span>اعلان مرورگر</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
   body.innerHTML = t;
   const nb = body.querySelector('#set-notif'); if (nb) nb.onclick = async () => { if (!('Notification' in window)) { toast('مرورگر پشتیبانی نمی‌کند'); return; } const p = await Notification.requestPermission(); localStorage.setItem('vx_notify', p === 'granted' ? '1' : '0'); nb.textContent = p === 'granted' ? 'روشن' : 'خاموش'; toast(p === 'granted' ? 'اعلان روشن شد' : 'اعلان خاموش شد'); };
+}
+function fmtBytes(n) { if (!n) return '۰ بایت'; if (n < 1024) return n + ' بایت'; if (n < 1048576) return (n / 1024).toFixed(1) + ' کیلوبایت'; if (n < 1073741824) return (n / 1048576).toFixed(1) + ' مگابایت'; return (n / 1073741824).toFixed(2) + ' گیگابایت'; }
+async function vxMediaUsage() {
+  try {
+    const db = await vxIdb();
+    return await new Promise((res) => {
+      const tx = db.transaction(VX_STORE, 'readonly'); const st = tx.objectStore(VX_STORE); let n = 0, bytes = 0;
+      const rq = st.openCursor();
+      rq.onsuccess = () => { const c = rq.result; if (c) { n++; bytes += (c.value && c.value.size) || 0; c.continue(); } else res({ n, bytes }); };
+      rq.onerror = () => res({ n: 0, bytes: 0 });
+    });
+  } catch (e) { return { n: 0, bytes: 0 }; }
+}
+async function vxRoomsCount() {
+  try {
+    const db = await roomsIdb();
+    return await new Promise((res) => { const rq = db.transaction(ROOMS_STORE, 'readonly').objectStore(ROOMS_STORE).count(); rq.onsuccess = () => res(rq.result || 0); rq.onerror = () => res(0); });
+  } catch (e) { return 0; }
+}
+async function clearMediaCache() {
+  const u = await vxMediaUsage();
+  if (!u.n) { toast('حافظه پنهان رسانه خالی است'); return; }
+  const total = fmtBytes(u.bytes);
+  if (!(await uConfirm(u.n + ' فایل رسانه (' + total + ') پاک شود؟ پیام‌ها، پروفایل کاربران، گروه‌ها و کانال‌ها دست‌نخورده می‌مانند.'))) return;
+  try {
+    const db = await vxIdb();
+    await new Promise((res, rej) => { const tx = db.transaction(VX_STORE, 'readwrite'); tx.objectStore(VX_STORE).clear(); tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
+  } catch (e) { toast('خطا در پاک‌سازی حافظه پنهان'); return; }
+  toast('حافظه پنهان رسانه پاک شد (' + total + ')');
+  const pv = document.querySelector('.view-body.settings-sub'); if (pv && pv.parentElement) renderSettingsSub('storage', pv.parentElement);
+}
+function renderStorageSub(body) {
+  let t = '<div class="settings-sec"><h3>' + ic('hard-drive') + ' حافظه پنهان دستگاه</h3>';
+  t += '<div class="settings-row"><span>عکس‌ها، فیلم‌ها و فایل‌ها</span><b id="st-media">در حال بررسی…</b></div>';
+  t += '<div class="settings-row"><span>پیام‌ها و چت‌های کش‌شده</span><b id="st-rooms">در حال بررسی…</b></div>';
+  t += '<p class="hint" style="margin:10px 0 12px;text-align:right;">این عمل فقط فایل‌های رسانه را از همین دستگاه حذف می‌کند تا فضا آزاد شود؛ پیام‌ها، پروفایل کاربران، گروه‌ها و کانال‌ها دست‌نخورده می‌مانند. فایل‌های حذف‌شده در صورت دیدن دوباره، دوباره دانلود می‌شوند.</p>';
+  t += '<button class="btn danger" id="st-clear" style="width:100%;justify-content:center;">' + ic('trash-2') + ' پاک کردن حافظه پنهان رسانه</button>';
+  t += '</div>';
+  body.innerHTML = t;
+  vxMediaUsage().then((u) => { const el = $('st-media'); if (el) el.textContent = u.n ? (u.n + ' فایل — ' + fmtBytes(u.bytes)) : 'خالی است'; });
+  vxRoomsCount().then((n) => { const el = $('st-rooms'); if (el) el.textContent = n ? (n + ' گفتگو‌') : 'خالی است'; });
+  const cb = body.querySelector('#st-clear'); if (cb) cb.onclick = clearMediaCache;
 }
 function renderPrivSub(body) {
   const ptoggle = (key, label) => '<div class="settings-row"><span>' + label + '</span><label class="switch"><input type="checkbox" id="priv-' + key + '" ' + (localStorage.getItem(key) !== '0' ? 'checked' : '') + '><span class="slider"></span></label></div>';
