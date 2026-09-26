@@ -4164,15 +4164,57 @@ async function vxRoomsCount() {
     return await new Promise((res) => { const rq = db.transaction(ROOMS_STORE, 'readonly').objectStore(ROOMS_STORE).count(); rq.onsuccess = () => res(rq.result || 0); rq.onerror = () => res(0); });
   } catch (e) { return 0; }
 }
+const _waitMs = (ms) => new Promise((r) => setTimeout(r, ms));
 async function clearMediaCache() {
   const u = await vxMediaUsage();
   if (!u.n) { toast('حافظه پنهان رسانه خالی است'); return; }
   const total = fmtBytes(u.bytes);
-  if (!(await uConfirm(u.n + ' فایل رسانه (' + total + ') پاک شود؟ پیام‌ها، پروفایل کاربران، گروه‌ها و کانال‌ها دست‌نخورده می‌مانند.'))) return;
+  if (!(await uConfirm(u.n + ' فایل رسانه (' + total + ') پاک شود؟ پیام‌ها و گفتگوها دست‌نخورده می‌مانند.'))) return;
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  let chips = '', pts = '';
+  for (let i = 0; i < 8; i++) chips += '<span class="cm-chip" style="--a:' + Math.round(i * 45 + rand(-8, 8)) + 'deg;--d:' + (i * 0.09 + rand(0, 0.12)).toFixed(2) + 's"></span>';
+  for (let i = 0; i < 10; i++) pts += '<span class="cm-pt" style="--x:' + rand(18, 82).toFixed(1) + '%;--y:' + rand(30, 70).toFixed(1) + '%;--tx:' + Math.round(rand(-48, 48)) + 'px;--ty:' + Math.round(rand(-72, -28)) + 'px;--dt:' + rand(1.8, 3.2).toFixed(2) + 's;--dd:' + rand(0, 1.8).toFixed(2) + 's"></span>';
+  const ov = document.createElement('div'); ov.className = 'cm-overlay';
+  ov.innerHTML = '<div class="cm-stage">' + pts + '<span class="cm-beam"></span>' +
+    '<div class="cm-orbit"><div class="cm-core">' + ic('trash-2') + '</div>' + chips + '</div>' +
+    '<div class="cm-count"><b>0</b> فایل پاک شد</div>' +
+    '<div class="cm-cap">در حال پاک‌سازی حافظه پنهان…</div>' +
+    '<div class="cm-bar"><i></i></div>' +
+    '<div class="cm-note">پیام‌ها، پروفایل‌ها، گروه‌ها و کانال‌ها دست‌نخورده می‌مانند</div>' +
+    '<div class="cm-burst"><span></span><span></span><span></span></div>' +
+    '</div>';
+  document.body.appendChild(ov);
+  const bar = ov.querySelector('.cm-bar i');
+  const bEl = ov.querySelector('.cm-count b');
+  const capEl = ov.querySelector('.cm-cap');
+  let cleared = 0, shown = 0, pumpId = null;
+  const setTarget = () => {
+    shown = Math.min(cleared, shown + Math.max(1, Math.ceil((cleared - shown) / 4)));
+    bEl.textContent = shown;
+    bar.style.width = (u.n ? Math.round(shown / u.n * 100) : 0) + '%';
+  };
+  const pump = () => { if (shown < cleared) { setTarget(); pumpId = requestAnimationFrame(pump); } else pumpId = null; };
+  const t0 = performance.now();
   try {
     const db = await vxIdb();
-    await new Promise((res, rej) => { const tx = db.transaction(VX_STORE, 'readwrite'); tx.objectStore(VX_STORE).clear(); tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
-  } catch (e) { toast('خطا در پاک‌سازی حافظه پنهان'); return; }
+    await new Promise((res, rej) => {
+      const tx = db.transaction(VX_STORE, 'readwrite');
+      const cur = tx.objectStore(VX_STORE).openCursor();
+      cur.onsuccess = () => { const c = cur.result; if (!c) return res(); c.delete(); cleared++; if (!pumpId) pumpId = requestAnimationFrame(pump); c.continue(); };
+      cur.onerror = () => rej(cur.error);
+    });
+  } catch (e) {
+    ov.remove(); toast('خطا در پاک‌سازی حافظه پنهان'); return;
+  }
+  bEl.textContent = u.n; bar.style.width = '100%'; capEl.textContent = 'همه پاک شد ✓';
+  await _waitMs(Math.max(0, 1200 - (performance.now() - t0)));
+  const core = ov.querySelector('.cm-core'); if (core) core.innerHTML = ic('check');
+  ov.classList.add('cm-done');
+  await _waitMs(760);
+  ov.classList.add('cm-out');
+  await _waitMs(420);
+  ov.remove();
   toast('حافظه پنهان رسانه پاک شد (' + total + ')');
   const pv = document.querySelector('.view-body.settings-sub'); if (pv && pv.parentElement) renderSettingsSub('storage', pv.parentElement);
 }
