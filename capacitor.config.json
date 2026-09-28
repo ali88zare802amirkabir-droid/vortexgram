@@ -5,10 +5,10 @@
   "server": {
     "url": "https://66ae722b68435c.lhr.life",
     "androidScheme": "https",
-    "allowNavigation": ["*"]
+    "allowNavigation": ["66ae722b68435c.lhr.life", "vortexgram.ir", "*.vortexgram.ir"]
   },
   "android": {
-    "allowMixedContent": true,
+    "allowMixedContent": false,
     "backgroundColor": "#031427"
   },
   "plugins": {

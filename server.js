@@ -147,6 +147,25 @@ function authRateOk(key, max, windowMs) {
   authAttempts.set(key, arr);
   return true;
 }
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, arr] of authAttempts) {
+    const filtered = arr.filter((t) => now - t < 60000);
+    if (filtered.length) authAttempts.set(k, filtered); else authAttempts.delete(k);
+  }
+  for (const [k, arr] of wsConnTimes) {
+    const filtered = arr.filter((t) => now - t < 10000);
+    if (filtered.length) wsConnTimes.set(k, filtered); else wsConnTimes.delete(k);
+  }
+  for (const [k, per] of wsRateLimits) {
+    let changed = false;
+    for (const [key, arr] of Object.entries(per)) {
+      const filtered = arr.filter((t) => now - t < 60000);
+      if (filtered.length) per[key] = filtered; else { delete per[key]; changed = true; }
+    }
+    if (changed && !Object.keys(per).length) wsRateLimits.delete(k);
+  }
+}, 30000);
 // بارگذاری نشست‌های ذخیره‌شده تا لاگین پس از ری‌استارت سرور باقی بماند (در start() پس از لود دیتابیس انجام می‌شود)
 
 function newToken() {
@@ -1456,6 +1475,35 @@ app.get('/api/admin/room/messages', auth, (req, res) => {
 });
 
 // ---------- uploads ----------
+const MAGIC_BYTES = {
+  'image/jpeg': [[0xFF, 0xD8, 0xFF]],
+  'image/png': [[0x89, 0x50, 0x4E, 0x47]],
+  'image/gif': [[0x47, 0x49, 0x46, 0x38]],
+  'image/webp': [[0x52, 0x49, 0x46, 0x46]],
+  'video/mp4': [[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]],
+  'video/webm': [[0x1A, 0x45, 0xDF, 0xA3]],
+  'audio/mpeg': [[0xFF, 0xFB], [0xFF, 0xF3], [0xFF, 0xF2], [0x49, 0x44, 0x33]],
+  'audio/wav': [[0x52, 0x49, 0x46, 0x46]],
+  'audio/ogg': [[0x4F, 0x67, 0x67, 0x53]],
+  'audio/webm': [[0x1A, 0x45, 0xDF, 0xA3]],
+  'audio/mp4': [[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]],
+  'audio/aac': [[0xFF, 0xF1], [0xFF, 0xF9]],
+  'application/pdf': [[0x25, 0x50, 0x44, 0x46]],
+  'application/zip': [[0x50, 0x4B, 0x03, 0x04], [0x50, 0x4B, 0x05, 0x06], [0x50, 0x4B, 0x07, 0x08]],
+  'text/plain': [],
+};
+function verifyMagicBytes(filePath, mimetype) {
+  const sigs = MAGIC_BYTES[mimetype];
+  if (!sigs) return false;
+  if (sigs.length === 0) return true;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    return sigs.some((sig) => sig.every((b, i) => buf[i] === b));
+  } catch { return false; }
+}
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -1482,6 +1530,10 @@ app.post('/api/upload', auth, (req, res, next) => {
     return res.status(429).json({ error: 'سقف آپلود رسید — یک ساعت دیگر تلاش کن' });
   }
   const m = cleanMime(req.file.mimetype);
+  if (!verifyMagicBytes(req.file.path, m)) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: 'محتوای فایل با نوع اعلام‌شده مطابقت ندارد' });
+  }
   const kind = m.startsWith('image/') ? (m === 'image/gif' ? 'gif' : 'image') : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : 'file';
   res.json({ url: '/uploads/' + req.file.filename, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
 });

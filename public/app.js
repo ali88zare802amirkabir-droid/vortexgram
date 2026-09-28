@@ -1009,7 +1009,10 @@ function formatText(t) {
   s = s.replace(/\*(.+?)\*/g, '<i>$1</i>');
   s = s.replace(/`(.+?)`/g, '<code>$1</code>');
   s = s.replace(/~~(.+?)~~/g, '<s>$1</s>');
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => {
+    if (!/^(https?:\/\/|\/)/i.test(url)) return m;
+    return '<a href="' + url + '" target="_blank" rel="noopener">' + text + '</a>';
+  });
   s = s.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
   s = s.replace(/\n/g, '<br>');
   return s;
