@@ -1850,12 +1850,16 @@ function emojiPopEl() { return $('emoji-pop'); }
 function closeEmojiPop() {
   const pop = emojiPopEl(); if (!pop) return;
   pop.classList.add('hidden'); pop.classList.remove('mobile', 'docked');
+  if (isMobile()) {
+    var ta = $('composer-input');
+    if (ta) ta.removeAttribute('readonly');
+  }
 }
 function emojiPopOpen() { const pop = emojiPopEl(); return pop && !pop.classList.contains('hidden'); }
 function insertEmoji(e) {
   const inp = $('composer-input');
   inp.value += e;
-  inp.focus();
+  if (!isMobile() || !emojiPopOpen()) inp.focus();
   if (inp.setSelectionRange) inp.setSelectionRange(inp.value.length, inp.value.length);
   inp.dispatchEvent(new Event('input'));
 }
@@ -1917,6 +1921,12 @@ function openEmojiPop() {
   pop.classList.remove('hidden');
   pop.classList.toggle('mobile', isMobile());
   pop.classList.toggle('docked', emojiPinned());
+  if (isMobile()) {
+    var ta = $('composer-input');
+    if (ta) ta.setAttribute('readonly', 'readonly');
+    pop.style.bottom = '0';
+    pop.style.position = 'fixed';
+  }
 }
 function toggleEmojiPop(src) {
   const pop = emojiPopEl(); if (!pop) return;
@@ -1933,7 +1943,7 @@ function toggleEmojiPop(src) {
     pop.style.left = left + 'px'; pop.style.top = top + 'px';
   }
 }
-$('composer-emoji').onclick = (e) => { e.stopPropagation(); toggleEmojiPop($('composer-emoji')); };
+$('composer-emoji').onclick = (e) => { e.stopPropagation(); e.preventDefault(); toggleEmojiPop($('composer-emoji')); };
 document.addEventListener('click', (e) => {
   const pop = emojiPopEl();
   if (!pop || pop.classList.contains('hidden') || emojiPinned()) return;
