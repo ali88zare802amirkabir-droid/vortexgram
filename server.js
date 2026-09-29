@@ -6,6 +6,8 @@ const express = require('express');
 const multer = require('multer');
 const { WebSocketServer } = require('ws');
 const dns = require('dns');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 // ---------- .env ----------
 try {
@@ -364,6 +366,40 @@ const LIMITS = {
   normalBio: 80,
   premiumBio: 200,
 };
+
+const R2_ENABLED = !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET);
+let r2 = null;
+if (R2_ENABLED) {
+  r2 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
+  });
+}
+function r2Key(filename) { return 'uploads/' + filename; }
+async function r2Upload(filePath, key, contentType) {
+  if (!r2) return null;
+  const body = fs.createReadStream(filePath);
+  await r2.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key, Body: body, ContentType: contentType }));
+  return `https://${process.env.R2_BUCKET}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${key}`;
+}
+async function r2Proxy(key, res) {
+  if (!r2) return false;
+  try {
+    const cmd = new GetObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key });
+    const data = await r2.send(cmd);
+    res.setHeader('Content-Type', data.ContentType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    data.Body.pipe(res);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // سقف نرخ و حجم آپلود در یک بازه یک‌ساعته (خنثی‌سازی مصرف بی‌محدود دیسک)
 const uploadUsage = new Map(); // username -> { winStart, count, bytes }
 function uploadQuotaOk(username, bytes) {
@@ -447,8 +483,15 @@ const uploadsStatic = express.static(UPLOAD_DIR, {
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   },
 });
-app.use('/uploads', (req, res) => {
+app.use('/uploads', async (req, res) => {
   if (!currentUser(req)) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
+  const filename = req.path.slice(1);
+  if (!filename) return res.status(404).json({ error: 'پیدا نشد' });
+  const key = r2Key(filename);
+  if (R2_ENABLED) {
+    const ok = await r2Proxy(key, res);
+    if (ok) return;
+  }
   uploadsStatic(req, res, (err) => {
     if (err) return res.status(500).json({ error: 'خطای داخلی سرور' });
     res.status(404).json({ error: 'پیدا نشد' });
@@ -1518,7 +1561,7 @@ const upload = multer({
 app.post('/api/upload', auth, (req, res, next) => {
   if (!authRateOk('upload-rate:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'آپلود زیاد — کمی صبر کن' });
   next();
-}, upload.single('file'), (req, res) => {
+}, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'فایل مجاز نیست یا حجمش زیاد است' });
   const maxMB = req.user.isPremium ? LIMITS.premiumUploadMB : LIMITS.normalUploadMB;
   if (req.file.size > maxMB * 1024 * 1024) {
@@ -1535,7 +1578,19 @@ app.post('/api/upload', auth, (req, res, next) => {
     return res.status(400).json({ error: 'محتوای فایل با نوع اعلام‌شده مطابقت ندارد' });
   }
   const kind = m.startsWith('image/') ? (m === 'image/gif' ? 'gif' : 'image') : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : 'file';
-  res.json({ url: '/uploads/' + req.file.filename, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
+  
+  let finalUrl = '/uploads/' + req.file.filename;
+  if (R2_ENABLED) {
+    try {
+      const r2Url = await r2Upload(req.file.path, r2Key(req.file.filename), m);
+      if (r2Url) finalUrl = r2Url;
+    } catch (e) {
+      console.error('R2 upload failed, falling back to local:', e);
+    }
+    fs.unlink(req.file.path, () => {});
+  }
+  
+  res.json({ url: finalUrl, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
 });
 
 // فایل‌های خصوصی (`/uploads/*`) دیگر استاتیکِ باز نیستند؛ سرو آن توسط
