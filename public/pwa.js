@@ -33,6 +33,12 @@ if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').ca
   }
   function toggle() { if (btn && btn.classList.contains('collapsed')) expand(); else collapse(); }
 
+  function autoCollapse() {
+    if (btn && !btn.classList.contains('collapsed') && isMobile()) {
+      collapse();
+    }
+  }
+
   function build() {
     if (btn && btn.isConnected) return btn;
     var el = document.createElement('div');
@@ -42,7 +48,8 @@ if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').ca
     el.setAttribute('tabindex', '0');
     el.setAttribute('aria-label', 'نصب اپ VORTEX');
     el.innerHTML = '<span class="pwa-fab-x" role="button" tabindex="0" aria-label="کوچک و بزرگ کردن">\u00d7</span>' +
-                   '<span class="pwa-fab-text">نصب اپ VORTEX</span>';
+                   '<span class="pwa-fab-text">نصب اپ VORTEX</span>' +
+                   '<span class="pwa-fab-icon" aria-hidden="true">' + ic('download') + '</span>';
     document.body.appendChild(el);
     btn = el;
     window.__pwaBtn = el;
@@ -137,6 +144,7 @@ if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').ca
     });
 
     if (localStorage.getItem('vx_pwa_state') === 'collapsed') collapse();
+    setTimeout(autoCollapse, 2000);
   }
 
   window.addEventListener('beforeinstallprompt', function (e) {

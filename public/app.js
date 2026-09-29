@@ -1121,7 +1121,7 @@ function voiceEl(m) {
     + '<div class="voice-wave">' + waveHtml + '<span class="voice-line"></span></div>'
     + '<span class="voice-time">' + (dur ? fmtDur(dur) : '0:00') + '</span>'
     + '<button class="voice-speed" title="سرعت پخش">1x</button>'
-    + '<audio src="' + esc(u) + '" preload="metadata"></audio>';
+    + '<audio preload="metadata"></audio>';
 
   const btn = d.querySelector('.voice-play');
   const aud = d.querySelector('audio');
@@ -1132,21 +1132,39 @@ function voiceEl(m) {
   const speeds = [1, 1.5, 2];
   let speedIdx = 0;
   const totalDur = dur || 0;
+  let audioLoaded = false;
 
   function fmtDur(s) { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
 
+  function loadAudio() {
+    if (audioLoaded) return;
+    audioLoaded = true;
+    btn.innerHTML = ic('loader');
+    d.classList.add('voice-loading');
+    d.classList.remove('voice-error');
+    fetch(u, { credentials: 'include' }).then(async (res) => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      aud.src = url;
+    }).catch((e) => {
+      d.classList.remove('voice-loading');
+      d.classList.add('voice-error');
+      btn.innerHTML = ic('refresh-cw');
+      console.error('Voice load failed:', e);
+    });
+  }
+
   const toggle = () => {
     if (d.classList.contains('voice-error')) {
-      aud.load();
-      d.classList.remove('voice-error');
-      d.classList.add('voice-loading');
-      btn.innerHTML = ic('loader');
+      loadAudio();
       return;
     }
     if (aud.paused) {
       if (window._cva && window._cva !== aud) { window._cva.pause(); window._cva.currentTime = 0; }
       window._cva = aud;
-      aud.play().catch(() => { d.classList.add('voice-error'); btn.innerHTML = ic('refresh-cw'); });
+      loadAudio();
+      aud.play().catch(() => { d.classList.add('voice-error'); d.classList.remove('voice-loading'); btn.innerHTML = ic('refresh-cw'); });
     } else {
       aud.pause();
     }
@@ -1858,10 +1876,13 @@ function closeEmojiPop() {
 function emojiPopOpen() { const pop = emojiPopEl(); return pop && !pop.classList.contains('hidden'); }
 function insertEmoji(e) {
   const inp = $('composer-input');
+  const wasReadonly = inp.hasAttribute('readonly');
+  if (wasReadonly) inp.removeAttribute('readonly');
   inp.value += e;
-  if (!isMobile() || !emojiPopOpen()) inp.focus();
   if (inp.setSelectionRange) inp.setSelectionRange(inp.value.length, inp.value.length);
   inp.dispatchEvent(new Event('input'));
+  if (!isMobile() || !emojiPopOpen()) inp.focus();
+  else if (wasReadonly) inp.setAttribute('readonly', 'readonly');
 }
 function updateEmojiPinBtn() {
   const b = emojiPopEl() && emojiPopEl().querySelector('.emoji-pin');
@@ -2108,7 +2129,7 @@ function addVoicePlaceholder() {
   wrap.innerHTML = (showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '')
     + '<div class="bubble"><div class="msg-body"><div class="voice-cap voice-loading">'
     + '<div class="voice-play" style="pointer-events:none">' + ic('loader') + '</div>'
-    + '<div class="voice-wave">' + Array.from({length:30}, () => '<i style="height:20%;opacity:.3"></i>').join('') + '</div>'
+    + '<div class="voice-wave sending-wave">' + Array.from({length:30}, (_,i) => '<i style="animation-delay:' + (i * 50) + 'ms;height:20%"></i>').join('') + '</div>'
     + '<span class="voice-time">...</span>'
     + '</div></div>'
     + '<div class="msg-meta"><span class="msg-time">' + ic('loader') + ' در حال ارسال...</span></div></div>';
@@ -4061,14 +4082,14 @@ function persistActiveSkin() {
   api('/api/skin', { method: 'POST', body: JSON.stringify({ skin: id }) }).catch(() => {});
 }
 const SETCATS = {
-  appearance: { title: ic('palette') + ' ظاهر', icon: 'palette' },
-  background: { title: ic('image') + ' پس‌زمینه چت', icon: 'image' },
-  account: { title: ic('user') + ' حساب', icon: 'user' },
-  notifications: { title: ic('bell') + ' اعلان‌ها', icon: 'bell' },
-  privacy: { title: ic('lock') + ' حریم خصوصی', icon: 'lock' },
-  storage: { title: ic('hard-drive') + ' حافظه و کش', icon: 'hard-drive' },
-  skins: { title: ic('paintbrush') + ' اسکین‌ها و تم‌ها', icon: 'paintbrush' },
-  logout: { title: ic('log-out') + ' خروج', icon: 'log-out' }
+  appearance: { title: 'نمایش و تم', icon: 'palette' },
+  background: { title: 'پس‌زمینه', icon: 'image' },
+  account: { title: 'حساب کاربری', icon: 'user' },
+  notifications: { title: 'اعلان‌ها', icon: 'bell' },
+  privacy: { title: 'حریم خصوصی', icon: 'lock' },
+  storage: { title: 'ذخیره‌سازی', icon: 'hard-drive' },
+  skins: { title: 'اسکین‌ها و تم‌ها', icon: 'paintbrush' },
+  logout: { title: 'خروج', icon: 'log-out' }
 };
 function renderSettingsMain(wrap) {
   const body = document.createElement('div'); body.className = 'view-body settings-main';
