@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=139" />
+  <link rel="stylesheet" href="style.css?v=140" />
   <script src="icons.js?v=86"></script>
 </head>
 <body>
@@ -173,26 +173,6 @@
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
   <script src="app.js?v=150"></script>
-  <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
-(function () {
-  var q = new URLSearchParams(location.search);
-  var inv = q.get('invite') || '';
-  if (inv) { localStorage.setItem('vx_inviter', inv.replace('@', '').toLowerCase().slice(0, 50)); history.replaceState(null, '', location.pathname); }
-  var jm = location.pathname.match(/^\/join\/([A-Za-z0-9_-]+)/);
-  if (jm) { localStorage.setItem('vx_group_invite', jm[1].slice(0, 60)); history.replaceState(null, '', '/app'); }
-  var def = null;
-  window.addEventListener('beforeinstallprompt', function (e) {
-    e.preventDefault(); def = e;
-    var b = document.createElement('button');
-    b.id = 'pwa-install';
-    b.textContent = 'نصب اپ VORTEX';
-    b.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;background:var(--primary,#6ea8fe);color:#002e5c;border:none;padding:10px 18px;border-radius:12px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.4);';
-    b.onclick = function () { if (def) { def.prompt(); } };
-    document.body.appendChild(b);
-    window.__pwaBtn = b;
-  });
-  window.addEventListener('appinstalled', function () { var b = window.__pwaBtn; if (b) b.remove(); });
-})();
-</script>
+  <script src="pwa.js?v=2"></script>
 </body>
 </html>
