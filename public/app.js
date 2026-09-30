@@ -1875,15 +1875,12 @@ function closeEmojiPop() {
 }
 function emojiPopOpen() { const pop = emojiPopEl(); return pop && !pop.classList.contains('hidden'); }
 function insertEmoji(e) {
-  const inp = $('composer-input');
-  const wasReadonly = inp.hasAttribute('readonly');
-  if (wasReadonly) inp.removeAttribute('readonly');
+  const inp = $('composer-input'); if (!inp) return;
   inp.value += e;
   if (inp.setSelectionRange) inp.setSelectionRange(inp.value.length, inp.value.length);
   inp.dispatchEvent(new Event('input'));
   if (isMobile() && emojiPopOpen()) positionEmojiPopMobile();
-  if (!isMobile() || !emojiPopOpen()) inp.focus();
-  else if (wasReadonly) inp.setAttribute('readonly', 'readonly');
+  if (!isMobile()) inp.focus();
 }
 function updateEmojiPinBtn() {
   const b = emojiPopEl() && emojiPopEl().querySelector('.emoji-pin');
@@ -1936,6 +1933,8 @@ function buildEmojiPopContent(pop) {
   });
   pop.dataset.filled = '1';
   updateEmojiPinBtn();
+  attachEmojiGridInput(grid);
+  attachEmojiPopDrag(pop);
 }
 function positionEmojiPopMobile() {
   const pop = emojiPopEl(); if (!pop) return;
@@ -1943,6 +1942,67 @@ function positionEmojiPopMobile() {
   const ch = comp ? comp.offsetHeight : 56;
   pop.style.bottom = (ch + 6) + 'px';
   pop.style.position = 'fixed';
+}
+let _emojiDrag = null;
+let _emojiPtr = null;
+function attachEmojiGridInput(grid) {
+  const itFrom = (t) => t && t.closest ? t.closest('.emoji-item') : null;
+  grid.addEventListener('pointerdown', (e) => {
+    const it = itFrom(e.target);
+    _emojiPtr = it ? { it, x: e.clientX, y: e.clientY } : null;
+  }, { passive: true });
+  grid.addEventListener('pointerup', (e) => {
+    const it = itFrom(e.target);
+    const p = _emojiPtr; _emojiPtr = null;
+    if (!it || !p || p.it !== it) return;
+    if (Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y) > 10) return;
+    e.preventDefault();
+    insertEmoji(it.textContent);
+  }, { passive: false });
+  grid.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const it = itFrom(e.target);
+    if (!it) return;
+    e.preventDefault();
+    insertEmoji(it.textContent);
+  });
+}
+function attachEmojiPopDrag(pop) {
+  if (!window.PointerEvent) return;
+  pop.addEventListener('pointerdown', (e) => {
+    if (isMobile()) return;
+    if (e.target.closest('button, input, .emoji-grid')) return;
+    const r = pop.getBoundingClientRect();
+    _emojiDrag = { sx: e.clientX, sy: e.clientY, l: r.left, t: r.top, moved: false };
+    pop.classList.add('dragging');
+    try { pop.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  });
+  pop.addEventListener('pointermove', (e) => {
+    if (!_emojiDrag) return;
+    if (pop.classList.contains('docked')) pop.classList.remove('docked');
+    const dx = e.clientX - _emojiDrag.sx, dy = e.clientY - _emojiDrag.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 4) _emojiDrag.moved = true;
+    if (_emojiDrag.moved) {
+      const w = pop.offsetWidth, h = pop.offsetHeight;
+      pop.style.left = Math.max(8, Math.min(_emojiDrag.l + dx, window.innerWidth - w - 8)) + 'px';
+      pop.style.top = Math.max(8, Math.min(_emojiDrag.t + dy, window.innerHeight - h - 8)) + 'px';
+      pop.style.bottom = 'auto';
+    }
+  });
+  const endDrag = () => {
+    if (!_emojiDrag) return;
+    const was = _emojiDrag.moved;
+    _emojiDrag = null;
+    pop.classList.remove('dragging');
+    if (was) {
+      try {
+        localStorage.setItem('vx_emoji_pop_pos', JSON.stringify({ left: Math.round(pop.getBoundingClientRect().left), top: Math.round(pop.getBoundingClientRect().top) }));
+      } catch (err) {}
+    }
+  };
+  pop.addEventListener('pointerup', endDrag);
+  pop.addEventListener('pointercancel', endDrag);
 }
 function openEmojiPop() {
   const pop = emojiPopEl(); if (!pop) return;
@@ -1953,18 +2013,31 @@ function openEmojiPop() {
   if (isMobile()) {
     var ta = $('composer-input');
     if (ta) ta.setAttribute('readonly', 'readonly');
+    pop.style.left = ''; pop.style.top = ''; pop.style.bottom = '';
     positionEmojiPopMobile();
+  } else {
+    pop.style.bottom = '';
+    if (emojiPinned()) {
+      pop.style.left = ''; pop.style.top = '';
+    } else {
+      try {
+        const saved = JSON.parse(localStorage.getItem('vx_emoji_pop_pos') || 'null');
+        if (saved && saved.left != null && saved.top != null) {
+          pop.style.left = saved.left + 'px';
+          pop.style.top = saved.top + 'px';
+        }
+      } catch (e) {}
+    }
   }
 }
 function toggleEmojiPop(src) {
   const pop = emojiPopEl(); if (!pop) return;
   if (emojiPopOpen()) { closeEmojiPop(); return; }
   openEmojiPop();
-  if (!isMobile() && !emojiPinned() && src && src.getBoundingClientRect) {
+  if (!isMobile() && !emojiPinned() && src && src.getBoundingClientRect && !pop.style.left) {
     const r = src.getBoundingClientRect();
     pop.classList.remove('docked');
-    pop.style.left = ''; pop.style.top = '';
-    const pw = 340, ph = 400;
+    const pw = 300, ph = 200;
     const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
     let top = r.bottom + 6;
     if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
@@ -1983,7 +2056,8 @@ function renderEmojiGrid(grid, emojis) {
     const s = document.createElement('span');
     s.className = 'emoji-item';
     s.textContent = e;
-    s.onclick = () => { insertEmoji(e); };
+    s.setAttribute('role', 'button');
+    s.setAttribute('tabindex', '0');
     grid.appendChild(s);
   });
 }
