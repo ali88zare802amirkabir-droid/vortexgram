@@ -2037,7 +2037,7 @@ function toggleEmojiPop(src) {
   if (!isMobile() && !emojiPinned() && src && src.getBoundingClientRect && !pop.style.left) {
     const r = src.getBoundingClientRect();
     pop.classList.remove('docked');
-    const pw = 300, ph = 200;
+    const pw = 340, ph = 400;
     const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
     let top = r.bottom + 6;
     if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
