@@ -705,6 +705,8 @@ $('cl-menu').onclick = () => { const open = !$('nav-sidebar').classList.contains
 function openRoom(rid) {
   closeMsgCtx();
   exitSelectMode();
+  closeEmojiPop();
+  emojiPanelTab = 'emoji';
   state.room = rid; state.replyTo = null;
   setReply(null);
   document.querySelectorAll('.chat-item').forEach((e) => e.classList.toggle('active', e.dataset.roomId === rid));
@@ -990,7 +992,7 @@ function replyRef(rt) {
 }
 function bodyEl(m) {
   const b = document.createElement('div'); b.className = 'msg-body';
-  if (m.kind === 'image' || m.kind === 'video') { b.appendChild(mediaEl(m)); }
+  if (m.kind === 'image' || m.kind === 'video' || m.kind === 'gif') { b.appendChild(mediaEl(m)); }
   else if (m.kind === 'album') { b.appendChild(albumEl(m)); }
   else if (m.kind === 'voice') { b.appendChild(voiceEl(m)); }
   else if (m.kind === 'file' || m.kind === 'audio') { b.appendChild(fileEl(m)); }
@@ -1862,6 +1864,79 @@ function sendFileMessage(blob, name) {
   });
 }
 /* EMOJI PICKER — پیکر ایموجی شناور (PC قابل پین) و برگهٔ موبایل */
+const STICKER_SET = [
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f601.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f602.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f603.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f604.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f605.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f606.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f609.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f60a.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f60b.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f60d.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f60e.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f612.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f614.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f616.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f618.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f61a.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f61c.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f61d.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f61e.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f620.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f621.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f622.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f623.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f625.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f628.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f629.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f62a.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f62b.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f62d.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f630.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f631.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f632.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f633.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f634.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f635.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f636.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f637.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f641.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f642.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f643.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f644.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f645.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f646.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f647.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f648.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f649.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64a.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64b.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64c.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64d.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64e.png',
+  'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64f.png',
+];
+const GIF_SET = [
+  'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
+  'https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif',
+  'https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif',
+  'https://media.giphy.com/media/l4FGuhL4U2WyjdkaY/giphy.gif',
+  'https://media.giphy.com/media/3o6Zt6KHxJTbXCnSvu/giphy.gif',
+  'https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif',
+  'https://media.giphy.com/media/3o7TKn9BxkQhIiJtYY/giphy.gif',
+  'https://media.giphy.com/media/xT5LMHxhOfscxPfIfm/giphy.gif',
+  'https://media.giphy.com/media/3o7TKWL4L0y7VdD6M/giphy.gif',
+  'https://media.giphy.com/media/l41lFwBVlGVs5WmAo/giphy.gif',
+];
+const EMOJI_PANEL_TABS = [
+  { id: 'emoji', label: 'Emoji' },
+  { id: 'sticker', label: 'Stickers' },
+  { id: 'gif', label: 'GIFs' },
+];
+let emojiPanelTab = 'emoji';
 const EMOJI_PIN_KEY = 'vx_emoji_pinned';
 function emojiPinned() { return localStorage.getItem(EMOJI_PIN_KEY) === '1'; }
 function emojiPopEl() { return $('emoji-pop'); }
@@ -1897,7 +1972,12 @@ function buildEmojiPopContent(pop) {
     + '<input id="emoji-search" class="input emoji-search-inp" placeholder="جستجوی ایموجی..." />'
     + '<button type="button" class="icon-btn emoji-close" title="بستن">' + ic('x') + '</button>'
     + '</div>'
-    + '<div class="emoji-dock-body"><div class="emoji-cats" id="emoji-cats"></div><div class="emoji-grid" id="emoji-grid"></div></div>';
+    + '<div class="emoji-dock-body">'
+    + '<div class="emoji-tabs" id="emoji-tabs"></div>'
+    + '<div class="emoji-cats" id="emoji-cats"></div>'
+    + '<div class="emoji-grid" id="emoji-grid"></div>'
+    + '</div>';
+  const tabs = pop.querySelector('#emoji-tabs');
   const cats = pop.querySelector('#emoji-cats');
   const grid = pop.querySelector('#emoji-grid');
   const search = pop.querySelector('#emoji-search');
@@ -1910,6 +1990,13 @@ function buildEmojiPopContent(pop) {
     if (pinned) toast('ایموجی‌ها پین شدند — همیشه باز');
     else toast('پین برداشته شد');
   };
+  EMOJI_PANEL_TABS.forEach((t) => {
+    const btn = document.createElement('button');
+    btn.className = 'emoji-cat-btn' + (t.id === emojiPanelTab ? ' active' : '');
+    btn.textContent = t.label;
+    btn.onclick = () => { emojiPanelTab = t.id; renderEmojiPanelTab(pop); };
+    tabs.appendChild(btn);
+  });
   Object.keys(EMOJI_CATEGORIES).forEach((cat, i) => {
     const btn = document.createElement('button');
     btn.className = 'emoji-cat-btn' + (i === 0 ? ' active' : '');
@@ -1918,7 +2005,6 @@ function buildEmojiPopContent(pop) {
     btn.onclick = () => { cats.querySelectorAll('.emoji-cat-btn').forEach((b) => b.classList.remove('active')); btn.classList.add('active'); renderEmojiGrid(grid, EMOJI_CATEGORIES[cat]); search.value = ''; };
     cats.appendChild(btn);
   });
-  renderEmojiGrid(grid, EMOJI_CATEGORIES[Object.keys(EMOJI_CATEGORIES)[0]]);
   search.addEventListener('input', (e) => {
     const q = e.target.value.trim().toLowerCase();
     if (!q) {
@@ -1932,10 +2018,65 @@ function buildEmojiPopContent(pop) {
   pop.dataset.filled = '1';
   updateEmojiPinBtn();
   attachEmojiGridInput(grid);
+  renderEmojiPanelTab(pop);
+}
+function renderEmojiPanelTab(pop) {
+  const tabs = pop.querySelector('#emoji-tabs');
+  if (tabs) tabs.querySelectorAll('.emoji-cat-btn').forEach((b, i) => b.classList.toggle('active', EMOJI_PANEL_TABS[i].id === emojiPanelTab));
+  const cats = pop.querySelector('#emoji-cats');
+  const grid = pop.querySelector('#emoji-grid');
+  const search = pop.querySelector('#emoji-search');
+  if (emojiPanelTab === 'emoji') {
+    if (cats) cats.style.display = '';
+    if (search) search.style.display = '';
+    renderEmojiGrid(grid, EMOJI_CATEGORIES[Object.keys(EMOJI_CATEGORIES)[0]]);
+  } else if (emojiPanelTab === 'sticker') {
+    if (cats) cats.style.display = 'none';
+    if (search) search.style.display = 'none';
+    renderStickerGrid(grid);
+  } else {
+    if (cats) cats.style.display = 'none';
+    if (search) search.style.display = 'none';
+    renderGifGrid(grid);
+  }
+}
+function renderStickerGrid(grid) {
+  grid.innerHTML = '';
+  STICKER_SET.forEach((url) => {
+    const s = document.createElement('span');
+    s.className = 'emoji-item';
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = '';
+    s.appendChild(img);
+    grid.appendChild(s);
+  });
+}
+function renderGifGrid(grid) {
+  grid.innerHTML = '';
+  GIF_SET.forEach((url) => {
+    const s = document.createElement('span');
+    s.className = 'emoji-item';
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = '';
+    s.appendChild(img);
+    grid.appendChild(s);
+  });
 }
 let _emojiPtr = null;
 function attachEmojiGridInput(grid) {
   const itFrom = (t) => t && t.closest ? t.closest('.emoji-item') : null;
+  const activate = (it) => {
+    const img = it.querySelector('img');
+    if (img) {
+      if (emojiPanelTab === 'sticker') doSend({ kind: 'sticker', sticker: img.src });
+      else doSend({ kind: 'gif', src: img.src });
+      closeEmojiPop();
+    } else {
+      insertEmoji(it.textContent);
+    }
+  };
   grid.addEventListener('pointerdown', (e) => {
     const it = itFrom(e.target);
     _emojiPtr = it ? { it, x: e.clientX, y: e.clientY } : null;
@@ -1946,14 +2087,14 @@ function attachEmojiGridInput(grid) {
     if (!it || !p || p.it !== it) return;
     if (Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y) > 10) return;
     e.preventDefault();
-    insertEmoji(it.textContent);
+    activate(it);
   }, { passive: false });
   grid.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const it = itFrom(e.target);
     if (!it) return;
     e.preventDefault();
-    insertEmoji(it.textContent);
+    activate(it);
   });
 }
 function openEmojiPop() {
@@ -1965,6 +2106,7 @@ function openEmojiPop() {
     var ta = $('composer-input');
     if (ta) ta.setAttribute('readonly', 'readonly');
   }
+  renderEmojiPanelTab(pop);
 }
 function toggleEmojiPop() {
   const pop = emojiPopEl(); if (!pop) return;
@@ -2252,7 +2394,7 @@ function recInit() {
 }
 recInit();
 
-$('composer-sticker').onclick = () => { const m = { kind: 'sticker', sticker: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f600.png' }; doSend(m); };
+$('composer-sticker').onclick = () => { emojiPanelTab = 'sticker'; toggleEmojiPop(); };
 function cancelReply() {
   const bar = $('reply-bar');
   if (!bar) return;
@@ -3148,6 +3290,7 @@ async function doForward(m, toRoomId) {
   let kind = m.kind, content = '', src = m.src || m.url, name = m.name, mime = m.mime, duration = m.duration, wave = m.wave, album = m.album, poll = m.poll, checklist = m.checklist;
   if (kind === 'text') content = m.content || '';
   else if (kind === 'sticker') { content = m.content || m.sticker || ''; src = undefined; }
+  else if (kind === 'gif') { content = ''; src = m.src || m.url; }
   else if (kind === 'poll' || kind === 'checklist' || kind === 'album') { src = undefined; }
   else { content = m.content || ''; }
   const fwd = { kind, content, src, name, mime, duration, wave, album, poll, checklist, replyTo: m.replyTo ? { id: m.replyTo.id, name: m.replyTo.name, snippet: m.replyTo.snippet } : undefined, fwdFrom };
