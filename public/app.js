@@ -2005,14 +2005,14 @@ function attachEmojiPopDrag(pop) {
   pop.addEventListener('pointercancel', endDrag);
 }
 function positionEmojiPopInConversation(pop) {
-  const conv = $('conversation'); if (!conv) return;
-  const cr = conv.getBoundingClientRect();
-  const comp = $('composer');
-  const ch = comp ? comp.offsetHeight : 56;
-  const w = Math.min(340, cr.width - 24);
+  const box = $('messages') || $('conversation'); if (!box) return;
+  const r = box.getBoundingClientRect();
+  const w = Math.min(340, r.width - 24);
   pop.style.width = w + 'px';
-  pop.style.left = (cr.left + Math.max(0, (cr.width - w) / 2)) + 'px';
-  pop.style.top = Math.max(8, cr.bottom - ch - 8 - 400) + 'px';
+  pop.style.left = (r.left + Math.max(0, (r.width - w) / 2)) + 'px';
+  let top = r.bottom - 8 - 400;
+  if (top < r.top + 8) top = r.top + 8;
+  pop.style.top = top + 'px';
   pop.style.bottom = 'auto';
 }
 function openEmojiPop() {
