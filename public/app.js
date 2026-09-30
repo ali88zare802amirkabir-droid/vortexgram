@@ -706,6 +706,8 @@ function openRoom(rid) {
   closeMsgCtx();
   exitSelectMode();
   closeEmojiPop();
+  closeAttachPop();
+  attachSelection = [];
   emojiPanelTab = 'emoji';
   state.room = rid; state.replyTo = null;
   setReply(null);
@@ -2097,6 +2099,168 @@ function attachEmojiGridInput(grid) {
     activate(it);
   });
 }
+/* ATTACHMENT PICKER — پنل یکپارچه ارسال فایل */
+const ATTACH_MAX_FILES = 10;
+const ATTACH_MAX_SIZE = 50 * 1024 * 1024;
+const ATTACH_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ATTACH_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg'];
+const ATTACH_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/webm'];
+const ATTACH_DOC_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'text/plain', 'application/zip'];
+const ATTACH_DOC_EXTS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip'];
+let attachSelection = [];
+function attachPopEl() { return $('attach-pop'); }
+function attachPopOpen() { const pop = attachPopEl(); return pop && !pop.classList.contains('hidden'); }
+function closeAttachPop() {
+  const pop = attachPopEl(); if (!pop) return;
+  pop.classList.add('hidden');
+  attachSelection = [];
+  if (isMobile()) { var ta = $('composer-input'); if (ta) ta.removeAttribute('readonly'); }
+}
+function openAttachPop() {
+  const pop = attachPopEl(); if (!pop) return;
+  buildAttachPopContent(pop);
+  pop.classList.remove('hidden');
+  pop.classList.toggle('mobile', isMobile());
+  if (isMobile()) { var ta = $('composer-input'); if (ta) ta.setAttribute('readonly', 'readonly'); }
+}
+function toggleAttachPop() {
+  const pop = attachPopEl(); if (!pop) return;
+  if (attachPopOpen()) { closeAttachPop(); return; }
+  openAttachPop();
+}
+function buildAttachPopContent(pop) {
+  if (pop.dataset.filled) return;
+  pop.innerHTML = '<div class="emoji-dock-head">'
+    + '<button type="button" class="icon-btn emoji-close" title="بستن">' + ic('x') + '</button>'
+    + '</div>'
+    + '<div class="emoji-dock-body">'
+    + '<div class="attach-options">'
+    + '<button class="attach-option" data-type="gallery"><i data-lucide="image" class="icon"></i><span>گالری</span></button>'
+    + '<button class="attach-option" data-type="file"><i data-lucide="file" class="icon"></i><span>فایل</span></button>'
+    + '<button class="attach-option" data-type="location"><i data-lucide="map-pin" class="icon"></i><span>موقعیت</span></button>'
+    + '<button class="attach-option" data-type="contact"><i data-lucide="contact" class="icon"></i><span>مخاطب</span></button>'
+    + '<button class="attach-option" data-type="music"><i data-lucide="music" class="icon"></i><span>موسیقی</span></button>'
+    + '</div>'
+    + '<div class="attach-preview hidden" id="attach-preview"></div>'
+    + '</div>';
+  pop.querySelector('.emoji-close').onclick = (e) => { e.stopPropagation(); closeAttachPop(); };
+  pop.querySelectorAll('.attach-option').forEach((btn) => {
+    btn.onclick = () => handleAttachOption(btn.dataset.type);
+  });
+  applyIcons(pop);
+  pop.dataset.filled = '1';
+}
+function handleAttachOption(type) {
+  if (type === 'location') { handleLocationShare(); return; }
+  if (type === 'contact') { handleContactShare(); return; }
+  const inp = $(type + '-input');
+  if (inp) { inp.value = ''; inp.click(); }
+}
+function validateAttachFile(f, type) {
+  if (f.size > ATTACH_MAX_SIZE) return 'فایل «' + (f.name || '') + '» بیش از حد بزرگ است (حداکثر ۵۰ مگابایت)';
+  const mime = (f.type || '').toLowerCase();
+  const ext = ((f.name || '').toLowerCase().match(/\.[^.]+$/) || [''])[0];
+  if (type === 'gallery') {
+    if (!ATTACH_IMAGE_TYPES.includes(mime) && !ATTACH_VIDEO_TYPES.includes(mime)) return 'نوع فایل مجاز نیست: ' + (f.name || '');
+  } else if (type === 'file') {
+    if (!ATTACH_DOC_TYPES.includes(mime) && !ATTACH_DOC_EXTS.includes(ext)) return 'نوع فایل مجاز نیست: ' + (f.name || '');
+  } else if (type === 'music') {
+    if (!ATTACH_AUDIO_TYPES.includes(mime)) return 'نوع فایل مجاز نیست: ' + (f.name || '');
+  }
+  return null;
+}
+function handleAttachFiles(files, type) {
+  if (!files || !files.length) return;
+  const valid = [];
+  for (const f of files) {
+    const err = validateAttachFile(f, type);
+    if (err) { toast(err); continue; }
+    valid.push(f);
+  }
+  if (!valid.length) return;
+  if (attachSelection.length + valid.length > ATTACH_MAX_FILES) { toast('حداکثر ' + ATTACH_MAX_FILES + ' فایل می‌توانید انتخاب کنید'); return; }
+  valid.forEach((f) => {
+    attachSelection.push({ id: 'f' + Date.now() + Math.random().toString(36).slice(2, 7), file: f, type: type, status: 'selected', progress: 0, error: null });
+  });
+  renderAttachPreview();
+}
+function renderAttachPreview() {
+  const pop = attachPopEl(); if (!pop) return;
+  const preview = pop.querySelector('#attach-preview');
+  if (!preview) return;
+  if (!attachSelection.length) { preview.classList.add('hidden'); preview.innerHTML = ''; return; }
+  preview.classList.remove('hidden');
+  let h = '<div class="attach-preview-grid">';
+  attachSelection.forEach((item) => {
+    h += '<div class="attach-preview-item" data-id="' + item.id + '">';
+    if (item.type === 'gallery' && item.file.type.startsWith('image/')) {
+      h += '<img src="' + URL.createObjectURL(item.file) + '" alt="">';
+    } else {
+      h += '<div class="file-info"><i data-lucide="file" class="icon"></i><div>' + (item.file.name || '').replace(/</g, '&lt;') + '</div><div>' + fmtBytes(item.file.size) + '</div></div>';
+    }
+    h += '<button class="remove" data-id="' + item.id + '">' + ic('x') + '</button>';
+    h += '</div>';
+  });
+  h += '</div>';
+  h += '<div class="attach-preview-actions"><button class="btn sm" id="attach-send">ارسال (' + attachSelection.length + ')</button></div>';
+  preview.innerHTML = h;
+  applyIcons(preview);
+  preview.querySelectorAll('.remove').forEach((b) => {
+    b.onclick = () => { attachSelection = attachSelection.filter((x) => x.id !== b.dataset.id); renderAttachPreview(); };
+  });
+  const sendBtn = preview.querySelector('#attach-send');
+  if (sendBtn) sendBtn.onclick = sendAttachSelection;
+}
+function sendAttachSelection() {
+  if (!attachSelection.length) return;
+  const items = attachSelection.slice();
+  closeAttachPop();
+  items.forEach((item) => { sendFileMessage(item.file, item.file.name || 'file'); });
+}
+function handleLocationShare() {
+  if (!navigator.geolocation) { toast('موقعیت‌یابی در این مرورگر پشتیبانی نمی‌شود'); return; }
+  toast('در حال دریافت موقعیت...');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude.toFixed(6);
+      const lng = pos.coords.longitude.toFixed(6);
+      doSend({ kind: 'text', content: '📍 موقعیت من: ' + lat + ', ' + lng + '\nhttps://maps.google.com/?q=' + lat + ',' + lng });
+      closeAttachPop();
+    },
+    (err) => {
+      if (err.code === 1) toast('دسترسی به موقعیت رد شد');
+      else if (err.code === 2) toast('موقعیت در دسترس نیست');
+      else toast('خطا در دریافت موقعیت');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
+}
+function handleContactShare() {
+  const contacts = getContacts();
+  const keys = Object.keys(contacts);
+  if (!keys.length) { toast('مخاطبی یافت نشد'); return; }
+  const pop = attachPopEl(); if (!pop) return;
+  const preview = pop.querySelector('#attach-preview');
+  if (!preview) return;
+  preview.classList.remove('hidden');
+  let h = '<div class="attach-preview-grid">';
+  keys.slice(0, 20).forEach((k) => {
+    const c = contacts[k];
+    h += '<div class="attach-preview-item" data-contact="' + k.replace(/"/g, '&quot;') + '">';
+    h += '<div class="file-info"><i data-lucide="contact" class="icon"></i><div>' + (c.name || k).replace(/</g, '&lt;') + '</div><div>' + (c.phone || '').replace(/</g, '&lt;') + '</div></div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  preview.innerHTML = h;
+  applyIcons(preview);
+  preview.querySelectorAll('.attach-preview-item').forEach((el) => {
+    el.onclick = () => {
+      const c = contacts[el.dataset.contact];
+      doSend({ kind: 'text', content: '👤 ' + (c.name || el.dataset.contact) + (c.phone ? '\n📞 ' + c.phone : '') });
+      closeAttachPop();
+    };
+  });
+}
 function openEmojiPop() {
   const pop = emojiPopEl(); if (!pop) return;
   buildEmojiPopContent(pop);
@@ -2119,6 +2283,23 @@ document.addEventListener('click', (e) => {
   if (!pop || pop.classList.contains('hidden') || emojiPinned()) return;
   if (!pop.contains(e.target) && !($('composer-emoji') && $('composer-emoji').contains(e.target))) closeEmojiPop();
 });
+document.addEventListener('click', (e) => {
+  const pop = attachPopEl();
+  if (!pop || pop.classList.contains('hidden')) return;
+  if (!pop.contains(e.target) && !($('composer-attach') && $('composer-attach').contains(e.target))) closeAttachPop();
+});
+(function () {
+  const gi = document.createElement('input');
+  gi.type = 'file'; gi.id = 'gallery-input'; gi.className = 'hidden';
+  gi.accept = 'image/*,video/*'; gi.multiple = true;
+  gi.onchange = (e) => { handleAttachFiles(e.target.files, 'gallery'); };
+  document.body.appendChild(gi);
+  const mi = document.createElement('input');
+  mi.type = 'file'; mi.id = 'music-input'; mi.className = 'hidden';
+  mi.accept = 'audio/*'; mi.multiple = true;
+  mi.onchange = (e) => { handleAttachFiles(e.target.files, 'music'); };
+  document.body.appendChild(mi);
+})();
 function renderEmojiGrid(grid, emojis) {
   grid.innerHTML = '';
   emojis.forEach((e) => {
@@ -2130,8 +2311,8 @@ function renderEmojiGrid(grid, emojis) {
     grid.appendChild(s);
   });
 }
-$('composer-attach').onclick = () => $('file-input').click();
-$('file-input').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; sendFileMessage(f, f.name || 'file'); };
+$('composer-attach').onclick = (e) => { e.stopPropagation(); e.preventDefault(); toggleAttachPop(); };
+$('file-input').onchange = (e) => { handleAttachFiles(e.target.files, 'file'); };
 /* ====== VOICE RECORDING — inline composer system ====== */
 const VO = { state: 'idle', recorder: null, stream: null, analyser: null, ac: null, timer: null, waveTimer: null, chunks: [], wave: [], waveEl: null, start: 0, startXY: [0, 0], cancel: false, locked: false, paused: false, pauseTime: 0, blob: null, dur: 0, finWave: null, abort: false, maxDur: 300, warnAt: 270 };
 function getMime() {
@@ -3447,7 +3628,7 @@ function beep() {
     o.start(); o.stop(_beepCtx.currentTime + 0.12);
   } catch (e) {}
 }
-async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; try { if (state.token) await fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token } }); } catch (e) {} try { if (state.ws) state.ws.close(); } catch (e) {} clearRoomsCache(); localStorage.removeItem('ft_token'); localStorage.removeItem('ft_me'); localStorage.removeItem('ft_me_ts'); location.reload(); }
+async function logout(force) { if (!force && !(await uConfirm('آیا می‌خواهید از حساب خارج شوید؟'))) return; try { if (state.token) await fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + state.token } }); } catch (e) {} try { if (state.ws) state.ws.close(); } catch (e) {} closeAttachPop(); attachSelection = []; clearRoomsCache(); localStorage.removeItem('ft_token'); localStorage.removeItem('ft_me'); localStorage.removeItem('ft_me_ts'); location.reload(); }
 $('auth-logout').onclick = logout;
 function showAuth() {
   $('auth-screen').classList.remove('hidden');
