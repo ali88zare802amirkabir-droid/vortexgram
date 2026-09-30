@@ -1024,12 +1024,30 @@ function formatText(t) {
 function mediaEl(m) {
   const d = document.createElement('div'); d.className = 'media';
   const u = m.src || m.url;
+  if (!u) {
+    /* اگر URLی نرسید، هیچ درخواستی برای «undefined» زده نشود و به‌جای حباب
+       خالی، پیام قابل فهم نشان داده شود. */
+    d.classList.add('media-missing');
+    d.textContent = m.name ? 'فایل در دسترس نیست' : 'رسانه در دسترس نیست';
+    if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
+    return d;
+  }
   if (m.kind === 'video') {
     const v = document.createElement('video');
     v.controls = true; v.preload = 'none'; v.playsInline = true;
     attachVideoTransfer(d, v, u);
     v.onclick = () => { if (v.src) openViewer(u, 'video'); };
     d.appendChild(v);
+  } else if (m.kind === 'gif') {
+    /* GIF باید بی‌درنگ خودش را نشان بدهد؛ attachImageTransfer دانلودِ دستی
+       می‌خواهد و تا وقتی کاربر روی دکمه نزند src اصلاً ست نمی‌شود، یعنی پیامِ
+       ارسال‌شده مثل خالی به نظر می‌رسید. اینجا دانلود خودکار است، ولی مثل بقیه
+       با هدر احراز هویده انجام می‌شود و اگر شکست خورد مستقیم از سرور می‌خواند. */
+    const im = document.createElement('img');
+    im.loading = 'lazy'; im.decoding = 'async'; im.alt = '';
+    attachGifInline(d, im, u);
+    warmMedia(u);
+    d.appendChild(im);
   } else {
     const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
     attachImageTransfer(d, im, u);
@@ -1039,6 +1057,39 @@ function mediaEl(m) {
   if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
   return d;
 }
+/* نمایش درجای GIF: برخلاف تصویر معمولی، بدون کلیک کاربر دانلود می‌شود. */
+function attachGifInline(holder, im, src) {
+  const cached = __memCache.get(src);
+  if (cached) { im.src = cached; im.onclick = () => openViewer(cached, 'image', src); im.classList.add('loaded'); return; }
+  const ov = document.createElement('div'); ov.className = 'dl-overlay';
+  const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
+  holder.appendChild(ov);
+  let done = false;
+  const finish = (blobUrl) => {
+    done = true;
+    im.src = blobUrl;
+    im.onclick = () => openViewer(blobUrl, 'image', src);
+    im.classList.add('loaded');
+    holder.classList.remove('dl-loading');
+    ov.remove();
+  };
+  vxIdbGet(src).then((b) => { if (b && !done) finish(URL.createObjectURL(b)); });
+  fetchMediaStream(src, (p) => dlSet(ring, p), (blb) => {
+    if (done) return;
+    const u = URL.createObjectURL(blb);
+    memCacheSet(src, u, blb);
+    finish(u);
+  }, () => {
+    /* اگر دانلود احراز‌هویده شکست خورد، کوکی نشست را امتحان می‌کنیم */
+    if (done) return;
+    done = true;
+    im.src = src;
+    im.onclick = () => openViewer(src, 'image', src);
+    im.addEventListener('load', () => { im.classList.add('loaded'); holder.classList.remove('dl-loading'); ov.remove(); });
+    im.addEventListener('error', () => { ov.remove(); dlErr(ring); });
+  });
+}
+
 function albumEl(m) {
   const d = document.createElement('div'); d.className = 'album-grid';
   const urls = m.album || m.urls || (m.src ? [m.src] : m.url ? [m.url] : []);
@@ -1531,6 +1582,109 @@ async function vxIdbPutFromUrl(url){
     await new Promise((r) => { tx.oncomplete = r; tx.onerror = r; tx.onabort = r; });
   }catch(e){}
 }
+
+/* ====== My GIFs & Video Editor IndexedDB ====== */
+const MY_GIFS_IDB = 'vx-my-gifs', MY_GIFS_STORE = 'gifs';
+const VIDEO_EDITOR_IDB = 'vx-video-editor', VE_STORE = 'projects';
+
+function myGifsIdb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(MY_GIFS_IDB, 1);
+    r.onupgradeneeded = () => {
+      try { r.result.createObjectStore(MY_GIFS_STORE, { keyPath: 'id' }); } catch (e) {}
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+
+async function myGifsPut(gif) {
+  try {
+    const db = await myGifsIdb();
+    const tx = db.transaction(MY_GIFS_STORE, 'readwrite');
+    tx.objectStore(MY_GIFS_STORE).put(gif);
+    await new Promise((r) => { tx.oncomplete = r; tx.onerror = r; tx.onabort = r; });
+    return true;
+  } catch (e) { return false; }
+}
+
+async function myGifsGetAll() {
+  try {
+    const db = await myGifsIdb();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction(MY_GIFS_STORE, 'readonly');
+      const rq = tx.objectStore(MY_GIFS_STORE).getAll();
+      rq.onsuccess = () => res(rq.result || []);
+      rq.onerror = () => res([]);
+    });
+  } catch (e) { return []; }
+}
+
+async function myGifsDelete(id) {
+  try {
+    const db = await myGifsIdb();
+    const tx = db.transaction(MY_GIFS_STORE, 'readwrite');
+    tx.objectStore(MY_GIFS_STORE).delete(id);
+    await new Promise((r) => { tx.oncomplete = r; tx.onerror = r; tx.onabort = r; });
+    return true;
+  } catch (e) { return false; }
+}
+
+function videoEditorIdb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(VIDEO_EDITOR_IDB, 1);
+    r.onupgradeneeded = () => {
+      try { r.result.createObjectStore(VE_STORE, { keyPath: 'id' }); } catch (e) {}
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+
+async function vePut(project) {
+  try {
+    const db = await videoEditorIdb();
+    const tx = db.transaction(VE_STORE, 'readwrite');
+    tx.objectStore(VE_STORE).put(project);
+    await new Promise((r) => { tx.oncomplete = r; tx.onerror = r; tx.onabort = r; });
+    return true;
+  } catch (e) { return false; }
+}
+
+async function veGet(id) {
+  try {
+    const db = await videoEditorIdb();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction(VE_STORE, 'readonly');
+      const rq = tx.objectStore(VE_STORE).get(id);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    });
+  } catch (e) { return null; }
+}
+
+async function veGetAll() {
+  try {
+    const db = await videoEditorIdb();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction(VE_STORE, 'readonly');
+      const rq = tx.objectStore(VE_STORE).getAll();
+      rq.onsuccess = () => res(rq.result || []);
+      rq.onerror = () => res([]);
+    });
+  } catch (e) { return []; }
+}
+
+async function veDelete(id) {
+  try {
+    const db = await videoEditorIdb();
+    const tx = db.transaction(VE_STORE, 'readwrite');
+    tx.objectStore(VE_STORE).delete(id);
+    await new Promise((r) => { tx.oncomplete = r; tx.onerror = r; tx.onabort = r; });
+    return true;
+  } catch (e) { return false; }
+}
+
 /* ====== کش دائمی پیام‌ها/روم‌ها (IndexedDB) — بدون مصرف مجدد اینترنت در نشست‌های بعدی ====== */
 const HISTORY_CAP = 200;
 const ROOMS_IDB = 'vx-rooms', ROOMS_STORE = 'rooms';
@@ -1843,7 +1997,7 @@ function sendFileMessage(blob, name) {
     const isImg = t.startsWith('image/');
     const isVid = t.startsWith('video/');
     const isAud = t.startsWith('audio/');
-    const kind = isImg ? 'image' : isVid ? 'video' : isAud ? 'voice' : 'file';
+    const kind = isImg ? (t === 'image/gif' ? 'gif' : 'image') : isVid ? 'video' : isAud ? 'voice' : 'file';
     const upName = up === blob ? name : name.replace(/\.[^.]+$/, '') + '.jpg';
     const wrap = addUploadBubble(kind === 'image' ? 'image' : kind === 'video' ? 'video' : 'file', up, upName);
     const fd = new FormData(); fd.append('file', up, upName);
@@ -1921,17 +2075,21 @@ const STICKER_SET = [
   'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64e.png',
   'https://cdn.jsdelivr.net/gh/twitter/twemoji@14/assets/72x72/1f64f.png',
 ];
+/* GIFهای «پرطرفدار» عمداً محلی‌اند (public/img/gifs/) و نه لینک Giphy:
+   لینک‌های خارجی در خیلی از شبکه‌ها و فیلترها در دسترس نیستند و آن‌وقت
+   پنل خالی می‌ماند و ارسال همیشه شکست می‌خورد. با سرو از همان مبدأ، بدون
+   CORS، بدون SSRF و بدون وابستگی به اینترنت. */
 const GIF_SET = [
-  'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
-  'https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif',
-  'https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif',
-  'https://media.giphy.com/media/l4FGuhL4U2WyjdkaY/giphy.gif',
-  'https://media.giphy.com/media/3o6Zt6KHxJTbXCnSvu/giphy.gif',
-  'https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif',
-  'https://media.giphy.com/media/3o7TKn9BxkQhIiJtYY/giphy.gif',
-  'https://media.giphy.com/media/xT5LMHxhOfscxPfIfm/giphy.gif',
-  'https://media.giphy.com/media/3o7TKWL4L0y7VdD6M/giphy.gif',
-  'https://media.giphy.com/media/l41lFwBVlGVs5WmAo/giphy.gif',
+  '/img/gifs/heart-beat.gif',
+  '/img/gifs/spin-ring.gif',
+  '/img/gifs/bounce-ball.gif',
+  '/img/gifs/confetti.gif',
+  '/img/gifs/ripple.gif',
+  '/img/gifs/sparkle.gif',
+  '/img/gifs/typing.gif',
+  '/img/gifs/firework.gif',
+  '/img/gifs/smiley.gif',
+  '/img/gifs/wave-line.gif',
 ];
 const EMOJI_PANEL_TABS = [
   { id: 'emoji', label: 'Emoji' },
@@ -2054,17 +2212,56 @@ function renderStickerGrid(grid) {
     grid.appendChild(s);
   });
 }
-function renderGifGrid(grid) {
+async function renderGifGrid(grid) {
   grid.innerHTML = '';
+  // اول «پرطرفدار» را هم��انی می‌کشیم تا به انتظار IndexedDB وابسته نباشد؛ اگر
+  // IndexedDB کند/مسدود باشد، پنل نباید خالی بماند.
+  const t2 = document.createElement('div');
+  t2.className = 'gif-grid-title';
+  t2.textContent = 'پرطرفدار';
+  grid.appendChild(t2);
   GIF_SET.forEach((url) => {
     const s = document.createElement('span');
     s.className = 'emoji-item';
     const img = document.createElement('img');
     img.src = url;
     img.alt = '';
+    img.addEventListener('error', () => s.remove());
     s.appendChild(img);
     grid.appendChild(s);
   });
+  let mine = [];
+  try { mine = (await myGifsGetAll()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); } catch (e) {}
+  if (!mine.length) return;
+  const title = document.createElement('div');
+  title.className = 'gif-grid-title';
+  title.textContent = 'GIFهای من (' + mine.length + ')';
+  grid.insertBefore(title, grid.firstChild);
+  const nodes = [];
+  for (const g of mine) {
+    const s = document.createElement('span');
+    s.className = 'emoji-item my-gif';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(g.blob);
+    img.alt = g.name || '';
+    img.dataset.gid = g.id;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'my-gif-del';
+    del.title = 'حذف';
+    del.innerHTML = ic('trash-2');
+    del.setAttribute('aria-label', 'حذف GIF');
+    del.onclick = async (e) => {
+      e.stopPropagation();
+      if (!(await uConfirm('این GIF حذف شود؟'))) return;
+      await myGifsDelete(g.id);
+      renderGifGrid(grid);
+    };
+    s.appendChild(img);
+    s.appendChild(del);
+    nodes.push(s);
+  }
+  for (const n of nodes) grid.insertBefore(n, grid.firstChild);
 }
 let _emojiPtr = null;
 function attachEmojiGridInput(grid) {
@@ -2073,6 +2270,8 @@ function attachEmojiGridInput(grid) {
     const img = it.querySelector('img');
     if (img) {
       if (emojiPanelTab === 'sticker') doSend({ kind: 'sticker', sticker: img.src });
+      else if (emojiPanelTab === 'gif' && img.dataset.gid) { sendMyGif(img.dataset.gid).then(() => closeEmojiPop()); return; }
+      else if (emojiPanelTab === 'gif') { sendRemoteGif(img.src); closeEmojiPop(); return; }
       else doSend({ kind: 'gif', src: img.src });
       closeEmojiPop();
     } else {
@@ -3170,6 +3369,10 @@ function openMsgCtx(m, anchor, pos) {
   });
   mk('رونوشت', 'clipboard', function() { copyText(m.content || ''); });
   mk('فوروارد', 'forward', function() { openForward(m.id); });
+  if (m.kind === 'video') {
+    mk('تبدیل به GIF', 'image', function() { openGifConverter(m.src || m.url || ''); }, !!m.src || !!m.url);
+    mk('ویرایش ویدیو', 'edit-3', function() { openVideoEditor(m.src || m.url || ''); }, !!m.src || !!m.url);
+  }
   if (m.from === state.me.username) mk('ویرایش', 'edit-3', function() { uPrompt('ویرایش پیام', m.content, 'متن جدید پیام').then(function(t) { if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); }); });
   if (m.from === state.me.username || (state.me && state.me.isAdmin)) mk('حذف', 'trash-2', function() { uConfirm('حذف شود؟').then(function(y) { if (y && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); }); });
   mk('گزارش', 'shield', function() { reportMsg(m); });
@@ -3647,7 +3850,7 @@ function openViewer(src, kind, origUrl) {
   const escSrc = esc(useSrc);
   // try to use origUrl for display; src may be blob
   if(kind==='video'){
-    v.innerHTML = '<div class="vxv-wrap"><video src="'+escSrc+'" playsinline></video><div class="vxv-ctrl"><button class="vxv-btn" data-a="play">'+ic('play')+'</button><div class="vxv-prog"><div class="vxv-fill"></div></div><span class="vxv-time">0:00 / 0:00</span><button class="vxv-btn" data-a="fs">'+ic('maximize')+'</button><button class="vxv-btn" data-a="dl">'+ic('download')+'</button><button class="vxv-btn" data-a="close">'+ic('x')+'</button></div></div>';
+    v.innerHTML = '<div class="vxv-wrap"><video src="'+escSrc+'" playsinline></video><div class="vxv-ctrl"><button class="vxv-btn" data-a="play">'+ic('play')+'</button><div class="vxv-prog"><div class="vxv-fill"></div></div><span class="vxv-time">0:00 / 0:00</span><button class="vxv-btn" data-a="fs">'+ic('maximize')+'</button><button class="vxv-btn" data-a="dl">'+ic('download')+'</button><button class="vxv-btn" data-a="edit" title="ویرایش ویدیو">'+ic('edit-3')+'</button><button class="vxv-btn" data-a="gif" title="تبدیل به GIF">'+ic('image')+'</button><button class="vxv-btn" data-a="close">'+ic('x')+'</button></div></div>';
   } else {
     v.innerHTML = '<img src="'+escSrc+'" draggable="false"><div class="v-close">'+ic('x')+'</div>';
   }
@@ -3662,6 +3865,8 @@ function openViewer(src, kind, origUrl) {
     vd.addEventListener('play',()=>{ btn.innerHTML=ic('pause'); luc(); }); vd.addEventListener('pause',()=>{ btn.innerHTML=ic('play'); luc(); });
     v.querySelector('[data-a="fs"]').onclick=()=>{ if(vd.requestFullscreen) vd.requestFullscreen(); };
     v.querySelector('[data-a="dl"]').onclick=()=>{ const a=document.createElement('a'); a.href=useSrc; a.download='video'; a.click(); };
+    v.querySelector('[data-a="edit"]').onclick=()=>{ v.remove(); openVideoEditor(origUrl || useSrc); };
+    v.querySelector('[data-a="gif"]').onclick=()=>{ v.remove(); openGifConverter(origUrl || useSrc); };
     v.querySelector('[data-a="close"]').onclick=()=>v.remove();
     v.querySelector('.vxv-prog').onclick=(e)=>{ const r=e.currentTarget.getBoundingClientRect(); const p=(e.clientX-r.left)/r.width; if(vd.duration) vd.currentTime=p*vd.duration; };
     vd.play().catch(()=>{});
@@ -4925,6 +5130,771 @@ async function refreshMeSession() {
     } else if (r.status === 401) { logout(true); }
   } catch (e) { console.warn('آفلاین: /api/me در دسترس نیست — ادامه با کش محلی', e); }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   VIDEO EDITOR + VIDEO→GIF ENGINE (GIF89a encoder, خانگی، بدون وابستگی)
+   ═══════════════════════════════════════════════════════════════ */
+const VE_FILTERS = {
+  none:    { label: 'بدون فیلتر', css: 'none' },
+  grayscale:{ label: 'سیاه‌سفید', css: 'grayscale(1)' },
+  sepia:   { label: 'سپیا',       css: 'sepia(.85)' },
+  invert:  { label: 'نگاتیو',     css: 'invert(1)' },
+  vivid:   { label: 'زنده',       css: 'saturate(1.6) contrast(1.15)' },
+  cool:    { label: 'سرد',        css: 'hue-rotate(-25deg) saturate(1.15)' },
+  warm:    { label: 'گرم',        css: 'sepia(.35) hue-rotate(-12deg) saturate(1.3)' },
+  vintage: { label: 'قدیمی',      css: 'sepia(.6) contrast(.95) brightness(1.05)' },
+  neon:    { label: 'نئون',       css: 'saturate(2.2) hue-rotate(90deg) contrast(1.2)' },
+};
+const VE_FPS_PRESETS = [4, 6, 8, 10, 12, 15, 20];
+const VE_W_PRESETS = [160, 240, 320, 480, 640];
+const VE_MAX_SECONDS = 10; // محدودیت طول خروجی GIF برای جلوگیری از فایل‌های غول‌آسا
+
+/* ---------- کمکی: فاصله ← زمان قابل خواندن ---------- */
+function veFmtTime(s) {
+  s = Math.max(0, Number(s) || 0);
+  const m = Math.floor(s / 60), ss = Math.floor(s % 60);
+  return m + ':' + String(ss).padStart(2, '0');
+}
+
+/* ---------- بارگذاری متادیتا ویدیو ---------- */
+function veCreateVideo(src) {
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
+  v.src = src;
+  return v;
+}
+function veLoadVideo(src) {
+  return new Promise((resolve, reject) => {
+    const v = veCreateVideo(src);
+    v.onloadedmetadata = () => resolve(v);
+    v.onerror = () => reject(new Error('video-load'));
+  });
+}
+
+/* ---------- seek مطمئن (در چند مرورگر) ---------- */
+function veSeekTo(v, t) {
+  return new Promise((resolve) => {
+    let done = false;
+    const fin = () => { if (!done) { done = true; v.removeEventListener('seeked', fin); clearTimeout(timer); resolve(); } };
+    const timer = setTimeout(fin, 350);
+    v.addEventListener('seeked', fin);
+    try { v.currentTime = t; } catch (e) { fin(); }
+  });
+}
+
+/* ---------- استخراج فریم‌ها (با فیلتر و متن هم‌راستا با ادیتور) ---------- */
+async function veExtractFrames(videoSrc, opts = {}, onProgress, shouldCancel) {
+  const v = await veLoadVideo(videoSrc);
+  const dur = v.duration || 0;
+  const start = Math.max(0, Math.min(Number(opts.start) || 0, dur));
+  const end = Math.min(Number(opts.end) || dur, dur);
+  const fps = Math.max(1, Math.min(Number(opts.fps) || 10, 24));
+  const width = Math.max(64, Math.min(Number(opts.width) || 320, 720));
+  const scaleH = width / (v.videoWidth || width);
+  const height = Math.max(2, Math.round(((v.videoHeight || width) * scaleH) / 2) * 2);
+  const total = Math.max(1, Math.round((end - start) * fps));
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const filterCss = (VE_FILTERS[opts.filter] || VE_FILTERS.none).css;
+
+  v.currentTime = start;
+  const frames = [];
+  for (let i = 0; i < total; i++) {
+    if (shouldCancel && shouldCancel()) return null;
+    if (onProgress) onProgress(i / total, i, total);
+    const t = Math.min(start + i / fps, Math.max(start, end - 0.001));
+    await veSeekTo(v, t);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.filter = filterCss;
+    ctx.drawImage(v, 0, 0, width, height);
+    ctx.filter = 'none';
+    if (opts.text) {
+      const fs = Math.max(12, Math.min(72, Number(opts.textSize) || 28));
+      ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      const lines = String(opts.text).split('\n').map((l) => l.trim()).filter(Boolean);
+      const lh = fs * 1.25;
+      const startY = opts.textPos === 'top' ? 12 : height - lh * lines.length - 14;
+      ctx.lineWidth = Math.max(4, fs / 4);
+      ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round';
+      lines.forEach((line, li) => {
+        if (!line) return;
+        const y = startY + li * lh;
+        ctx.strokeText(line, width / 2, y);
+        ctx.fillStyle = opts.textColor || '#ffffff';
+        ctx.fillText(line, width / 2, y);
+      });
+    }
+    let img = null;
+    try { img = ctx.getImageData(0, 0, width, height); } catch (e) { img = null; }
+    if (!img) { if (onProgress) onProgress(1, i, total); throw new Error('canvas-tainted'); }
+    frames.push({ pixels: img.data, width, height, delayMs: (end - start) / total * 1000 });
+  }
+  return { frames, width, height, v };
+}
+
+/* ---------- [GIF] پالت با Median Cut ---------- */
+function veColorRange(colors) {
+  let minR = 255, maxR = 0, minG = 255, maxG = 0, minB = 255, maxB = 0;
+  for (let i = 0; i < colors.length; i++) {
+    const c = colors[i];
+    if (c[0] < minR) minR = c[0]; if (c[0] > maxR) maxR = c[0];
+    if (c[1] < minG) minG = c[1]; if (c[1] > maxG) maxG = c[1];
+    if (c[2] < minB) minB = c[2]; if (c[2] > maxB) maxB = c[2];
+  }
+  return Math.max(maxR - minR, maxG - minG, maxB - minB);
+}
+function veMedianCut(colors, maxColors) {
+  if (!colors.length) return [[0, 0, 0]];
+  if (colors.length <= maxColors) {
+    const uniq = [];
+    const seen = new Set();
+    for (const c of colors) {
+      const k = (c[0] << 16) | (c[1] << 8) | c[2];
+      if (!seen.has(k)) { seen.add(k); uniq.push([c[0], c[1], c[2]]); }
+    }
+    if (uniq.length <= maxColors) return uniq;
+    colors = uniq;
+  }
+  let boxes = [colors];
+  while (boxes.length < maxColors) {
+    let li = -1, best = -1;
+    for (let i = 0; i < boxes.length; i++) {
+      const r = veColorRange(boxes[i]);
+      if (r > best) { best = r; li = i; }
+    }
+    if (li < 0 || boxes[li].length < 2) break;
+    const box = boxes[li];
+    const rng = veColorRange(box);
+    let chan = 0;
+    let minR = 255, maxR = 0, minG = 255, maxG = 0, minB = 255, maxB = 0;
+    for (const c of box) {
+      if (c[0] < minR) minR = c[0]; if (c[0] > maxR) maxR = c[0];
+      if (c[1] < minG) minG = c[1]; if (c[1] > maxG) maxG = c[1];
+      if (c[2] < minB) minB = c[2]; if (c[2] > maxB) maxB = c[2];
+    }
+    chan = (maxR - minR >= rng - 1 && (maxR - minR) >= (maxG - minG) && (maxR - minR) >= (maxB - minB)) ? 0
+      : ((maxG - minG) >= (maxB - minB) ? 1 : 2);
+    box.sort((a, b) => a[chan] - b[chan]);
+    const mid = box.length >> 1;
+    if (mid === 0 || mid >= box.length) break;
+    const a = box.slice(0, mid), b = box.slice(mid);
+    if (!a.length || !b.length) break;
+    boxes.splice(li, 1, a, b);
+  }
+  return boxes.map((box) => {
+    let r = 0, g = 0, b = 0;
+    for (const c of box) { r += c[0]; g += c[1]; b += c[2]; }
+    const n = box.length || 1;
+    return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+  });
+}
+function veBuildPalette(frames) {
+  const samples = [];
+  let n = 0, total = 0;
+  for (const fr of frames) total += fr.pixels.length / 4;
+  const step = Math.max(1, Math.floor(total / 40000));
+  for (const fr of frames) {
+    const d = fr.pixels;
+    for (let i = 0; i < d.length; i += 16) {
+      if ((n++ % step) === 0) samples.push([d[i], d[i + 1], d[i + 2]]);
+    }
+  }
+  return veMedianCut(samples, 256);
+}
+/* نقشه‌ی رنگی ۳۲×۳۲×۳۲ برای تبدیل O(1) پیکسل → ایندکس پالت */
+function veMakePalIndex(palette) {
+  const cube = new Uint8Array(32 * 32 * 32);
+  for (let r = 0; r < 32; r++) {
+    const rr = (r << 3) + 4;
+    for (let g = 0; g < 32; g++) {
+      const gg = (g << 3) + 4;
+      const base = (r * 32 + g) * 32;
+      for (let b = 0; b < 32; b++) {
+        const bb = (b << 3) + 4;
+        let best = 0, bd = Infinity;
+        for (let i = 0; i < palette.length; i++) {
+          const dr = palette[i][0] - rr, dg = palette[i][1] - gg, db = palette[i][2] - bb;
+          const d2 = dr * dr + dg * dg + db * db;
+          if (d2 < bd) { bd = d2; best = i; }
+        }
+        cube[base + b] = best;
+      }
+    }
+  }
+  return cube;
+}
+function veQuantize(rgba, cube) {
+  const out = new Uint8Array(rgba.length / 4);
+  for (let i = 0, o = 0; i < rgba.length; i += 4, o++) {
+    const r = (rgba[i] >> 3) & 31, g = (rgba[i + 1] >> 3) & 31, b = (rgba[i + 2] >> 3) & 31;
+    out[o] = cube[(r * 32 + g) * 32 + b];
+  }
+  return out;
+}
+
+/* ---------- [GIF] فشرده‌سازی LZW + ساخت فایل GIF89a ---------- */
+function veLzwEncode(data, minCodeSize) {
+  const clearCode = 1 << minCodeSize;
+  const eoiCode = clearCode + 1;
+  const out = [];
+  let dict = new Map();
+  let nextCode = eoiCode + 1;
+  let codeSize = minCodeSize + 1;
+  let bitBuf = 0, bitCnt = 0;
+  const emit = (code, nBits) => {
+    bitBuf |= code << bitCnt;
+    bitCnt += nBits;
+    while (bitCnt >= 8) {
+      out.push(bitBuf & 0xff);
+      bitBuf >>>= 8; bitCnt -= 8;
+    }
+  };
+  const reset = () => {
+    dict = new Map();
+    nextCode = eoiCode + 1;
+    codeSize = minCodeSize + 1;
+    for (let i = 0; i < clearCode; i++) dict.set(String.fromCharCode(i), i);
+  };
+  reset();
+  emit(clearCode, codeSize);
+  if (data.length) {
+    let cur = String.fromCharCode(data[0]);
+    for (let i = 1; i < data.length; i++) {
+      const k = data[i];
+      const c = String.fromCharCode(k);
+      const wkc = cur + c;
+      if (dict.has(wkc)) {
+        cur = wkc;
+      } else {
+        emit(dict.get(cur), codeSize);
+        if (nextCode < 4096) {
+          if (nextCode >= (1 << codeSize) && codeSize < 12) codeSize++;
+          dict.set(wkc, nextCode++);
+        } else {
+          emit(clearCode, codeSize);
+          reset();
+        }
+        cur = c;
+      }
+    }
+    if (cur.length) emit(dict.get(cur), codeSize);
+  }
+  emit(eoiCode, codeSize);
+  if (bitCnt > 0) out.push(bitBuf & 0xff);
+  return out;
+}
+function veBuildGif(frames, width, height, palette, minCodeSize) {
+  const bytes = [];
+  const pu = (b) => bytes.push(b & 0xff);
+  const pu16 = (n) => { pu(n & 0xff); pu((n >> 8) & 0xff); };
+  const tableSize = 1 << minCodeSize;
+  while (palette.length < tableSize) palette.push([0, 0, 0]);
+  for (const c of 'GIF89a') pu(c.charCodeAt(0));
+  pu16(width); pu16(height);
+  const gctFlags = 0x80 | (0x70) | (minCodeSize - 1);
+  pu(gctFlags);
+  pu(0); pu(0);
+  for (const [r, g, b] of palette) { pu(r); pu(g); pu(b); }
+  for (const fr of frames) {
+    const centi = Math.max(2, Math.round(fr.delayMs / 10));
+    pu(0x21); pu(0xF9); pu(0x04); pu(0x04);
+    pu(centi & 0xff); pu((centi >> 8) & 0xff); pu(0); pu(0);
+    pu(0x2C); pu16(0); pu16(0); pu16(width); pu16(height); pu(0);
+    const idx = veQuantize(fr.pixels, veBuildPaletteCube(palette, minCodeSize));
+    const lzw = veLzwEncode(idx, minCodeSize);
+    pu(minCodeSize);
+    for (let i = 0; i < lzw.length; i += 255) {
+      const chunk = lzw.slice(i, i + 255);
+      pu(chunk.length);
+      for (const b of chunk) pu(b);
+    }
+    pu(0);
+  }
+  pu(0x3B);
+  return new Blob([new Uint8Array(bytes)], { type: 'image/gif' });
+}
+let _vePalCubeCache = { palette: null, cube: null };
+function veBuildPaletteCube(palette, minCodeSize) {
+  if (_vePalCubeCache.palette === palette) return _vePalCubeCache.cube;
+  const cube = veMakePalIndex(palette);
+  _vePalCubeCache = { palette, cube };
+  return cube;
+}
+
+/* ---------- تبدیل اصلی ویدیو → GIF ---------- */
+async function videoToGif(videoSrc, opts, onProgress, shouldCancel) {
+  const got = await veExtractFrames(videoSrc, opts, onProgress, shouldCancel);
+  if (!got) return null;
+  if (onProgress) onProgress(0.5, 0, 1);
+  const palette = veBuildPalette(got.frames);
+  const minCodeSize = Math.max(2, Math.min(8, Math.ceil(Math.log2(palette.length))));
+  _vePalCubeCache = { palette: null, cube: null };
+  const blob = veBuildGif(got.frames, got.width, got.height, palette, minCodeSize);
+  got.v.removeAttribute('src');
+  if (onProgress) onProgress(1, got.frames.length, got.frames.length);
+  return blob;
+}
+
+/* ---------- خروجی ویدیو (WebM) با همین تنظیمات ادیتور ---------- */
+async function videoToWebM(videoSrc, opts, onProgress, shouldCancel) {
+  if (!window.MediaRecorder) throw new Error('media-recorder');
+  const mb = new Promise((resolve, reject) => {
+    veLoadVideo(videoSrc).then((v) => {
+      const dur = v.duration || 0;
+      const start = Math.max(0, Math.min(Number(opts.start) || 0, dur));
+      const end = Math.min(Number(opts.end) || dur, dur);
+      const width = Math.max(64, Math.min(Number(opts.width) || 640, 960));
+      const scaleH = width / (v.videoWidth || width);
+      const height = Math.max(2, Math.round(((v.videoHeight || width) * scaleH) / 2) * 2);
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      const filterCss = (VE_FILTERS[opts.filter] || VE_FILTERS.none).css;
+      const stream = canvas.captureStream(30);
+      let rec = null;
+      try { rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 3_000_000 }); }
+      catch (e1) { try { rec = new MediaRecorder(stream, { mimeType: 'video/webm' }); } catch (e2) { reject(new Error('media-recorder')); return; } }
+      const parts = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+      rec.onerror = () => reject(new Error('recorder-error'));
+      rec.onstop = () => resolve(new Blob(parts, { type: 'video/webm' }));
+      let raf = 0, cancelled = false;
+      const draw = () => {
+        if (cancelled) return;
+        if (v.currentTime >= end || (v.ended && !isFinite(end))) {
+          try { rec.stop(); } catch (e) {}
+          return;
+        }
+        if (onProgress) onProgress(Math.min(1, (v.currentTime - start) / Math.max(0.001, end - start)));
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        ctx.filter = filterCss;
+        ctx.drawImage(v, 0, 0, width, height);
+        ctx.filter = 'none';
+        if (opts.text) {
+          const fs = Math.max(12, Math.min(72, Number(opts.textSize) || 28));
+          ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+          const lines = String(opts.text).split('\n').map((l) => l.trim()).filter(Boolean);
+          const lh = fs * 1.25;
+          const startY = opts.textPos === 'top' ? 12 : height - lh * lines.length - 14;
+          ctx.lineWidth = Math.max(4, fs / 4);
+          ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round';
+          lines.forEach((line, li) => {
+            if (!line) return;
+            const y = startY + li * lh;
+            ctx.strokeText(line, width / 2, y);
+            ctx.fillStyle = opts.textColor || '#ffffff';
+            ctx.fillText(line, width / 2, y);
+          });
+        }
+        raf = requestAnimationFrame(draw);
+      };
+      v.currentTime = start;
+      v.play().catch(() => {});
+      const onSeeked = () => { raf = requestAnimationFrame(draw); };
+      v.addEventListener('seeked', onSeeked);
+      rec.start(250);
+      setTimeout(onSeeked, 250);
+      const canceller = () => { cancelled = true; cancelAnimationFrame(raf); try { rec.stop(); } catch (e) {} resolve(new Blob(parts, { type: 'video/webm' })); };
+      if (shouldCancel) {
+        const origCancel = shouldCancel;
+        shouldCancel = () => { const r = origCancel(); if (r) canceller(); return r; };
+      }
+      const cw = () => { if (shouldCancel && shouldCancel()) return; };
+      const ci = setInterval(cw, 150);
+      rec.addEventListener('stop', () => { clearInterval(ci); v.pause(); v.removeAttribute('src'); }, { once: true });
+    }).catch(reject);
+  });
+  return mb;
+}
+
+/* ---------- ذخیره در GIFهای من (IndexedDB) ---------- */
+async function saveToMyGifs(blob, name) {
+  if (!blob || !blob.size) return null;
+  const id = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const rec = { id, name: name || 'GIF ' + new Date().toLocaleString('fa'), blob, size: blob.size, createdAt: Date.now() };
+  await myGifsPut(rec);
+  return rec;
+}
+async function myGifsGet(id) {
+  try {
+    const db = await myGifsIdb();
+    return await new Promise((res) => {
+      const tx = db.transaction(MY_GIFS_STORE, 'readonly');
+      const rq = tx.objectStore(MY_GIFS_STORE).get(id);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    });
+  } catch (e) { return null; }
+}
+
+/* ---------- UI مشترک ادیتور/مبدل ---------- */
+function veOpenModal(title) {
+  const pop = document.createElement('div');
+  pop.className = 've-pop';
+  pop.innerHTML = '<div class="ve-box">'
+    + '<div class="ve-head"><button type="button" class="icon-btn" data-a="close">' + ic('x') + '</button><b>' + esc(title) + '</b></div>'
+    + '<div class="ve-body"></div>'
+    + '<div class="ve-foot"></div>'
+    + '</div>';
+  document.body.appendChild(pop);
+  pop.querySelector('[data-a="close"]').onclick = () => pop.remove();
+  pop.addEventListener('mousedown', (e) => { if (e.target === pop) pop.remove(); });
+  return pop;
+}
+function veRange2(min, max, val, label) {
+  const w = document.createElement('div');
+  w.className = 've-row';
+  w.innerHTML = '<label>' + label + '<span class="ve-val"></span></label>'
+    + '<input type="range" min="' + min + '" max="' + max + '" step="0.05" value="' + val + '">';
+  return w;
+}
+function veSelect(options, val, label) {
+  const w = document.createElement('div');
+  w.className = 've-row ve-select-row';
+  let optsHtml = '';
+  for (const o of options) optsHtml += '<option value="' + o.val + '"' + (o.val === val ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+  w.innerHTML = '<label>' + label + '</label><select>' + optsHtml + '</select>';
+  return w;
+}
+function veFilterChips(active, onChange) {
+  const w = document.createElement('div');
+  w.className = 've-row ve-chips';
+  w.innerHTML = '<span class="ve-chip-label">فیلتر</span>';
+  Object.keys(VE_FILTERS).forEach((k) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 've-chip' + (k === active ? ' active' : '');
+    b.textContent = VE_FILTERS[k].label;
+    b.onclick = () => { onChange(k); };
+    w.appendChild(b);
+  });
+  return w;
+}
+
+/* ---------- مبدل GIF (دکمه‌ی تبدیل به GIF در نمایش‌گر ویدیو) ---------- */
+function openGifConverter(videoSrc) {
+  const pop = veOpenModal('تبدیل به GIF');
+  const body = pop.querySelector('.ve-body');
+  const foot = pop.querySelector('.ve-foot');
+  const preview = document.createElement('video');
+  preview.muted = true; preview.playsInline = true; preview.controls = true;
+  preview.src = videoSrc;
+  preview.className = 've-preview';
+  const timeEl = document.createElement('div'); timeEl.className = 've-timebar-label';
+  let meta = null, start = 0, end = 0;
+  preview.onloadedmetadata = () => {
+    meta = { dur: preview.duration };
+    start = 0; end = Math.min(preview.duration, VE_MAX_SECONDS);
+    endEl.max = preview.duration;
+    startEl.min = 0; endEl.min = 0;
+    startEl.max = preview.duration;
+    syncRanges();
+  };
+  const startEl = document.createElement('input');
+  startEl.type = 'range'; startEl.min = 0; startEl.step = 0.05; startEl.value = start;
+  const endEl = document.createElement('input');
+  endEl.type = 'range'; endEl.min = 0; endEl.step = 0.05; endEl.value = end;
+  const syncPreview = () => { try { preview.currentTime = Number((meta && ((end + start) / 2)) || 0); } catch (e) {} };
+  const syncRanges = () => { if (!meta) return; timeEl.textContent = veFmtTime(start) + ' — ' + veFmtTime(end) + '  (' + (end - start).toFixed(1) + 'ث)'; };
+  const onStart = () => { start = Number(startEl.value); if (start >= end - 0.1) { start = Math.max(0, end - 0.1); startEl.value = start; } syncRanges(); syncPreview(); };
+  const onEnd = () => { end = Number(endEl.value); if (end <= start + 0.1) { end = Math.min(meta ? meta.dur : end, start + 0.1); endEl.value = end; } syncRanges(); syncPreview(); };
+  startEl.addEventListener('input', onStart);
+  endEl.addEventListener('input', onEnd);
+  const startRow = veRange2(0, 1, 0, 'شروع'); startRow.replaceChild(startEl, startRow.querySelector('input'));
+  const endRow = veRange2(0, 1, 1, 'پایان'); endRow.replaceChild(endEl, endRow.querySelector('input'));
+  const fpsSel = veSelect(VE_FPS_PRESETS.map((v) => ({ val: v, label: v + ' فریم/ثانیه' })), 10, 'سرعت فریم');
+  const wSel = veSelect(VE_W_PRESETS.map((v) => ({ val: v, label: v + 'px' })), 320, 'عرض خروجی');
+  const cssSel = document.createElement('span'); cssSel.className = 've-css-hint';
+  cssSel.textContent = 'پیش‌نمایش زنده تا چند لحظه پس از ویرایش به‌روز می‌شود';
+  const status = document.createElement('div'); status.className = 've-status';
+  const bar = document.createElement('div'); bar.className = 've-bar';
+  bar.innerHTML = '<div class="ve-bar-fill"></div>';
+
+  body.appendChild(preview);
+  body.appendChild(timeEl);
+  body.appendChild(startRow);
+  body.appendChild(endRow);
+  body.appendChild(fpsSel);
+  body.appendChild(wSel);
+  body.appendChild(cssSel);
+
+  const convertBtn = document.createElement('button');
+  convertBtn.className = 'btn primary';
+  convertBtn.textContent = 'تبدیل به GIF';
+  foot.appendChild(convertBtn);
+  foot.appendChild(status);
+  foot.appendChild(bar);
+  status.classList.add('hidden');
+
+  convertBtn.onclick = (async () => {
+    const dur = meta ? meta.dur : preview.duration;
+    end = Math.min(end, dur);
+    const opts = {
+      start: start, end: end,
+      fps: Number(fpsSel.querySelector('select').value),
+      width: Number(wSel.querySelector('select').value),
+      filter: 'none', text: '',
+    };
+    if ((end - start) * opts.fps > 320) { toast('طول GIF به‌دلیل محدودیت، کوتاه شد'); }
+    convertBtn.disabled = true;
+    status.classList.remove('hidden');
+    let cancelled = false;
+    status.innerHTML = 'در حال تبدیل… <span class="ve-cancel">لغو</span>';
+    const cancelBtn = status.querySelector('.ve-cancel');
+    cancelBtn.onclick = () => { cancelled = true; };
+    try {
+      const blob = await videoToGif(videoSrc, opts, (p) => {
+        bar.querySelector('.ve-bar-fill').style.width = Math.round(p * 100) + '%';
+      }, () => cancelled);
+      if (cancelled || !blob) { toast('لغو شد'); status.classList.add('hidden'); convertBtn.disabled = false; return; }
+      const gifRec = await saveToMyGifs(blob, 'GIF ' + new Date().toLocaleString('fa'));
+      if (!gifRec) { toast('خطا در ذخیره'); convertBtn.disabled = false; return; }
+      const doneRow = document.createElement('div');
+      doneRow.className = 've-done';
+      doneRow.innerHTML = '<img src="' + URL.createObjectURL(blob) + '" alt="">'
+        + '<div class="ve-done-actions">'
+        + '<button type="button" class="btn sm" data-a="send">ارسال در همین چت</button>'
+        + '<button type="button" class="btn sm ghost" data-a="saved">در GIFهای من ذخیره شد ✓</button>'
+        + '</div>';
+      body.appendChild(doneRow);
+      doneRow.querySelector('[data-a="send"]').onclick = () => {
+        const f = new File([blob], (gifRec.name || 'gif') + '.gif', { type: 'image/gif' });
+        sendFileMessage(f, f.name);
+        toast('در حال ارسال…');
+        pop.remove();
+      };
+      doneRow.querySelector('[data-a="saved"]').onclick = () => { doneRow.remove(); };
+      status.classList.add('hidden');
+      bar.querySelector('.ve-bar-fill').style.width = '100%';
+      convertBtn.disabled = false;
+      if (typeof renderGifGrid === 'function') { const g = $('emoji-grid'); if (g && emojiPanelTab === 'gif') renderGifGrid(g); }
+    } catch (e) {
+      console.error('GIF conversion error', e);
+      status.classList.add('hidden');
+      toast('خطا در ساخت GIF — ' + (e.message === 'canvas-tainted' ? 'ویدیو قابل‌پردازش نیست' : 'امتحان دوباره'));
+      convertBtn.disabled = false;
+    }
+  });
+}
+
+/* ---------- ادیتور ویدیو (برش + متن + فیلتر + خروجی GIF/WebM) ---------- */
+function openVideoEditor(videoSrc) {
+  const pop = veOpenModal('ویرایش ویدیو');
+  const body = pop.querySelector('.ve-body');
+  const foot = pop.querySelector('.ve-foot');
+
+  const preview = document.createElement('video');
+  preview.muted = true; preview.playsInline = true; preview.controls = true;
+  preview.src = videoSrc;
+  preview.className = 've-preview';
+  const timeEl = document.createElement('div'); timeEl.className = 've-timebar-label';
+  let meta = null, start = 0, end = 0;
+  preview.onloadedmetadata = () => {
+    meta = { dur: preview.duration };
+    start = 0; end = preview.duration;
+    endEl.max = preview.duration;
+    startEl.max = preview.duration;
+    syncRanges();
+  };
+  const startEl = document.createElement('input');
+  startEl.type = 'range'; startEl.min = 0; startEl.step = 0.05; startEl.value = start;
+  const endEl = document.createElement('input');
+  endEl.type = 'range'; endEl.min = 0; endEl.step = 0.05; endEl.value = end;
+  const syncRanges = () => { if (!meta) return; timeEl.textContent = veFmtTime(start) + ' — ' + veFmtTime(end) + '  (' + (end - start).toFixed(1) + 'ث)'; };
+  const onStart = () => { start = Number(startEl.value); if (start >= end - 0.1) { start = Math.max(0, end - 0.1); startEl.value = start; } syncRanges(); try { preview.currentTime = start; } catch (e) {} };
+  const onEnd = () => { end = Number(endEl.value); if (end <= start + 0.1) { end = Math.min(meta ? meta.dur : end, start + 0.1); endEl.value = end; } syncRanges(); };
+  startEl.addEventListener('input', onStart);
+  endEl.addEventListener('input', onEnd);
+  const startRow = veRange2(0, 1, 0, 'شروع'); startRow.replaceChild(startEl, startRow.querySelector('input'));
+  const endRow = veRange2(0, 1, 1, 'پایان'); endRow.replaceChild(endEl, endRow.querySelector('input'));
+
+  const textRow = document.createElement('div');
+  textRow.className = 've-row ve-text-row';
+  textRow.innerHTML = '<label>متن روی ویدیو</label><input type="text" maxlength="120" data-a="text" placeholder="مثلاً: دورهمی شب جمعه"><div class="ve-text-ops"><input type="color" data-a="color" value="#ffffff"><input type="number" data-a="size" min="12" max="72" value="28" title="سایز متن"></div>';
+  let activeFilter = 'none';
+  const chipsWrap = veFilterChips(activeFilter, (k) => {
+    activeFilter = k;
+    chipsWrap.querySelectorAll('.ve-chip').forEach((b) => {
+      const lbl = b.textContent;
+      const found = Object.keys(VE_FILTERS).find((kk) => VE_FILTERS[kk].label === lbl);
+      b.classList.toggle('active', found === k);
+    });
+  });
+  const fpsSel = veSelect(VE_FPS_PRESETS.map((v) => ({ val: v, label: v + ' فریم/ثانیه' })), 10, 'سرعت فریم');
+  const wSel = veSelect([640, 480, 320, 240, 160].map((v) => ({ val: v, label: v + 'px' })), 480, 'عرض ویدیو');
+
+  const status = document.createElement('div'); status.className = 've-status';
+  const bar = document.createElement('div'); bar.className = 've-bar';
+  bar.innerHTML = '<div class="ve-bar-fill"></div>';
+
+  body.appendChild(preview);
+  body.appendChild(timeEl);
+  body.appendChild(startRow);
+  body.appendChild(endRow);
+  body.appendChild(textRow);
+  body.appendChild(chipsWrap);
+  body.appendChild(fpsSel);
+  body.appendChild(wSel);
+  foot.appendChild(status);
+  foot.appendChild(bar);
+  status.classList.add('hidden');
+
+  const gifBtn = document.createElement('button');
+  gifBtn.className = 'btn primary';
+  gifBtn.textContent = 'خروجی GIF';
+  const wmBtn = document.createElement('button');
+  wmBtn.className = 'btn';
+  wmBtn.textContent = 'خروجی ویدیو (WebM)';
+  const dlBtn2 = document.createElement('button');
+  dlBtn2.className = 'btn ghost';
+  dlBtn2.textContent = 'گرفتن عکس (PNG)';
+  foot.appendChild(gifBtn);
+  foot.appendChild(wmBtn);
+  foot.appendChild(dlBtn2);
+
+  const readOpts = (width) => ({
+    start: start, end: Math.min(end, meta ? meta.dur : end),
+    fps: Number(fpsSel.querySelector('select').value),
+    width: width,
+    filter: activeFilter || 'none',
+    text: (textRow.querySelector('[data-a="text"]').value || '').trim(),
+    textColor: textRow.querySelector('[data-a="color"]').value || '#ffffff',
+    textSize: Number(textRow.querySelector('[data-a="size"]').value) || 28,
+    textPos: 'bottom',
+  });
+
+  const runBusy = (busy) => {
+    gifBtn.disabled = busy; wmBtn.disabled = busy; dlBtn2.disabled = busy;
+    if (busy) { status.classList.remove('hidden'); bar.querySelector('.ve-bar-fill').style.width = '0%'; }
+    else status.classList.add('hidden');
+  };
+
+  gifBtn.onclick = async () => {
+    runBusy(true);
+    status.innerHTML = 'در حال ساخت GIF…';
+    try {
+      const blob = await videoToGif(videoSrc, readOpts(320), (p) => { bar.querySelector('.ve-bar-fill').style.width = Math.round(p * 100) + '%'; });
+      if (!blob) { toast('لغو شد'); runBusy(false); return; }
+      const g = await saveToMyGifs(blob, 'GIF ' + new Date().toLocaleString('fa'));
+      const d = document.createElement('div'); d.className = 've-done';
+      d.innerHTML = '<img src="' + URL.createObjectURL(blob) + '" alt=""><div><button type="button" class="btn sm" data-a="send">ارسال در چت</button></div>';
+      d.querySelector('[data-a="send"]').onclick = () => { const f = new File([blob], (g && g.name || 'gif') + '.gif', { type: 'image/gif' }); sendFileMessage(f, f.name); toast('در حال ارسال…'); pop.remove(); };
+      runBusy(false);
+      status.classList.add('hidden');
+      body.appendChild(d);
+      if (typeof renderGifGrid === 'function') { const gg = $('emoji-grid'); if (gg && emojiPanelTab === 'gif') renderGifGrid(gg); }
+    } catch (e) { console.error(e); runBusy(false); toast('خطا در خروجی GIF'); }
+  };
+
+  wmBtn.onclick = async () => {
+    runBusy(true);
+    status.innerHTML = 'در حال ضبط ویدیو…';
+    try {
+      const blob = await videoToWebM(videoSrc, readOpts(640), (p) => { bar.querySelector('.ve-bar-fill').style.width = Math.round(p * 100) + '%'; });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'video-' + Date.now() + '.webm'; a.click();
+      const d = document.createElement('div'); d.className = 've-done';
+      d.innerHTML = '<video src="' + URL.createObjectURL(blob) + '" controls muted playsinline></video><div><button type="button" class="btn sm" data-a="send">ارسال در چت</button></div>';
+      d.querySelector('[data-a="send"]').onclick = () => { const f = new File([blob], 'video-' + Date.now() + '.webm', { type: 'video/webm' }); sendFileMessage(f, f.name); toast('در حال ارسال…'); pop.remove(); };
+      runBusy(false);
+      body.appendChild(d);
+    } catch (e) { console.error(e); runBusy(false); toast('ویدیو در این مرورگر قابل ضبط نیست'); }
+  };
+
+  dlBtn2.onclick = async () => {
+    runBusy(true);
+    status.innerHTML = 'در حال گرفتن عکس…';
+    try {
+      const got = await veExtractFrames(videoSrc, Object.assign(readOpts(480), { fps: 1, end: Math.min(end, start + 0.1) }), null, null);
+      if (!got || !got.frames.length) { toast('خطا'); runBusy(false); return; }
+      const fr = got.frames[0];
+      const c = document.createElement('canvas'); c.width = fr.width; c.height = fr.height;
+      c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(fr.pixels), fr.width, fr.height), 0, 0);
+      const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = 'snapshot-' + Date.now() + '.png'; a.click();
+      runBusy(false);
+      toast('عکس گرفته شد');
+    } catch (e) { console.error(e); runBusy(false); toast('خطا در عکس'); }
+  };
+}
+
+/* ---------- میان‌بر: ارسال مستقیم یک GIF ذخیره‌شده ---------- */
+async function sendMyGif(gid) {
+  const rec = await myGifsGet(gid);
+  if (!rec) { toast('GIF یافت نشد'); return; }
+  const f = new File([rec.blob], (rec.name || 'gif') + '.gif', { type: 'image/gif' });
+  sendFileMessage(f, f.name);
+}
+/* GIFهای «پرطرفدار» روی media.giphy.com میزبانی می‌شوند ولی سرور فقط
+   /uploads/... را می‌پذیرد؛ پس ارسال لینک خارجی بی‌صدا دور ریخته می‌شد و هیچ GIFی
+   از پنل ایموجی فرستاده نمی‌شد. اول سرور فایل را می‌گیرد (به CORS وابسته نیست)،
+   و اگر نتوانست — سرور اینترنت ندارد یا لینک گم شده — مرورگر خودش می‌گیرد و از
+   مسیر معمولی /api/upload می‌فرستد. اگر هر دو شکست خوردند، متن خطای واقعی
+   نشان داده می‌شود تا بشود علتش را دید. */
+async function sendRemoteGif(url) {
+  /* addUploadBubble حتماً Blob واقعی می‌خواهد (URL.createObjectURL با null خطا
+     می‌دهد)؛ برای نمایش «در حال دریافت» یک GIF جای‌خالی کوچک می‌سازیم. */
+  const placeholder = new Blob([new Uint8Array([0x47, 0x49, 0x46, 0x38])], { type: 'image/gif' });
+  const wrap = addUploadBubble('file', placeholder, 'GIF');
+  if (wrap._ring) dlSet(wrap._ring, 15);
+  /* GIFهای «پرطرفدار» محلی‌اند (همان مبدأ) → نیازی به واسطه‌ی سرور نیست،
+     مستقیم می‌گیریم و از مسیر معمولی آپلود می‌فرستیم. */
+  const local = /^\/(img|uploads)\//.test(url) || url.startsWith(location.origin);
+  let serverErr = '';
+  try {
+    let up;
+    if (local) {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('مرورگر ' + res.status);
+      const blob = await res.blob();
+      if (!blob.size || blob.size > 8 * 1024 * 1024) throw new Error('حجم نامناسب');
+      up = new File([blob], 'gif.gif', { type: 'image/gif' });
+    } else {
+      const r = await fetch('/api/gif/ingest', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, state.token ? { Authorization: 'Bearer ' + state.token } : {}),
+        body: JSON.stringify({ url: url }),
+      });
+      let d = null;
+      try { d = await r.json(); } catch (e) {}
+      if (!r.ok || !d || !d.url) {
+        serverErr = 'سرور ' + r.status + ': ' + ((d && d.error) || 'پاسخ نامعتبر');
+        throw new Error(serverErr);
+      }
+      dropUploadBubble(wrap);
+      doSend({ kind: 'gif', src: d.url, name: 'gif', size: d.size, content: '' });
+      return;
+    }
+    dropUploadBubble(wrap);
+    sendFileMessage(up, up.name);
+  } catch (e) {
+    serverErr = (e && e.message) || String(e);
+    if (wrap._ring) dlSet(wrap._ring, 45);
+    /* اگر سرور هم در دسترس نبود (مثلاً بدون اینترنت یا فیلتر)، مرورگر خودش
+       لینک خارجی را می‌گیرد و آپلود می‌کند. */
+    if (!local) {
+      try {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (!res.ok) throw new Error('مرورگر ' + res.status);
+        const blob = await res.blob();
+        if (!blob.size || blob.size > 8 * 1024 * 1024) throw new Error('حجم نامناسب');
+        if (blob.type && blob.type.indexOf('gif') < 0) throw new Error('نوع ' + blob.type);
+        dropUploadBubble(wrap);
+        sendFileMessage(new File([blob], 'gif.gif', { type: 'image/gif' }), 'gif.gif');
+        return;
+      } catch (e2) {
+        serverErr += ' | ' + ((e2 && e2.message) || String(e2));
+      }
+    }
+    dropUploadBubble(wrap);
+    console.error('sendRemoteGif failed for ' + url + ' -> ' + serverErr);
+    toast('ارسال GIF ناموفق بود — ' + serverErr);
+  }
+}
+
 (async function init() {
   try {
     bindCtxReposition();

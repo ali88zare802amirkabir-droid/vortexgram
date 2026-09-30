@@ -1,4 +1,26 @@
-if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
+if ('serviceWorker' in navigator) {
+  // بدون این بخش، کاربر تا وقتی خودش دستی پاک نکند، نسخه‌ی کهنه را از کش
+  // می‌گیرد: sw.js نسخه‌دار با (?v=) برای همیشه cache-first است و browser هم
+  // تا قبل از به‌روزرسانی worker، هیچ اعلانی نمی‌دهد. اینجا هر نسخه‌ی تازه
+  // خودش را تحویل می‌گیرد و صفحه یک‌بار رفرش می‌شود.
+  var reloading = false;
+  var applyUpdate = function () {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  };
+  navigator.serviceWorker.register('sw.js').then(function (reg) {
+    reg.addEventListener('updatefound', function () {
+      var sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener('statechange', function () {
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) applyUpdate();
+      });
+    });
+    if (reg.waiting && navigator.serviceWorker.controller) applyUpdate();
+  }).catch(function () {});
+  navigator.serviceWorker.addEventListener('controllerchange', applyUpdate);
+}
 (function () {
   var q = new URLSearchParams(location.search);
   var inv = q.get('invite') || '';

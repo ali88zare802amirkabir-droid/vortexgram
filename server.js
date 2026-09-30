@@ -62,7 +62,7 @@ const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 
 const EXT_BY_MIME = {
   'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
-  'video/mp4': '.mp4', 'video/webm': '.webm',
+  'video/mp4': '.mp4', 'video/webm': '.webm', 'video/ogg': '.ogv',
   'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg', 'audio/webm': '.weba',
   'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.aac', 'audio/x-matroska': '.mka',
   'application/pdf': '.pdf', 'application/zip': '.zip', 'text/plain': '.txt',
@@ -461,7 +461,9 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  // 'blob:' در connect-src لازم است: کش دائمی رسانه‌ها (IndexedDB) blob URL را با
+  // fetch می‌خواند و بدون آن مرورگر درخواست را به‌خاطر CSP بلاک می‌کند.
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -1518,18 +1520,25 @@ app.get('/api/admin/room/messages', auth, (req, res) => {
 });
 
 // ---------- uploads ----------
+// `null` در امضای زیر یعنی «بایت این جایگاه مهم نیست» (wildcard).
+// برای MP4/M4A اندازه‌ی box اول (بایت ۴ام فایل) بین ضبط‌های واقعی فرق دارد
+// (۰x۱۸ برای برخی، ۰x۲۰ و بزرگ‌تر برای اکثرشان) — پس باید wildcard باشد وگرنه
+// ویدیو/صدای موبایل‌ها همیشه با «محتوا مطابقت ندارد» رد می‌شد.
 const MAGIC_BYTES = {
   'image/jpeg': [[0xFF, 0xD8, 0xFF]],
   'image/png': [[0x89, 0x50, 0x4E, 0x47]],
   'image/gif': [[0x47, 0x49, 0x46, 0x38]],
   'image/webp': [[0x52, 0x49, 0x46, 0x46]],
-  'video/mp4': [[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]],
+  'video/mp4': [[0x00, 0x00, 0x00, null, 0x66, 0x74, 0x79, 0x70], [0x00, 0x00, 0x01, null, 0x66, 0x74, 0x79, 0x70]],
   'video/webm': [[0x1A, 0x45, 0xDF, 0xA3]],
+  'video/ogg': [[0x4F, 0x67, 0x67, 0x53]],
   'audio/mpeg': [[0xFF, 0xFB], [0xFF, 0xF3], [0xFF, 0xF2], [0x49, 0x44, 0x33]],
   'audio/wav': [[0x52, 0x49, 0x46, 0x46]],
   'audio/ogg': [[0x4F, 0x67, 0x67, 0x53]],
   'audio/webm': [[0x1A, 0x45, 0xDF, 0xA3]],
-  'audio/mp4': [[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]],
+  'audio/x-matroska': [[0x1A, 0x45, 0xDF, 0xA3]],
+  'audio/mp4': [[0x00, 0x00, 0x00, null, 0x66, 0x74, 0x79, 0x70], [0x00, 0x00, 0x01, null, 0x66, 0x74, 0x79, 0x70]],
+  'audio/x-m4a': [[0x00, 0x00, 0x00, null, 0x66, 0x74, 0x79, 0x70], [0x00, 0x00, 0x01, null, 0x66, 0x74, 0x79, 0x70]],
   'audio/aac': [[0xFF, 0xF1], [0xFF, 0xF9]],
   'application/pdf': [[0x25, 0x50, 0x44, 0x46]],
   'application/zip': [[0x50, 0x4B, 0x03, 0x04], [0x50, 0x4B, 0x05, 0x06], [0x50, 0x4B, 0x07, 0x08]],
@@ -1544,7 +1553,7 @@ function verifyMagicBytes(filePath, mimetype) {
     const buf = Buffer.alloc(16);
     fs.readSync(fd, buf, 0, 16, 0);
     fs.closeSync(fd);
-    return sigs.some((sig) => sig.every((b, i) => buf[i] === b));
+    return sigs.some((sig) => sig.every((b, i) => b === null || buf[i] === b));
   } catch { return false; }
 }
 const upload = multer({
@@ -1591,6 +1600,76 @@ app.post('/api/upload', auth, (req, res, next) => {
   }
   
   res.json({ url: finalUrl, mime: m, kind, name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 80), size: req.file.size });
+});
+
+// ---------- GIF picker: fetch a remote GIF into /uploads ----------
+// GIFهای «پرطرفدار» روی media.giphy.com میزبانی می‌شوند، ولی پیام‌رسان (خط ۲۱۳۱)
+// فقط `/uploads/...` را می‌پذیرد؛ پس ارسال URL خارجی بی‌صدا دور ریخته می‌شد.
+// به‌جای شل‌کردن آن قاعده (که مسیر SSRF و لینک‌های خصوصی را باز می‌کند)، خودِ سرور
+// فایل را از میزبان‌های مجاز می‌گیرد، صحتش را با magic-bytes می‌سنجد و محلی ذخیره
+// می‌کند. نتیجه یک URL `/uploads/...` است که برای همه‌ی گیرندگان کار می‌کند.
+const GIF_REMOTE_HOSTS = new Set([
+  'media.giphy.com', 'media0.giphy.com', 'media1.giphy.com', 'media2.giphy.com',
+  'media3.giphy.com', 'media4.giphy.com', 'i.giphy.com', 'giphy.com',
+  'media.tenor.com', 'c.tenor.com', 'tenor.com',
+]);
+const GIF_REMOTE_MAX_BYTES = 8 * 1024 * 1024;
+app.post('/api/gif/ingest', auth, (req, res) => {
+  if (!authRateOk('gif-ingest:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  const raw = String(req.body && req.body.url || '');
+  let u;
+  try { u = new urlMod.URL(raw); } catch { return res.status(400).json({ error: 'آدرس نامعتبر' }); }
+  if (u.protocol !== 'https:') return res.status(400).json({ error: 'فقط https' });
+  if (!GIF_REMOTE_HOSTS.has(u.hostname.toLowerCase())) return res.status(400).json({ error: 'میزبان مجاز نیست' });
+  const port = Number(u.port) || 443;
+  if (port !== 443) return res.status(400).json({ error: 'پورت غیرمجاز' });
+
+  (async () => {
+    try {
+      const addrs = await dns.promises.lookup(u.hostname, { all: true });
+      if (!addrs.length || addrs.some((i) => isPrivateIp(i.address))) return res.status(400).json({ error: 'آدرس مقصد مجاز نیست' });
+    } catch { return res.status(400).json({ error: 'دامنه یافت نشد' }); }
+
+    let r;
+    try {
+      r = await fetchWithRedirects(u.href, { timeout: 6000, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'image/gif,image/*' } }, 2);
+    } catch { return res.status(502).json({ error: 'دریافت GIF ناموفق بود' }); }
+    if (r.statusCode !== 200) { r.resume(); return res.status(502).json({ error: 'دریافت GIF ناموفق بود' }); }
+    // بعد از ریدایرکت هم باید روی همان میزبان‌های مجاز مانده باشیم (ضد SSRF)
+    try {
+      const fin = new urlMod.URL(r.headers.location || u.href);
+      if (fin.protocol !== 'https:' || !GIF_REMOTE_HOSTS.has(fin.hostname.toLowerCase())) { r.resume(); return res.status(400).json({ error: 'مقصد ریدایرکت مجاز نیست' }); }
+    } catch { r.resume(); return res.status(400).json({ error: 'ریدایرکت نامعتبر' }); }
+
+    const chunks = [];
+    let size = 0;
+    r.on('data', (c) => {
+      size += c.length;
+      if (size > GIF_REMOTE_MAX_BYTES) { r.destroy(); return; }
+      chunks.push(c);
+    });
+    r.on('error', () => {});
+    r.on('end', async () => {
+      if (size > GIF_REMOTE_MAX_BYTES || !chunks.length) return res.status(502).json({ error: 'GIF خالی یا بیش از حد بزرگ است' });
+      const buf = Buffer.concat(chunks);
+      if (!(buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38)) return res.status(400).json({ error: 'فایل دریافتی GIF نیست' });
+      const filename = Date.now() + '-' + crypto.randomBytes(5).toString('hex') + '.gif';
+      const dest = path.join(UPLOAD_DIR, filename);
+      try { fs.writeFileSync(dest, buf); } catch { return res.status(500).json({ error: 'ذخیره ناموفق بود' }); }
+      let finalUrl = '/uploads/' + filename;
+      if (R2_ENABLED) {
+        try {
+          const r2Url = await r2Upload(dest, r2Key(filename), 'image/gif');
+          if (r2Url) finalUrl = r2Url;
+        } catch (e) {
+          console.error('R2 gif ingest failed, falling back to local:', e);
+        }
+        fs.unlink(dest, () => {});
+      }
+      if (!uploadQuotaOk(req.user.username, buf.length)) { fs.unlink(dest, () => {}); return res.status(429).json({ error: 'سقف آپلود رسید — یک ساعت دیگر تلاش کن' }); }
+      res.json({ url: finalUrl, mime: 'image/gif', kind: 'gif', name: 'gif', size: buf.length });
+    });
+  })();
 });
 
 // فایل‌های خصوصی (`/uploads/*`) دیگر استاتیکِ باز نیستند؛ سرو آن توسط
