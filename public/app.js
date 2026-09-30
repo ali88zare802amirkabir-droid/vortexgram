@@ -1879,7 +1879,6 @@ function insertEmoji(e) {
   inp.value += e;
   if (inp.setSelectionRange) inp.setSelectionRange(inp.value.length, inp.value.length);
   inp.dispatchEvent(new Event('input'));
-  if (isMobile() && emojiPopOpen()) positionEmojiPopMobile();
   if (!isMobile()) inp.focus();
 }
 function updateEmojiPinBtn() {
@@ -1907,7 +1906,6 @@ function buildEmojiPopContent(pop) {
     e.stopPropagation();
     const pinned = !emojiPinned();
     localStorage.setItem(EMOJI_PIN_KEY, pinned ? '1' : '0');
-    pop.classList.toggle('docked', pinned);
     updateEmojiPinBtn();
     if (pinned) toast('ایموجی‌ها پین شدند — همیشه باز');
     else toast('پین برداشته شد');
@@ -1934,16 +1932,7 @@ function buildEmojiPopContent(pop) {
   pop.dataset.filled = '1';
   updateEmojiPinBtn();
   attachEmojiGridInput(grid);
-  attachEmojiPopDrag(pop);
 }
-function positionEmojiPopMobile() {
-  const pop = emojiPopEl(); if (!pop) return;
-  const comp = $('composer');
-  const ch = comp ? comp.offsetHeight : 56;
-  pop.style.bottom = (ch + 6) + 'px';
-  pop.style.position = 'fixed';
-}
-let _emojiDrag = null;
 let _emojiPtr = null;
 function attachEmojiGridInput(grid) {
   const itFrom = (t) => t && t.closest ? t.closest('.emoji-item') : null;
@@ -1967,99 +1956,22 @@ function attachEmojiGridInput(grid) {
     insertEmoji(it.textContent);
   });
 }
-function attachEmojiPopDrag(pop) {
-  if (!window.PointerEvent) return;
-  pop.addEventListener('pointerdown', (e) => {
-    if (isMobile()) return;
-    if (e.target.closest('button, input, .emoji-grid')) return;
-    const r = pop.getBoundingClientRect();
-    _emojiDrag = { sx: e.clientX, sy: e.clientY, l: r.left, t: r.top, moved: false };
-    pop.classList.add('dragging');
-    try { pop.setPointerCapture(e.pointerId); } catch (err) {}
-    e.preventDefault();
-  });
-  pop.addEventListener('pointermove', (e) => {
-    if (!_emojiDrag) return;
-    if (pop.classList.contains('docked')) pop.classList.remove('docked');
-    const dx = e.clientX - _emojiDrag.sx, dy = e.clientY - _emojiDrag.sy;
-    if (Math.abs(dx) + Math.abs(dy) > 4) _emojiDrag.moved = true;
-    if (_emojiDrag.moved) {
-      const w = pop.offsetWidth, h = pop.offsetHeight;
-      pop.style.left = Math.max(8, Math.min(_emojiDrag.l + dx, window.innerWidth - w - 8)) + 'px';
-      pop.style.top = Math.max(8, Math.min(_emojiDrag.t + dy, window.innerHeight - h - 8)) + 'px';
-      pop.style.bottom = 'auto';
-    }
-  });
-  const endDrag = () => {
-    if (!_emojiDrag) return;
-    const was = _emojiDrag.moved;
-    _emojiDrag = null;
-    pop.classList.remove('dragging');
-    if (was) {
-      try {
-        localStorage.setItem('vx_emoji_pop_pos', JSON.stringify({ left: Math.round(pop.getBoundingClientRect().left), top: Math.round(pop.getBoundingClientRect().top) }));
-      } catch (err) {}
-    }
-  };
-  pop.addEventListener('pointerup', endDrag);
-  pop.addEventListener('pointercancel', endDrag);
-}
-function positionEmojiPopInConversation(pop) {
-  const box = $('messages') || $('conversation'); if (!box) return;
-  const r = box.getBoundingClientRect();
-  const w = Math.min(340, r.width - 24);
-  pop.style.width = w + 'px';
-  pop.style.left = (r.left + Math.max(0, (r.width - w) / 2)) + 'px';
-  let top = r.bottom - 8 - 400;
-  if (top < r.top + 8) top = r.top + 8;
-  pop.style.top = top + 'px';
-  pop.style.bottom = 'auto';
-}
 function openEmojiPop() {
   const pop = emojiPopEl(); if (!pop) return;
   buildEmojiPopContent(pop);
   pop.classList.remove('hidden');
   pop.classList.toggle('mobile', isMobile());
-  pop.classList.toggle('docked', emojiPinned());
   if (isMobile()) {
     var ta = $('composer-input');
     if (ta) ta.setAttribute('readonly', 'readonly');
-    pop.style.left = ''; pop.style.top = ''; pop.style.bottom = ''; pop.style.width = '';
-    positionEmojiPopMobile();
-  } else {
-    pop.style.bottom = '';
-    if (emojiPinned()) {
-      pop.style.left = ''; pop.style.top = ''; pop.style.width = '';
-    } else {
-      try {
-        const saved = JSON.parse(localStorage.getItem('vx_emoji_pop_pos') || 'null');
-        if (saved && saved.left != null && saved.top != null) {
-          pop.style.left = saved.left + 'px';
-          pop.style.top = saved.top + 'px';
-        } else {
-          positionEmojiPopInConversation(pop);
-        }
-      } catch (e) {
-        positionEmojiPopInConversation(pop);
-      }
-    }
   }
 }
-function toggleEmojiPop(src) {
+function toggleEmojiPop() {
   const pop = emojiPopEl(); if (!pop) return;
   if (emojiPopOpen()) { closeEmojiPop(); return; }
   openEmojiPop();
-  if (!isMobile() && !emojiPinned() && src && src.getBoundingClientRect && !pop.style.left) {
-    const r = src.getBoundingClientRect();
-    pop.classList.remove('docked');
-    const pw = 340, ph = 400;
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
-    let top = r.bottom + 6;
-    if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
-    pop.style.left = left + 'px'; pop.style.top = top + 'px';
-  }
 }
-$('composer-emoji').onclick = (e) => { e.stopPropagation(); e.preventDefault(); toggleEmojiPop($('composer-emoji')); };
+$('composer-emoji').onclick = (e) => { e.stopPropagation(); e.preventDefault(); toggleEmojiPop(); };
 document.addEventListener('click', (e) => {
   const pop = emojiPopEl();
   if (!pop || pop.classList.contains('hidden') || emojiPinned()) return;
