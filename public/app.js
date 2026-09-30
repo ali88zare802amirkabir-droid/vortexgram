@@ -2004,6 +2004,17 @@ function attachEmojiPopDrag(pop) {
   pop.addEventListener('pointerup', endDrag);
   pop.addEventListener('pointercancel', endDrag);
 }
+function positionEmojiPopInConversation(pop) {
+  const conv = $('conversation'); if (!conv) return;
+  const cr = conv.getBoundingClientRect();
+  const comp = $('composer');
+  const ch = comp ? comp.offsetHeight : 56;
+  const w = Math.min(340, cr.width - 24);
+  pop.style.width = w + 'px';
+  pop.style.left = (cr.left + Math.max(0, (cr.width - w) / 2)) + 'px';
+  pop.style.top = Math.max(8, cr.bottom - ch - 8 - 400) + 'px';
+  pop.style.bottom = 'auto';
+}
 function openEmojiPop() {
   const pop = emojiPopEl(); if (!pop) return;
   buildEmojiPopContent(pop);
@@ -2013,20 +2024,24 @@ function openEmojiPop() {
   if (isMobile()) {
     var ta = $('composer-input');
     if (ta) ta.setAttribute('readonly', 'readonly');
-    pop.style.left = ''; pop.style.top = ''; pop.style.bottom = '';
+    pop.style.left = ''; pop.style.top = ''; pop.style.bottom = ''; pop.style.width = '';
     positionEmojiPopMobile();
   } else {
     pop.style.bottom = '';
     if (emojiPinned()) {
-      pop.style.left = ''; pop.style.top = '';
+      pop.style.left = ''; pop.style.top = ''; pop.style.width = '';
     } else {
       try {
         const saved = JSON.parse(localStorage.getItem('vx_emoji_pop_pos') || 'null');
         if (saved && saved.left != null && saved.top != null) {
           pop.style.left = saved.left + 'px';
           pop.style.top = saved.top + 'px';
+        } else {
+          positionEmojiPopInConversation(pop);
         }
-      } catch (e) {}
+      } catch (e) {
+        positionEmojiPopInConversation(pop);
+      }
     }
   }
 }
