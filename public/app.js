@@ -679,7 +679,17 @@ function roomMembers(rid) { if (rid.startsWith('dm:')) return rid.slice(3).split
 function isReadByOther(rid, m) { const rs = state.readState[rid] || {}; return roomMembers(rid).some((u) => u !== state.me.username && (rs[u] || 0) >= m.time); }
 function refreshReadTicks(rid) { if (rid !== state.room) return; const r = state.rooms[rid]; if (!r) return; document.querySelectorAll('#messages .bubble').forEach((b) => { const m = r.messages.find((x) => x.id === b.dataset.id); if (!m || m.from !== state.me.username) return; const span = b.querySelector('.msg-meta .msg-time'); if (!span) return; const tick = span.querySelector('svg'); const want = isReadByOther(rid, m); const has = !!tick; if (want && !has) { span.insertAdjacentHTML('afterbegin', ic('check-check')); applyIcons(span); } else if (!want && has) { tick.remove(); span.insertAdjacentHTML('afterbegin', ic('check')); applyIcons(span); } }); }
 function previewText(m) {
-  if (!m) return ''; if (m.kind === 'image') return '📷 تصویر'; if (m.kind === 'video') return '🎬 ویدیو'; if (m.kind === 'file') return '📎 فایل' + (m.name ? ': ' + m.name : ''); if (m.kind === 'audio' || m.kind === 'voice') return '🎙 پیام صوتی'; if (m.kind === 'sticker') return 'استیکر'; if (m.kind === 'poll') return '📊 نظرسنجی'; if (m.kind === 'checklist') return '✅ چک‌لیست'; return (m.content || '').slice(0, 60);
+  if (!m) return '';
+  if (m.kind === 'image') return '📷 تصویر';
+  if (m.kind === 'gif') return '🎞 GIF';
+  if (m.kind === 'album') { const n = Array.isArray(m.album) ? m.album.length : 0; return '🖼 کلاژ' + (n ? ' (' + n + ')' : ''); }
+  if (m.kind === 'video') return '🎬 ویدیو';
+  if (m.kind === 'file') return '📎 فایل' + (m.name ? ': ' + m.name : '');
+  if (m.kind === 'audio' || m.kind === 'voice') return '🎙 پیام صوتی';
+  if (m.kind === 'sticker') return 'استیکر';
+  if (m.kind === 'poll') return '📊 نظرسنجی';
+  if (m.kind === 'checklist') return '✅ چک‌لیست';
+  return (m.content || '').slice(0, 60);
 }
 function msgSenderName(m) {
   if (!m) return '';
@@ -708,7 +718,7 @@ function openRoom(rid) {
   closeEmojiPop();
   closeAttachPop();
   attachSelection = [];
-  emojiPanelTab = 'emoji';
+  /* تب پنل ایموجی عمداً ریست نمی‌شود؛ آخرین تب انتخابی کاربر حفظ می‌شود. */
   state.room = rid; state.replyTo = null;
   setReply(null);
   document.querySelectorAll('.chat-item').forEach((e) => e.classList.toggle('active', e.dataset.roomId === rid));
@@ -1093,18 +1103,28 @@ function attachGifInline(holder, im, src) {
 function albumEl(m) {
   const d = document.createElement('div'); d.className = 'album-grid';
   const urls = m.album || m.urls || (m.src ? [m.src] : m.url ? [m.url] : []);
-  urls.forEach((url, i) => {
+  d.dataset.n = String(Math.min(10, urls.length));
+  /* یک آیتم ⇒ مثل یک رسانهٔ معمولی نمایش داده می‌شود، نه شبکهٔ ۱×۱ */
+  if (urls.length === 1) return mediaEl({ kind: 'image', src: urls[0], content: m.content });
+  urls.forEach((url) => {
     const item = document.createElement('div'); item.className = 'album-item';
-    const isVid = /\.(mp4|webm|ogg)$/i.test(url);
+    const isVid = /\.(mp4|webm|ogv|ogg)$/i.test(url);
+    const isGif = /\.gif$/i.test(url);
     if (isVid) {
-      const v = document.createElement('video'); v.loading = 'lazy'; v.playsInline = true;
+      const v = document.createElement('video'); v.loading = 'lazy'; v.playsInline = true; v.muted = true;
       attachVideoTransfer(item, v, url);
       v.onclick = () => { if (v.src) openViewer(url, 'video'); };
       item.appendChild(v);
+    } else if (isGif) {
+      const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
+      attachGifInline(item, im, url);
+      im.onclick = () => { if (im.src) openViewer(im.src, 'image', url); };
+      item.appendChild(im);
     } else {
       const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
       attachImageTransfer(item, im, url);
       warmMedia(url);
+      im.onclick = () => { if (im.src) openViewer(im.src, 'image', url); };
       item.appendChild(im);
     }
     d.appendChild(item);
@@ -2096,7 +2116,22 @@ const EMOJI_PANEL_TABS = [
   { id: 'sticker', label: 'Stickers' },
   { id: 'gif', label: 'GIFs' },
 ];
-let emojiPanelTab = 'emoji';
+/* آخرین تبی که کاربر در آن بود نگه داشته می‌شود؛ دفعه‌ی بعد پنل روی همان تب
+   باز می‌شود (مثلاً اگر روی GIFs بود، دوباره همان‌جا باز شود). */
+const EMOJI_TAB_KEY = 'vx_emoji_tab';
+function emojiTabLoad() {
+  try {
+    const v = localStorage.getItem(EMOJI_TAB_KEY);
+    return EMOJI_PANEL_TABS.some((t) => t.id === v) ? v : 'emoji';
+  } catch (e) { return 'emoji'; }
+}
+function emojiTabSave(id) { try { localStorage.setItem(EMOJI_TAB_KEY, id); } catch (e) {} }
+let emojiPanelTab = emojiTabLoad();
+function setEmojiPanelTab(id) {
+  if (!EMOJI_PANEL_TABS.some((t) => t.id === id)) return;
+  emojiPanelTab = id;
+  emojiTabSave(id);
+}
 const EMOJI_PIN_KEY = 'vx_emoji_pinned';
 function emojiPinned() { return localStorage.getItem(EMOJI_PIN_KEY) === '1'; }
 function emojiPopEl() { return $('emoji-pop'); }
@@ -2154,7 +2189,7 @@ function buildEmojiPopContent(pop) {
     const btn = document.createElement('button');
     btn.className = 'emoji-cat-btn' + (t.id === emojiPanelTab ? ' active' : '');
     btn.textContent = t.label;
-    btn.onclick = () => { emojiPanelTab = t.id; renderEmojiPanelTab(pop); };
+    btn.onclick = () => { setEmojiPanelTab(t.id); renderEmojiPanelTab(pop); };
     tabs.appendChild(btn);
   });
   Object.keys(EMOJI_CATEGORIES).forEach((cat, i) => {
@@ -2382,7 +2417,69 @@ function handleAttachFiles(files, type) {
     attachSelection.push({ id: 'f' + Date.now() + Math.random().toString(36).slice(2, 7), file: f, type: type, status: 'selected', progress: 0, error: null });
   });
   renderAttachPreview();
+  /* انتخاب یک عکس یا ویدیو ⇒ بلافاصله منوی ادیت مخصوص خودش باز شود.
+     بستهٔ پیوست باز می‌ماند و فایل خودکار هم ارسال نمی‌شود تا کاربر
+     اول فرصت ویرایش داشته باشد. */
+  if (valid.length === 1 && attachSelection.length === 1) {
+    const f = valid[0];
+    const mime = String(f.type || '').toLowerCase();
+    if (ATTACH_VIDEO_TYPES.includes(mime)) openVideoTools(f, { onSendRaw: (orig) => { closeAttachPop(); sendFileMessage(orig, orig.name || 'video'); } });
+    else if (ATTACH_IMAGE_TYPES.includes(mime) && mime !== 'image/gif') {
+      openPhotoActionMenu(f, {
+        onRaw: (orig) => { closeAttachPop(); sendFileMessage(orig, orig.name || 'image'); },
+      });
+    }
+  }
 }
+
+/* ---------- منوی اقدامات عکس ---------- */
+function openPhotoActionMenu(file, opts = {}) {
+  const pop = veOpenModal('ابزارهای عکس');
+  pop.classList.add('ve-wide');
+  const body = pop.querySelector('.ve-body');
+  const foot = pop.querySelector('.ve-foot');
+  const url = URL.createObjectURL(file);
+  const prev = document.createElement('img');
+  prev.className = 've-preview';
+  prev.style.objectFit = 'contain';
+  prev.src = url;
+  prev.alt = '';
+  const grid = document.createElement('div');
+  grid.className = 'vt-grid';
+  grid.innerHTML = [
+    { id: 'draw', icon: 'paintbrush', label: 'نقاشی و سانسور', hint: 'قلم‌ها، رنگ‌ها، سانسور شفاف' },
+    { id: 'crop', icon: 'crop', label: 'برش عکس', hint: 'برش از کناره‌ها' },
+  ].map((t) => '<button type="button" class="vt-card" data-t="' + t.id + '">'
+    + '<i data-lucide="' + t.icon + '" class="icon"></i><b>' + t.label + '</b><small>' + t.hint + '</small></button>').join('');
+  body.appendChild(prev);
+  body.appendChild(grid);
+  const raw = document.createElement('button');
+  raw.type = 'button'; raw.className = 'btn primary';
+  raw.innerHTML = ic('send') + ' ارسال بدون تغییر';
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'btn ghost'; cancel.textContent = 'انصراف';
+  foot.appendChild(raw); foot.appendChild(cancel);
+  applyIcons(pop);
+  let closed = false;
+  /* انصراف فقط پنجره را می‌بندد؛ بستهٔ پیوست باید باز بماند تا کاربر مجبور
+     نشود دوباره فایل را انتخاب کند. */
+  function close() { if (closed) return; closed = true; URL.revokeObjectURL(url); pop.remove(); }
+  cancel.onclick = close;
+  raw.onclick = () => { close(); if (opts.onRaw) opts.onRaw(file); };
+  pop.addEventListener('mousedown', (e) => { if (e.target === pop) close(); });
+  grid.addEventListener('click', (e) => {
+    const b = e.target.closest('.vt-card');
+    if (!b) return;
+    const tool = b.dataset.t;
+    close();
+    openPhotoEditor(file, (blob, name) => {
+      if (blob === file) { if (opts.onRaw) opts.onRaw(file); return; }
+      if (opts.onEdited) opts.onEdited(blob, name);
+      else sendFileMessage(blob, name);
+    }, { startInCrop: tool === 'crop' });
+  });
+}
+
 function renderAttachPreview() {
   const pop = attachPopEl(); if (!pop) return;
   const preview = pop.querySelector('#attach-preview');
@@ -2391,17 +2488,25 @@ function renderAttachPreview() {
   preview.classList.remove('hidden');
   let h = '<div class="attach-preview-grid">';
   attachSelection.forEach((item) => {
+    const mime = String(item.file.type || '').toLowerCase();
     h += '<div class="attach-preview-item" data-id="' + item.id + '">';
-    if (item.type === 'gallery' && item.file.type.startsWith('image/')) {
+    if (mime.startsWith('image/')) {
       h += '<img src="' + URL.createObjectURL(item.file) + '" alt="">';
+    } else if (mime.startsWith('video/')) {
+      h += '<video src="' + URL.createObjectURL(item.file) + ' muted playsinline preload="metadata"></video>';
     } else {
       h += '<div class="file-info"><i data-lucide="file" class="icon"></i><div>' + (item.file.name || '').replace(/</g, '&lt;') + '</div><div>' + fmtBytes(item.file.size) + '</div></div>';
     }
-    h += '<button class="remove" data-id="' + item.id + '">' + ic('x') + '</button>';
+    h += '<button class="remove" data-id="' + item.id + '" aria-label="حذف">' + ic('x') + '</button>';
     h += '</div>';
   });
   h += '</div>';
-  h += '<div class="attach-preview-actions"><button class="btn sm" id="attach-send">ارسال (' + attachSelection.length + ')</button></div>';
+  const n = attachSelection.length;
+  const allMedia = attachSelection.every((it) => /^image\//.test(it.file.type) || /^video\//.test(it.file.type));
+  if (n > 1 && allMedia) {
+    h += '<div class="attach-preview-actions"><button class="btn sm" id="attach-collage">ارسال به‌صورت کلاژ (' + n + ')</button></div>';
+  }
+  h += '<div class="attach-preview-actions"><button class="btn sm primary" id="attach-send">ارسال (' + n + ')</button></div>';
   preview.innerHTML = h;
   applyIcons(preview);
   preview.querySelectorAll('.remove').forEach((b) => {
@@ -2409,7 +2514,62 @@ function renderAttachPreview() {
   });
   const sendBtn = preview.querySelector('#attach-send');
   if (sendBtn) sendBtn.onclick = sendAttachSelection;
+  const colBtn = preview.querySelector('#attach-collage');
+  if (colBtn) colBtn.onclick = sendAttachCollage;
 }
+
+/* آپلود یک فایل و برگرداندن URL سرور (بدون ساخت پیام) */
+function uploadOne(file, name) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append('file', file, name || file.name || 'file');
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+    xhr.onload = () => {
+      try {
+        const d = JSON.parse(xhr.responseText);
+        if (!d.url) return reject(new Error(d.error || 'خطا در آپلود'));
+        /* سرور فقط /uploads/... را می‌پذیرد؛ اگر R2 آدرس کامل داد،
+           به شکل نسبیِ همان مسیر تبدیل می‌شود (خودِ /uploads پروکسی می‌کند). */
+        let u = String(d.url);
+        const selfAbs = location.origin + '/uploads/';
+        if (u.startsWith(selfAbs)) u = u.slice(location.origin.length);
+        resolve({ url: u, size: d.size || file.size, raw: d.url });
+      } catch (e) { reject(new Error('پاسخ نامعتبر از سرور')); }
+    };
+    xhr.onerror = () => reject(new Error('خطای شبکه'));
+    xhr.onabort = () => reject(new Error('لغو شد'));
+    xhr.send(fd);
+  });
+}
+
+/* چند عکس/ویدیو ⇒ یک پیام کلاژ (album) به‌جای چند پیام جدا */
+async function sendAttachCollage() {
+  const items = attachSelection.slice();
+  if (!items.length) return;
+  const wrap = addUploadBubble('file', new Blob([new Uint8Array([0x47, 0x49, 0x46, 0x38])], { type: 'image/gif' }), 'کلاژ');
+  if (wrap._ring) dlSet(wrap._ring, 8);
+  let doneN = 0;
+  try {
+    const urls = [];
+    /* ترتیبی تا محدودیت نرخ سرور (۳۰ آپلود در دقیقه) دور نخوریم */
+    for (const it of items) {
+      const r = await uploadOne(it.file, it.file.name);
+      urls.push(r.url);
+      doneN++;
+      if (wrap._ring) dlSet(wrap._ring, Math.round(doneN / items.length * 92));
+    }
+    if (!urls.length) throw new Error('آپلود نشد');
+    dropUploadBubble(wrap);
+    doSend({ kind: 'album', album: urls.slice(0, 10), content: '' });
+    closeAttachPop();
+  } catch (e) {
+    dropUploadBubble(wrap);
+    toast('ارسال کلاژ ناموفق بود — ' + ((e && e.message) || 'خطا'));
+  }
+}
+
 function sendAttachSelection() {
   if (!attachSelection.length) return;
   const items = attachSelection.slice();
@@ -2485,6 +2645,9 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   const pop = attachPopEl();
   if (!pop || pop.classList.contains('hidden')) return;
+  /* اگر منوی ادیت (ویدیو/عکس) یا هر پنجرهٔ شناور دیگری باز است، بستهٔ پیوست
+     نباید خودکار بسته شود؛ کاربر باید اول ادیت را تمام کند. */
+  if (document.querySelector('.ve-pop, .modal-ov')) return;
   if (!pop.contains(e.target) && !($('composer-attach') && $('composer-attach').contains(e.target))) closeAttachPop();
 });
 (function () {
@@ -2774,7 +2937,7 @@ function recInit() {
 }
 recInit();
 
-$('composer-sticker').onclick = () => { emojiPanelTab = 'sticker'; toggleEmojiPop(); };
+  $('composer-sticker').onclick = () => { setEmojiPanelTab('sticker'); toggleEmojiPop(); };
 function cancelReply() {
   const bar = $('reply-bar');
   if (!bar) return;
@@ -3372,6 +3535,10 @@ function openMsgCtx(m, anchor, pos) {
   if (m.kind === 'video') {
     mk('تبدیل به GIF', 'image', function() { openGifConverter(m.src || m.url || ''); }, !!m.src || !!m.url);
     mk('ویرایش ویدیو', 'edit-3', function() { openVideoEditor(m.src || m.url || ''); }, !!m.src || !!m.url);
+  }
+  /* گیرنده هم بتواند GIF فرستاده‌شده را در «GIFهای من» خودش ذخیره کند و بعداً بفرستد */
+  if (m.kind === 'gif' && (m.src || m.url)) {
+    mk('ذخیره در GIFهای من', 'bookmark', function() { saveReceivedGif(m.src || m.url); }, true);
   }
   if (m.from === state.me.username) mk('ویرایش', 'edit-3', function() { uPrompt('ویرایش پیام', m.content, 'متن جدید پیام').then(function(t) { if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); }); });
   if (m.from === state.me.username || (state.me && state.me.isAdmin)) mk('حذف', 'trash-2', function() { uConfirm('حذف شود؟').then(function(y) { if (y && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); }); });
@@ -5182,6 +5349,33 @@ function veSeekTo(v, t) {
   });
 }
 
+/* ---------- برش (crop) ---------- */
+/* opts.crop = {l,t,r,b} به‌صورت نسبی از ابعاد ویدیوی مبدأ (۰ تا ۱).
+   برای «برش از کناره‌ها» استفاده می‌شود؛ اگر داده نشود یعنی بدون برش. */
+function veCropRect(opts, srcW, srcH) {
+  const c = (opts && opts.crop) || null;
+  if (!c) return null;
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  let l = num(c.l, 0), t = num(c.t, 0), r = num(c.r, 1), b = num(c.b, 1);
+  l = Math.max(0, Math.min(1, l));
+  t = Math.max(0, Math.min(1, t));
+  r = Math.max(0, Math.min(1, r));
+  b = Math.max(0, Math.min(1, b));
+  if (r - l < 0.05 || b - t < 0.05) return null;
+  if (l === 0 && t === 0 && r === 1 && b === 1) return null;
+  return { x: l * srcW, y: t * srcH, w: (r - l) * srcW, h: (b - t) * srcH };
+}
+
+/* ابعاد خروجی بر پایه‌ی ناحیه‌ی برش‌خورده محاسبه می‌شود تا نسبت تصویر
+   درست بماند (برش از کناره‌ها نباید تصویر را بکشد). */
+function veOutSize(opts, srcW, srcH, width, minW, maxW) {
+  const cr = veCropRect(opts, srcW, srcH);
+  const cw = cr ? cr.w : srcW, ch = cr ? cr.h : srcH;
+  const w = Math.max(minW, Math.min(Number(width) || 320, maxW));
+  const h = Math.max(2, Math.round((ch * (w / Math.max(1, cw))) / 2) * 2);
+  return { width: w, height: h, crop: cr };
+}
+
 /* ---------- استخراج فریم‌ها (با فیلتر و متن هم‌راستا با ادیتور) ---------- */
 async function veExtractFrames(videoSrc, opts = {}, onProgress, shouldCancel) {
   const v = await veLoadVideo(videoSrc);
@@ -5189,9 +5383,9 @@ async function veExtractFrames(videoSrc, opts = {}, onProgress, shouldCancel) {
   const start = Math.max(0, Math.min(Number(opts.start) || 0, dur));
   const end = Math.min(Number(opts.end) || dur, dur);
   const fps = Math.max(1, Math.min(Number(opts.fps) || 10, 24));
-  const width = Math.max(64, Math.min(Number(opts.width) || 320, 720));
-  const scaleH = width / (v.videoWidth || width);
-  const height = Math.max(2, Math.round(((v.videoHeight || width) * scaleH) / 2) * 2);
+  const srcW = v.videoWidth || 320, srcH = v.videoHeight || 320;
+  const out = veOutSize(opts, srcW, srcH, opts.width, 64, 720);
+  const width = out.width, height = out.height, crop = out.crop;
   const total = Math.max(1, Math.round((end - start) * fps));
   const canvas = document.createElement('canvas');
   canvas.width = width; canvas.height = height;
@@ -5208,7 +5402,8 @@ async function veExtractFrames(videoSrc, opts = {}, onProgress, shouldCancel) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, width, height);
     ctx.filter = filterCss;
-    ctx.drawImage(v, 0, 0, width, height);
+    if (crop) ctx.drawImage(v, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
+    else ctx.drawImage(v, 0, 0, width, height);
     ctx.filter = 'none';
     if (opts.text) {
       const fs = Math.max(12, Math.min(72, Number(opts.textSize) || 28));
@@ -5446,17 +5641,19 @@ async function videoToWebM(videoSrc, opts, onProgress, shouldCancel) {
       const dur = v.duration || 0;
       const start = Math.max(0, Math.min(Number(opts.start) || 0, dur));
       const end = Math.min(Number(opts.end) || dur, dur);
-      const width = Math.max(64, Math.min(Number(opts.width) || 640, 960));
-      const scaleH = width / (v.videoWidth || width);
-      const height = Math.max(2, Math.round(((v.videoHeight || width) * scaleH) / 2) * 2);
+      const srcW = v.videoWidth || 640, srcH = v.videoHeight || 640;
+      const out = veOutSize(opts, srcW, srcH, opts.width, 64, 960);
+      const width = out.width, height = out.height, crop = out.crop;
+      /* بیت‌ریت پایین‌تر = حجم کمتر (ابزار «کاهش حجم»). */
+      const bitrate = Math.max(120_000, Math.min(Number(opts.bitrate) || 3_000_000, 8_000_000));
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
       const ctx = canvas.getContext('2d');
       const filterCss = (VE_FILTERS[opts.filter] || VE_FILTERS.none).css;
       const stream = canvas.captureStream(30);
       let rec = null;
-      try { rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 3_000_000 }); }
-      catch (e1) { try { rec = new MediaRecorder(stream, { mimeType: 'video/webm' }); } catch (e2) { reject(new Error('media-recorder')); return; } }
+      try { rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: bitrate }); }
+      catch (e1) { try { rec = new MediaRecorder(stream, { mimeType: 'video/webm', videoBitsPerSecond: bitrate }); } catch (e2) { reject(new Error('media-recorder')); return; } }
       const parts = [];
       rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
       rec.onerror = () => reject(new Error('recorder-error'));
@@ -5472,7 +5669,8 @@ async function videoToWebM(videoSrc, opts, onProgress, shouldCancel) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, width, height);
         ctx.filter = filterCss;
-        ctx.drawImage(v, 0, 0, width, height);
+        if (crop) ctx.drawImage(v, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
+        else ctx.drawImage(v, 0, 0, width, height);
         ctx.filter = 'none';
         if (opts.text) {
           const fs = Math.max(12, Math.min(72, Number(opts.textSize) || 28));
@@ -5827,6 +6025,33 @@ async function sendMyGif(gid) {
   if (!rec) { toast('GIF یافت نشد'); return; }
   const f = new File([rec.blob], (rec.name || 'gif') + '.gif', { type: 'image/gif' });
   sendFileMessage(f, f.name);
+}
+
+/* ---------- ذخیرهٔ GIF دریافتی در «GIFهای من» ---------- */
+/* گیرنده باید بتواند GIF طرف مقابل را هم برای خودش نگه دارد. اول از کش
+   حافظه/IndexedDB استفاده می‌شود و اگر نبود با هدر احراز هویت دانلود می‌شود
+   (چون /uploads با GET خالی ۴۰۱ می‌دهد). */
+async function saveReceivedGif(url) {
+  if (!url) return;
+  toast('در حال ذخیره…');
+  let blob = null;
+  const mem = __memCache.get(url);
+  if (mem) blob = await vxIdbGet(url);
+  if (!blob) {
+    try {
+      const r = await fetch(url, { headers: state.token ? { Authorization: 'Bearer ' + state.token } : {} });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      blob = await r.blob();
+    } catch (e) {
+      toast('ذخیره نشد — ' + ((e && e.message) || 'خطا'));
+      return;
+    }
+  }
+  if (!blob || !blob.size) { toast('ذخیره نشد'); return; }
+  const rec = await saveToMyGifs(blob, 'GIF ' + new Date().toLocaleString('fa'));
+  if (!rec) { toast('ذخیره نشد'); return; }
+  try { const g = $('emoji-grid'); if (g && emojiPanelTab === 'gif') renderGifGrid(g); } catch (e) {}
+  toast('در GIFهای من ذخیره شد ✓');
 }
 /* GIFهای «پرطرفدار» روی media.giphy.com میزبانی می‌شوند ولی سرور فقط
    /uploads/... را می‌پذیرد؛ پس ارسال لینک خارجی بی‌صدا دور ریخته می‌شد و هیچ GIFی
