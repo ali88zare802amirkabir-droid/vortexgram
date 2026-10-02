@@ -450,7 +450,7 @@ a{color:var(--primary);text-decoration:none;}
 .inp{width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface-container-highest);color:var(--on-surface);font-family:var(--font);font-size:14px;outline:none;}
 .inp:focus{border-color:var(--primary);}
 .modal .inp{width:100%;}
-.modal-actions{display:flex;justify-content:end;gap:8px;margin-top:16px;}
+.modal-actions{display:flex;justify-content:end;gap:8px;margin-top:16px;flex-wrap:wrap;}
 .crop-modal{width:min(340px,92vw);}
 .crop-modal .modal-title{display:flex;align-items:center;gap:8px;}
 .crop-stage{position:relative;width:260px;height:260px;margin:0 auto;border-radius:20px;overflow:hidden;border:1px solid var(--border);box-shadow:var(--shadow-md);cursor:grab;touch-action:none;background:#000;}
@@ -1096,7 +1096,10 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
   .conv-head{gap:8px;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;}
   .sel-toolbar{padding:calc(8px + env(safe-area-inset-top)) 10px 8px;}
   .cl-head{padding:calc(10px + env(safe-area-inset-top)) 10px 8px;}
-  .emoji-pop{inset-inline-start:8px;}
+  /* قبلاً inset-inline-start:8px بود که با position:relative در RTL پنل را
+     ۸ پیکسل به چپ می‌برد و اسکرول افقی می‌ساخت؛ به‌جایش حاشیهٔ واقعی می‌دهیم */
+  .emoji-pop{inset-inline-start:auto;}
+  .emoji-pop.mobile{width:auto;margin-inline:8px;}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important;}}
 
@@ -1820,6 +1823,9 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 .pe-crop i[data-h="sw"]{bottom:-7px;left:-7px;cursor:nesw-resize;}
 .pe-crop i[data-h="se"]{bottom:-7px;right:-7px;cursor:nwse-resize;}
 .pe-status{font-size:11.5px;color:var(--on-surface-variant);min-height:16px;text-align:center;line-height:1.6;}
+/* دکمه‌های اقدام همیشه جلوی دست باشند: وقتی محتوای مودال در گوشی اسکرول
+   می‌خورد، نوار اقدام به پایین مودال می‌چسبد تا «ارسال» زیر خط تا نرود */
+.pe-modal .modal-actions{position:sticky;bottom:-20px;background:var(--surface-container);padding:10px 0 2px;margin-top:10px;border-top:1px solid var(--border);}
 .pe-tools{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
 .pe-tool{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border-radius:9px;border:1px solid var(--border);background:var(--surface-container-high);color:var(--on-surface-variant);font-size:9.5px;font-weight:600;cursor:pointer;transition:all .15s;}
 .pe-tool .icon{width:17px;height:17px;}
