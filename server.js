@@ -73,6 +73,11 @@ function cleanMime(m) { return String(m || '').split(';')[0].trim(); }
 
 const BOT_USERNAME = 'vortex_bot';
 const BOT_NAME = 'Vortex AI';
+/* ربات در db.users نیست، پس UID ثابت و رزروشده دارد (کمتر از شمارهٔ کاربران واقعی). */
+const BOT_UID = 100000;
+function botPublicUser() {
+  return publicUser({ username: BOT_USERNAME, uid: BOT_UID, displayName: BOT_NAME, isAdmin: false, banned: false });
+}
 
 // فقط ادمین اصلی (شماره ثبت‌شده در ADMIN_PHONES) دسترسی‌های حساس را دارد
 function isOriginalAdmin(user) {
@@ -104,6 +109,33 @@ let saveTimer = null;
 //    هرگز اجرا نمی‌شد؛ dead code بود.
 //  - حتی اگر کار می‌کرد، کل تاریخچه چت + توکن‌های نشست را به تاریخچه git push می‌کرد.
 // پشتیبان‌گیری manual با `git add data/db.json` همچنان توسط اپراتور ممکن است.
+
+/* ---------- شناسه عددی یکتا برای هر کاربر (UID) ---------- */
+/* موقع ساخت اکانت داده می‌شود و اکانت‌های قدیمی موقع بالا آمدن سرور
+   به‌صورت خودکار می‌گیرند. از ۱۰۰۰۰۱ شروع می‌شود تا با ایندکس اشتباه نشود. */
+function nextUid() {
+  let n = Number(db.nextUid) || 100001;
+  const used = new Set(db.users.map((u) => u.uid));
+  while (used.has(n)) n++;
+  db.nextUid = n + 1;
+  return n;
+}
+function backfillUids() {
+  let changed = false;
+  for (const u of db.users) {
+    if (typeof u.uid !== 'number' || !Number.isFinite(u.uid)) {
+      u.uid = nextUid();
+      changed = true;
+    }
+  }
+  // یکتاسازی احتیاطی اگر دستی چیزی خراب شده باشد
+  const seen = new Set();
+  for (const u of db.users) {
+    if (seen.has(u.uid)) { u.uid = nextUid(); changed = true; }
+    seen.add(u.uid);
+  }
+  if (changed) saveDB();
+}
 
 function flushDB() {
   clearTimeout(saveTimer);
@@ -350,7 +382,7 @@ async function sendSMS(phone, text) {
   }
 }
 function publicUser(u) {
-  return { username: u.username, displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
+  return { username: u.username, uid: (typeof u.uid === 'number' ? u.uid : null), displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
 }
 // نمای عمومیِ امن برای پخش همگانی: بدون شماره، بدون لیست مسدودشده و بدون flag رمز
 function publicSafe(u) {
@@ -563,7 +595,7 @@ app.post('/api/register', (req, res) => {
 
   const phone = normalizePhone((req.body || {}).phone || '');
   const displayName = String((req.body || {}).displayName || '').trim().slice(0, 25) || username;
-  const user = { username, displayName, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null, phone: phone || undefined };
+  const user = { username, uid: nextUid(), displayName, isAdmin: false, banned: false, createdAt: Date.now(), activeSkin: 'default', profileEffect: 'off', profileEffectColor: null, profileBg: null, phone: phone || undefined };
   setPassword(user, String(password));
   db.users.push(user);
   saveDB();
@@ -991,6 +1023,7 @@ app.get('/api/users/search', auth, (req, res) => {
 // پروفایل عمومی هر کاربر (برای نمایش جلوه‌های تم در پروفایل)
 app.get('/api/user/:username', auth, (req, res) => {
   const uname = String(req.params.username || '').replace('@', '');
+  if (uname === BOT_USERNAME) return res.json({ u: botPublicUser() });
   const target = db.users.find((u) => u.username === uname);
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
   const isSelfOrAdmin = req.user.username === target.username || req.user.isAdmin;
@@ -1457,17 +1490,20 @@ app.get('/api/users/exists/:username', auth, (req, res) => {
 });
 
 // تکمیل مشخصات فرستنده در پیام‌های قدیمی که آواتار/پرمیوم ندارند
-function enrichMsg(m) {
+/* hiddenFor فقط لیست «فقط برای من پاک شده» است و نباید به بقیهٔ کاربران نشت کند. */
+/* hiddenFor نباید هرگز به سمت کلاینت برود؛ فقط برای فیلتر داخلی سرور است */
+function enrichMsg(m, forWhom) {
   const u = db.users.find((x) => x.username === m.from);
+  const { hiddenFor: _hf, ...pub } = m;
   return {
-    ...m,
+    ...pub,
     reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
     fromAvatar: m.fromAvatar || (u && u.avatar) || null,
     fromPremium: m.fromPremium || !!(u && u.isPremium),
   };
 }
 // بهینه: map کاربران برای enrichMsg سریع
-function enrichMsgBatch(messages) {
+function enrichMsgBatch(messages, forWhom) {
   if (!messages.length) return [];
   const userMap = new Map();
   for (const m of messages) {
@@ -1475,8 +1511,9 @@ function enrichMsgBatch(messages) {
   }
   return messages.map((m) => {
     const u = userMap.get(m.from);
+    const { hiddenFor: _hf, ...pub } = m;
     return {
-      ...m,
+      ...pub,
       reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
       fromAvatar: m.fromAvatar || (u && u.avatar) || null,
       fromPremium: m.fromPremium || !!(u && u.isPremium),
@@ -2132,7 +2169,9 @@ wss.on('connection', (ws, req) => {
       const incremental = Number.isFinite(after) && after > 0;
       if (incremental) msgs = all.filter((m) => m.time > after);
       else msgs = all;
-      wsSend(ws, { type: 'history', roomId, messages: enrichMsgBatch(msgs.slice(-100)), incremental: incremental || undefined });
+      /* پیام‌هایی که کاربر «فقط برای خودش» پاک کرده از تاریخچه‌ی او حذف می‌شود */
+      msgs = msgs.filter((m) => !(Array.isArray(m.hiddenFor) && m.hiddenFor.includes(username)));
+      wsSend(ws, { type: 'history', roomId, messages: enrichMsgBatch(msgs.slice(-100), username), incremental: incremental || undefined });
       return;
     }
 
@@ -2262,6 +2301,17 @@ wss.on('connection', (ws, req) => {
       const idx = arr.findIndex((m) => m.id === id);
       if (idx === -1) return;
       if (arr[idx].from !== username && !db.users.find((u) => u.username === username)?.isAdmin) return;
+      /* forEveryone=false یعنی «فقط برای من پاک شود»: پیام برای بقیه می‌ماند و
+         فقط از تاریخچه‌ی همین کاربر فیلتر می‌شود. پیش‌فرض مثل قبل برای همه است. */
+      if (data.forEveryone === false) {
+        const m = arr[idx];
+        m.hiddenFor = Array.isArray(m.hiddenFor) ? m.hiddenFor : [];
+        if (!m.hiddenFor.includes(username)) m.hiddenFor.push(username);
+        saveDB();
+        const info = online.get(username);
+        if (info) wsSend(info.ws, { type: 'message-deleted', roomId, id });
+        return;
+      }
       // آرشیو دائمی پیام حذف‌شده (هر چیزی که پاک می‌شود برای آینده ضبط می‌گردد)
       db.messageDeletions = db.messageDeletions || [];
       db.messageDeletions.push({ id: 'del-' + crypto.randomUUID(), roomId, msg: arr[idx], deletedBy: username, at: Date.now() });
@@ -2540,6 +2590,7 @@ async function start() {
     if (loaded) {
       db = { ...DEFAULT_DB, ...loaded };
       normalizeGroups();
+      backfillUids();
       try { if (db.sessions) for (const [k, v] of Object.entries(db.sessions)) sessions.set(k, v); } catch (e) {}
     }
   } catch (e) {

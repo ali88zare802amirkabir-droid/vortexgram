@@ -1,5 +1,5 @@
-var CACHE = 'vortex-v178';
-var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=8', '/landing.js?v=8', '/privacy.html', '/terms.html', '/style.css?v=151', '/app.js?v=162', '/icons.js?v=87', '/effects.js?v=78', '/theme.js?v=1', '/pwa.js?v=3'];
+var CACHE = 'vortex-v180';
+var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=8', '/landing.js?v=8', '/privacy.html', '/terms.html', '/style.css?v=152', '/app.js?v=167', '/icons.js?v=87', '/effects.js?v=78', '/theme.js?v=1', '/pwa.js?v=3'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
@@ -46,7 +46,12 @@ self.addEventListener('fetch', function (e) {
       return r;
     }).catch(function () {
       if (url.pathname === '/' || url.pathname === '/index.html') return caches.match('/');
-      return caches.match(e.request).then(function (m) { return m || new Response('offline', { status: 503, statusText: 'Offline' }); });
+      // /app?room=... یک کلید کش متفاوت است ⇒ بدون ?v و search هم امتحان می‌کنیم
+      return caches.match(e.request).then(function (m) {
+        return m || caches.match(e.request, { ignoreSearch: true }).then(function (m2) {
+          return m2 || caches.match('/app') || new Response('offline', { status: 503, statusText: 'Offline' });
+        });
+      });
     }));
     return;
   }

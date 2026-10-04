@@ -2,6 +2,7 @@
 const $ = (s) => document.getElementById(s);
 const BOT_USERNAME = 'vortex_bot';
 const BOT_NAME = 'Vortex AI';
+const BOT_UID = 100000;
 let REACTIONS = ['👍', '❤️', '😂', '🥰', '😡', '👎', '🔥'];
 const REACTION_LABELS = { '👍': 'thumbs up', '❤️': 'heart', '😂': 'laughing face', '🥰': 'smiling face with hearts', '😡': 'angry face', '👎': 'thumbs down', '🔥': 'fire' };
 /* Reply gesture tuning — swipe-right on a message to reply. */
@@ -100,7 +101,7 @@ const state = {
   token: localStorage.getItem('ft_token') || null, me: null, ws: null,
   groups: [], users: [], chatState: {}, readState: {}, pinned: {},
   room: null, replyTo: null, rooms: {}, chatFilter: 'all', search: '', nav: 'chats', notifications: [], groupSearch: [],
-  deletedIds: new Set(), renderedRooms: new Set(),
+  deletedIds: new Set(), renderedRooms: new Set(), uidCache: {},
   fontScale: parseInt(localStorage.getItem('vx_fontsize') || '14', 10),
   profileReturnRoom: null,
   profileReturnNav: null,
@@ -259,14 +260,17 @@ applyAppearance();
 /* ENTER */
 function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
+  /* لینک مستقیم مثل /app?room=dm:ali|sara&uid=100005 ⇒ همان چت باز شود */
+  const deep = urlRoom();
+  if (deep) state._deepRoom = deep;
+  syncUrl(deep, { replace: true });
   renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); connectWS(); applyVX();
   showImpersonateBanner();
-  if (isMobile()) vxPush();
+  if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
   if (state.me.isAdmin) {
     api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {});
     api('/api/admin/requests').then((r) => r.json()).then((d) => { const list = (d.requests || []).filter((s) => s.status === 'pending'); state.signupCount = list.length; renderNav(); }).catch(() => {});
   }
-  if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
   if (pinIsSet()) pinShow('login');
 }
 
@@ -431,13 +435,16 @@ function switchNav(id) {
   state.nav = id;
   if (isMobile()) $('nav-sidebar').classList.remove('m-open');
   if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('conversation').classList.remove('chat-open'); } }
-  else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) { $('conversation').classList.add('chat-open'); vxPush(); } }
+  else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) { $('conversation').classList.add('chat-open'); } }
+  /* نشانی صفحه با زبانهٔ فعال هماهنگ شود (برای دکمهٔ برگشت مرورگر) */
+  syncUrl(id === 'chats' ? state.room : null, { view: id === 'chats' ? null : id });
   document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === id));
 }
 let viewHost = null;
 function setMode(mode) {
   if (!viewHost) { viewHost = document.createElement('div'); viewHost.id = 'view-host'; viewHost.className = 'view hidden'; $('conversation').appendChild(viewHost); }
   const chat = mode === 'chats';
+  if (chat) { viewHost.dataset.view = ''; viewHost.innerHTML = ''; }
   $('conv-empty').classList.toggle('hidden', chat ? !!state.room : true);
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
@@ -470,7 +477,10 @@ function connectWS() {
 }
 function handleWS(d) {
   switch (d.type) {
-    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); if (pr.messages.length && !pr.previewOnly) { if (pv && (!pr.last || pv.time > pr.last.time)) { const idx = pr.messages.findIndex((m) => m.id === pv.id); if (idx >= 0) pr.messages[idx] = pv; else { pr.messages.push(pv); pr.lastSync = Date.now(); } pr.last = pv; } pr.unread = pv && (pv.unread !== undefined) ? pv.unread : pr.unread; } else { pr.messages = pv ? [pv] : []; pr.last = pv || null; pr.unread = pv ? (pv.unread || 0) : 0; pr.previewOnly = true; } } loadReactionConfig(); renderNav(); renderDock(); buildChatList(); scheduleRoomsPersist(); handleInviteFollow(); handleGroupInvite(); break;
+    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); if (pr.messages.length && !pr.previewOnly) { if (pv && (!pr.last || pv.time > pr.last.time)) { const idx = pr.messages.findIndex((m) => m.id === pv.id); if (idx >= 0) pr.messages[idx] = pv; else { pr.messages.push(pv); pr.lastSync = Date.now(); } pr.last = pv; } pr.unread = pv && (pv.unread !== undefined) ? pv.unread : pr.unread; } else { pr.messages = pv ? [pv] : []; pr.last = pv || null; pr.unread = pv ? (pv.unread || 0) : 0; pr.previewOnly = true; } } loadReactionConfig(); renderNav(); renderDock(); buildChatList(); scheduleRoomsPersist(); handleInviteFollow(); handleGroupInvite();
+      /* چتِ لینک مستقیم فقط وقتی باز می‌شود که WebSocket آماده و احرازهویت شده باشد */
+      if (state._deepRoom) { const deep = state._deepRoom; state._deepRoom = null; try { openRoom(deep, { fromHistory: true }); } catch (e) {} }
+      break;
     case 'users': state.users = d.users || []; scheduleChatListRefresh(); break;
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
@@ -566,6 +576,7 @@ function applyProfileUpdate(d) {
     renderNav();
     const tv = document.getElementById('nav-name'); if (tv) tv.textContent = state.me.displayName;
   } else {
+    if (typeof p.uid === 'number') state.uidCache[d.username] = p.uid;
     const idx = state.users.findIndex((u) => u.username === d.username);
     if (idx >= 0) state.users[idx] = Object.assign({}, state.users[idx], p);
   }
@@ -712,7 +723,7 @@ function scheduleGroupSearch(q) {
 $('cl-new').onclick = (e) => { e.stopPropagation(); openNewMenu(e.currentTarget); };
 $('cl-menu').onclick = () => { const open = !$('nav-sidebar').classList.contains('m-open'); $('nav-sidebar').classList.toggle('m-open', open); showScrim(open); };
 /* PART 2 — conversation, messages, composer, details */
-function openRoom(rid) {
+function openRoom(rid, opts) {
   closeMsgCtx();
   exitSelectMode();
   closeEmojiPop();
@@ -724,7 +735,9 @@ function openRoom(rid) {
   document.querySelectorAll('.chat-item').forEach((e) => e.classList.toggle('active', e.dataset.roomId === rid));
   renderRoomHeader(); markRead(rid);
   setMode('chats');
-  if (isMobile()) { $('conversation').classList.add('chat-open'); showScrim(false); vxPush(); }
+  /* نشانی صفحه = چت باز + شناسهٔ عددی طرف مقابل (در نوار آدرس مرورگر دیده می‌شود) */
+  syncUrl(rid, { replace: !!(opts && opts.fromHistory) });
+  if (isMobile()) { $('conversation').classList.add('chat-open'); showScrim(false); if (!(opts && opts.fromHistory) && isCapacitor) _vxStack.push({ vx: 1, nav: 'chats', room: rid, view: null }); }
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
@@ -748,8 +761,46 @@ function openRoom(rid) {
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
+/* ---------- UID طرف مقابل ----------
+   ربات UID رزروشده دارد و هرگز fetch نمی‌شود.
+   لیست کاربران فقط برای ادمین پر می‌شود، پس برای بقیهٔ کاربران UID را
+   یک‌بار از /api/user می‌گیریم و کش می‌کنیم تا در هدر چت نمایش داده شود. */
+function knownUid(username) {
+  const u = (state.users || []).find((x) => x.username === username);
+  if (u && typeof u.uid === 'number') return u.uid;
+  if (state.me && state.me.username === username && typeof state.me.uid === 'number') return state.me.uid;
+  return state.uidCache[username] || null;
+}
+function fetchUid(username) {
+  if (!username || username === BOT_USERNAME || knownUid(username)) return;
+  if (state.uidCache[username] === 0) return;
+  api('/api/user/' + encodeURIComponent(username)).then((r) => r.json()).then((d) => {
+    if (!d || !d.u) return;
+    state.uidCache[username] = d.u.uid;
+    const i = (state.users || []).findIndex((x) => x.username === username);
+    if (i !== -1) state.users[i] = { ...state.users[i], uid: d.u.uid };
+    if (state.room && state.room.startsWith('dm:') && state.room.slice(3).split('|').indexOf(username) !== -1) {
+      renderRoomHeader();
+      /* UID تازه باید در نشانی صفحه بنشیند. چون room از قبل در URL هست،
+         شرط urlRoom مانع کار می‌شد؛ باید فقط حین بازگردانی از history ساکت بمانیم. */
+      syncUrl(state.room, { replace: true });
+    }
+  }).catch(() => {});
+}
+function roomUid(rid) {
+  if (!rid || !rid.startsWith('dm:')) return null;
+  const other = rid.slice(3).split('|').find((p) => p !== state.me.username);
+  if (!other) return null;
+  if (other === BOT_USERNAME) return BOT_UID;
+  const uid = knownUid(other);
+  if (!uid) fetchUid(other);
+  return uid;
+}
 function renderRoomHeader() {
-  $('conv-name').textContent = roomTitle(state.room); $('conv-sub').textContent = roomOnline(state.room);
+  const uid = roomUid(state.room);
+  const on = roomOnline(state.room);
+  $('conv-name').textContent = roomTitle(state.room);
+  $('conv-sub').textContent = uid ? ('شناسه: ' + uid + (on ? ' • ' + on : '')) : on;
   let avSrc = null;
   if (state.room && state.room.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === state.room); if (g && g.avatar) avSrc = g.avatar; }
   const av = avatarEl(avSrc ? { avatar: avSrc, displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm');
@@ -758,7 +809,12 @@ function renderRoomHeader() {
   $('conv-name').style.cursor = 'pointer';
 }
 $('conv-info').onclick = () => { if (!state.room) return; openRoomInfo(state.room); };
-$('conv-back').onclick = () => { state.room = null; buildChatList(); setMode('chats'); if (isMobile()) { $('conversation').classList.remove('chat-open'); } };
+/* دکمهٔ برگشت داخل چت: در موبایل از history مرورگر استفاده می‌کند تا به
+   چت/صفحهٔ قبلی برگردد، نه فقط لیست چت. */
+$('conv-back').onclick = () => {
+  if (isMobile() && !isCapacitor) { history.back(); return; }
+  state.room = null; buildChatList(); setMode('chats'); if (isMobile()) { $('conversation').classList.remove('chat-open'); }
+};
 $('scrim').onclick = () => closeDrawers();
 $('conv-search').onclick = () => { const sb = $('conv-searchbox'); const wasHidden = sb.classList.contains('hidden'); sb.classList.toggle('hidden'); if (wasHidden) { $('conv-search-input').value = ''; $('conv-search-input').focus(); searchChatMessages(''); } else { searchChatMessages(''); } };
 $('conv-search-input').addEventListener('input', (e) => { searchChatMessages(e.target.value); });
@@ -891,7 +947,7 @@ function renderMessagesBatch(messages) {
     actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(m, bubble); };
     actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
     actions.querySelector('[data-a="forward"]').onclick = (e) => { e.stopPropagation(); openForward(m.id); };
-    if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); if (await uConfirm('حذف شود؟') && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); };
+    if (m.from === state.me.username) actions.querySelector('[data-a="delete"]').onclick = async (e) => { e.stopPropagation(); const d = await askDeleteScope(); if (d) sendDeleteMsg(m.id, d.forEveryone); };
     actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); const w = e.target.closest('.msg'); const anchor = w ? (w.querySelector('.bubble') || w) : null; openMsgCtx(m, anchor, { x: e.clientX, y: e.clientY }); };
     wrap.appendChild(actions);
     // new mini reply + reaction rail (desktop)
@@ -1067,28 +1123,97 @@ function mediaEl(m) {
   if (m.content) { const c = document.createElement('div'); c.className = 'media-cap'; c.textContent = m.content; d.appendChild(c); }
   return d;
 }
+/* ---------- پخش GIF: پشت‌سرهم یا فقط یک‌بار ---------- */
+/* با <img> نمی‌شود جلوی حلقه را گرفت، پس مدت کل GIF را از روی frame delayها
+   می‌خوانیم و بعد از یک پخش کامل، آخرین فریم را روی canvas ثابت می‌کنیم. */
+function gifLoopEnabled() { return localStorage.getItem('vx_gif_loop') !== '0'; }
+/* مجموع delay فریم‌ها بر حسب میلی‌ثانیه؛ اگر GIF نبود یا خراب بود 0. */
+function gifTotalDuration(ab) {
+  try {
+    const b = new Uint8Array(ab);
+    if (b.length < 14 || b[0] !== 0x47 || b[1] !== 0x49 || b[2] !== 0x46) return 0;
+    let p = 13;
+    if (b[10] & 0x80) p += 3 * (1 << ((b[10] & 7) + 1)); /* جدول رنگ سراسری */
+    let total = 0, frames = 0;
+    while (p < b.length) {
+      const blk = b[p];
+      if (blk === 0x3B) break;                              /* پایان فایل */
+      if (blk === 0x21) {                                   /* extension */
+        if (b[p + 1] === 0xF9 && p + 6 <= b.length) total += (b[p + 4] | (b[p + 5] << 8)) * 10;
+        let q = p + 2;
+        while (q < b.length && b[q]) q += b[q] + 1;
+        p = q + 1;
+        continue;
+      }
+      if (blk === 0x2C) {                                   /* image descriptor */
+        frames++;
+        const flags = b[p + 9];
+        let q = p + 11;                                     /* LZW min code size */
+        if (flags & 0x80) q += 3 * (1 << ((flags & 7) + 1));
+        while (q < b.length && b[q]) q += b[q] + 1;
+        p = q + 1;
+        continue;
+      }
+      p++;
+    }
+    return frames ? total : 0;
+  } catch (e) { return 0; }
+}
+/* بعد از ms، فریم فعلی (آخرین فریم) روی canvas قفل می‌شود */
+function freezeGifOnce(im, ms, blobUrl, src) {
+  if (!(ms > 0)) return;
+  setTimeout(() => {
+    if (!im.isConnected) return;
+    const w = im.naturalWidth, h = im.naturalHeight;
+    if (!w || !h) return;
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(im, 0, 0, w, h);
+      cv.className = im.className;
+      cv.style.cssText = im.style.cssText;
+      cv.setAttribute('role', 'img');
+      cv.dataset.gifSrc = src || '';
+      cv.onclick = () => openViewer(blobUrl || cv.dataset.gifSrc, 'image', src);
+      im.replaceWith(cv);
+    } catch (e) {}
+  }, ms + 80);
+}
+/* اگر تنظیم «یک‌بار» است، مدت GIF را می‌خوانیم و freezes می‌کنیم.
+   منبع اول: همان blob که قبلاً کش شده (بدون شبکه)، بعد: IndexedDB،
+   و برای GIFهای استاتیک خودمان (/img/gifs/) یک fetch ساده. */
+function applyGifPlayback(im, src, blob) {
+  if (gifLoopEnabled() || !im) return;
+  const run = (ab) => { if (!ab) return; const d = gifTotalDuration(ab); if (d > 0) freezeGifOnce(im, d, im.src, src); };
+  if (blob) { blob.arrayBuffer().then(run).catch(() => {}); return; }
+  if (!src) return;
+  if (src.startsWith('/img/')) { fetch(src).then((r) => (r.ok ? r.arrayBuffer() : null)).then(run).catch(() => {}); return; }
+  vxIdbGet(src).then((b) => { if (b) run(b.arrayBuffer()); }).catch(() => {});
+}
+
 /* نمایش درجای GIF: برخلاف تصویر معمولی، بدون کلیک کاربر دانلود می‌شود. */
 function attachGifInline(holder, im, src) {
   const cached = __memCache.get(src);
-  if (cached) { im.src = cached; im.onclick = () => openViewer(cached, 'image', src); im.classList.add('loaded'); return; }
+  if (cached) { im.src = cached; applyGifPlayback(im, src, null); im.onclick = () => openViewer(cached, 'image', src); im.classList.add('loaded'); return; }
   const ov = document.createElement('div'); ov.className = 'dl-overlay';
   const ring = dlRing(holder.closest('.album-item') ? 46 : 64);
   holder.appendChild(ov);
   let done = false;
-  const finish = (blobUrl) => {
+  const finish = (blobUrl, blob) => {
     done = true;
     im.src = blobUrl;
     im.onclick = () => openViewer(blobUrl, 'image', src);
     im.classList.add('loaded');
     holder.classList.remove('dl-loading');
     ov.remove();
+    applyGifPlayback(im, src, blob || null);
   };
-  vxIdbGet(src).then((b) => { if (b && !done) finish(URL.createObjectURL(b)); });
+  vxIdbGet(src).then((b) => { if (b && !done) finish(URL.createObjectURL(b), b); });
   fetchMediaStream(src, (p) => dlSet(ring, p), (blb) => {
     if (done) return;
     const u = URL.createObjectURL(blb);
     memCacheSet(src, u, blb);
-    finish(u);
+    finish(u, blb);
   }, () => {
     /* اگر دانلود احراز‌هویده شکست خورد، کوکی نشست را امتحان می‌کنیم */
     if (done) return;
@@ -2261,6 +2386,7 @@ async function renderGifGrid(grid) {
     const img = document.createElement('img');
     img.src = url;
     img.alt = '';
+    img.addEventListener('load', () => applyGifPlayback(img, url, null));
     img.addEventListener('error', () => s.remove());
     s.appendChild(img);
     grid.appendChild(s);
@@ -2280,6 +2406,7 @@ async function renderGifGrid(grid) {
     img.src = URL.createObjectURL(g.blob);
     img.alt = g.name || '';
     img.dataset.gid = g.id;
+    img.addEventListener('load', () => applyGifPlayback(img, '', g.blob));
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'my-gif-del';
@@ -3331,7 +3458,7 @@ function openRoomInfo(rid) {
   if (!rid) return;
   _roomInfoRid = rid;
   if (isMobile()) renderRoomInfoPage(rid); else renderRoomInfoModal(rid);
-  vxPush();
+  vxPush({ vx: 1, nav: state.nav || 'chats', room: state.room || null, view: null, overlay: 1 });
 }
 function renderRoomInfoModal(rid, silent) {
   _roomInfoRid = rid;
@@ -3541,7 +3668,7 @@ function openMsgCtx(m, anchor, pos) {
     mk('ذخیره در GIFهای من', 'bookmark', function() { saveReceivedGif(m.src || m.url); }, true);
   }
   if (m.from === state.me.username) mk('ویرایش', 'edit-3', function() { uPrompt('ویرایش پیام', m.content, 'متن جدید پیام').then(function(t) { if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); }); });
-  if (m.from === state.me.username || (state.me && state.me.isAdmin)) mk('حذف', 'trash-2', function() { uConfirm('حذف شود؟').then(function(y) { if (y && state.ws) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id: m.id })); }); });
+  if (m.from === state.me.username || (state.me && state.me.isAdmin)) mk('حذف', 'trash-2', function() { askDeleteScope().then(function(d) { if (d) sendDeleteMsg(m.id, d.forEveryone); }); });
   mk('گزارش', 'shield', function() { reportMsg(m); });
   mk('انتخاب', 'check-square', function() { toggleSelectMsg(m.id); });
   el.appendChild(acts);
@@ -3657,8 +3784,9 @@ $('sel-delete').onclick = async (e) => {
   const ids = selectedMsgsSorted().map((m) => m.id);
   if (!ids.length) return;
   if (!(state.ws && state.ws.readyState === 1)) { toast('اتصال برقرار نیست'); return; }
-  if (!(await uConfirm(ids.length + ' پیام حذف شود؟'))) return;
-  ids.forEach((id) => state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id })));
+  const scope = await askDeleteScope(ids.length + ' پیام حذف شود؟');
+  if (!scope) return;
+  ids.forEach((id) => sendDeleteMsg(id, scope.forEveryone));
   exitSelectMode();
 };
 
@@ -4095,6 +4223,33 @@ function uConfirmCb(title, options) {
   });
 }
 
+/* ---------- حذف پیام: برای همه یا فقط برای من ---------- */
+/* اگر تیک «برای طرف مقابل هم حذف شود» زده شود پیام از سرور پاک می‌شود،
+   وگرنه فقط همین‌جا مخفی می‌ماند (سرور آن را از تاریخچه‌ی من فیلتر می‌کند). */
+function deleteScopeLabel() {
+  const rid = state.room || '';
+  if (rid.startsWith('dm:')) {
+    const other = rid.slice(3).split('|').find((p) => p !== state.me.username);
+    if (!other || other === BOT_USERNAME || other === state.me.username) return null;
+    const u = (state.users || []).find((x) => x.username === other);
+    return 'برای ' + ((u && (u.displayName || u.username)) || other) + ' هم حذف شود';
+  }
+  if (rid.startsWith('group:')) return 'برای همه حذف شود';
+  return null;
+}
+async function askDeleteScope(title) {
+  const label = deleteScopeLabel();
+  if (!label) {
+    if (!(await uConfirm(title || 'حذف شود؟'))) return null;
+    return { forEveryone: true };
+  }
+  const r = await uConfirmCb(title || 'حذف پیام؟', [{ key: 'all', label, checked: true }]);
+  if (!r) return null;
+  return { forEveryone: !!r.all };
+}
+function sendDeleteMsg(id, forEveryone) {
+  if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'delete-message', roomId: state.room, id, forEveryone: forEveryone !== false }));
+}
 /* NEW MENU */
 function openNewMenu(anchor) {
   // اگر باز است، ببند (تاگل) و جلوگیری از چند منوی روی‌هم
@@ -4360,7 +4515,7 @@ function profileGoBack() {
 }
 function renderProfile(username) {
   if (isMobile()) closeDrawers();
-  if (isMobile()) vxPush();
+  if (isMobile()) vxPush({ vx: 1, nav: state.nav || 'chats', room: state.room || null, view: 'profile:' + username, overlay: 1 });
   let u = (state.me.username === username) ? state.me : (state.users || []).find((x) => x.username === username);
   if (!u) { api('/api/user/' + encodeURIComponent(username)).then((r) => r.json()).then((d) => { if (d.u) { state.users = state.users || []; if (!state.users.find((x) => x.username === d.u.username)) state.users.push(d.u); renderProfile(username); } else { setMode('view'); viewHost.innerHTML = '<div class="placeholder">پروفایل یافت نشد.</div>'; } }).catch(() => { setMode('view'); viewHost.innerHTML = '<div class="placeholder">خطا در بارگذاری پروفایل.</div>'; }); return; }
   setMode('view');
@@ -4625,7 +4780,7 @@ function appendAIMsg(role, text) { const box = $('ai-conv'); const el = document
 
 /* VIEW ROUTER */
 function renderView(id) {
-  setMode('view'); viewHost.classList.remove('hidden'); viewHost.innerHTML = '';
+  setMode('view'); viewHost.classList.remove('hidden'); viewHost.innerHTML = ''; viewHost.dataset.view = id;
   const title = NAV.find((n) => n.id === id); const h = document.createElement('div'); h.className = 'view-head';
   h.innerHTML = '<button class="icon-btn view-back" id="view-back"><i data-lucide="chevron-right" class="icon"></i></button>' + ic((title && title.icon) || 'layout') + '<h2>' + (title ? title.label : id) + '</h2>';
   viewHost.appendChild(h);
@@ -4848,6 +5003,7 @@ function renderAccSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('user') + ' اطلاعات حساب</h3>';
   t += '<div class="settings-row"><span>نام نمایشی</span><b>' + esc(state.me.displayName) + '</b><button class="btn sm" onclick="promptRename()">تغییر</button></div>';
   t += '<div class="settings-row"><span>نام کاربری</span><b>@' + esc(state.me.username) + '</b></div>';
+  t += '<div class="settings-row"><span>شناسه کاربری (UID)</span><b data-uid="' + esc(state.me.username) + '">' + (state.me.uid ? esc(state.me.uid) : '…') + '</b></div>';
   t += '<div class="settings-row"><span>شماره</span><b>' + esc(state.me.phone || '—') + '</b></div>';
   t += '<div class="settings-row"><span>بیو</span><input class="inp" id="acc-bio" maxlength="' + (state.me.isPremium ? 200 : 80) + '" placeholder="درباره خودت…" value="' + esc(state.me.bio || '') + '" style="max-width:220px"></div>';
   t += '<div class="settings-row"><span>وضعیت</span><b>' + (state.me.isPremium ? 'پریمیوم' : 'رایگان') + (state.me.isAdmin ? ' • ادمین' : '') + '</b></div></div>';
@@ -4858,6 +5014,13 @@ function renderAccSub(body) {
     api('/api/profile/bio', { method: 'POST', body: JSON.stringify({ bio: v }) }).then((r) => r.json()).then((d) => { if (!d.ok) { toast(d.error || 'خطا'); return; } if (d.me) state.me = d.me; toast('بیو ذخیره شد'); }).catch(() => toast('خطا'));
   };
   const bio = body.querySelector('#acc-bio'); if (bio) bio.addEventListener('change', bioSave);
+  /* اگر نسخهٔ قدیمی سرور هنوز uid را برنگرداند، یک‌بار از /api/me می‌خوانیم */
+  if (typeof state.me.uid !== 'number') {
+    const cell = body.querySelector('[data-uid]');
+    api('/api/user/' + encodeURIComponent(state.me.username)).then((r) => r.json()).then((d) => {
+      if (d && d.u && typeof d.u.uid === 'number' && cell) cell.textContent = d.u.uid;
+    }).catch(() => {});
+  }
   api('/api/profile/devices').then((r) => r.json()).then((d) => {
     const box = body.querySelector('#acc-devices');
     if (!box) return;
@@ -4957,15 +5120,23 @@ async function clearMediaCache() {
   const pv = document.querySelector('.view-body.settings-sub'); if (pv && pv.parentElement) renderSettingsSub('storage', pv.parentElement);
 }
 function renderStorageSub(body) {
-  let t = '<div class="settings-sec"><h3>' + ic('hard-drive') + ' حافظه پنهان دستگاه</h3>';
+  let t = '<div class="settings-sec"><h3>' + ic('image') + ' نمایش GIF</h3>';
+  t += '<div class="settings-row"><span>پخش پشت‌سرهم GIFها</span><label class="switch"><input type="checkbox" id="st-gif-loop"' + (gifLoopEnabled() ? ' checked' : '') + '><span class="slider"></span></label></div>';
+  t += '<p class="hint" style="margin:10px 0 12px;text-align:right;">اگر خاموش باشد، هر GIF فقط یک‌بار پخش می‌شود و روی آخرین فریم می‌ایستد.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('hard-drive') + ' حافظه پنهان دستگاه</h3>';
   t += '<div class="settings-row"><span>عکس‌ها، فیلم‌ها و فایل‌ها</span><b id="st-media">در حال بررسی…</b></div>';
   t += '<div class="settings-row"><span>پیام‌ها و چت‌های کش‌شده</span><b id="st-rooms">در حال بررسی…</b></div>';
   t += '<p class="hint" style="margin:10px 0 12px;text-align:right;">این عمل فقط فایل‌های رسانه را از همین دستگاه حذف می‌کند تا فضا آزاد شود؛ پیام‌ها، پروفایل کاربران، گروه‌ها و کانال‌ها دست‌نخورده می‌مانند. فایل‌های حذف‌شده در صورت دیدن دوباره، دوباره دانلود می‌شوند.</p>';
   t += '<button class="btn danger" id="st-clear" style="width:100%;justify-content:center;">' + ic('trash-2') + ' پاک کردن حافظه پنهان رسانه</button>';
   t += '</div>';
   body.innerHTML = t;
+  const gl = body.querySelector('#st-gif-loop');
+  if (gl) gl.onchange = () => {
+    localStorage.setItem('vx_gif_loop', gl.checked ? '1' : '0');
+    toast(gl.checked ? 'GIFها پشت‌سرهم پخش می‌شوند' : 'هر GIF فقط یک‌بار پخش می‌شود');
+  };
   vxMediaUsage().then((u) => { const el = $('st-media'); if (el) el.textContent = u.n ? (u.n + ' فایل — ' + fmtBytes(u.bytes)) : 'خالی است'; });
-  vxRoomsCount().then((n) => { const el = $('st-rooms'); if (el) el.textContent = n ? (n + ' گفتگو‌') : 'خالی است'; });
+  vxRoomsCount().then((n) => { const el = $('st-rooms'); if (el) el.textContent = n ? (n + ' گفتگو-') : 'خالی است'; });
   const cb = body.querySelector('#st-clear'); if (cb) cb.onclick = clearMediaCache;
 }
 function renderPrivSub(body) {
@@ -5228,10 +5399,131 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.ctx-menu, .r
 const isCapacitor = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 let _pinScreen = false;
 function _pinScreenOpen() { return !!$('pin-screen') && !$('pin-screen').classList.contains('hidden'); }
-/* یک entry در history برای نگه داشتن برنامه و رهگیری دکمه برگشت */
-function vxPush() {
-  if (!isMobile() || isCapacitor) return;
-  try { history.pushState({ vx: 1 }, ''); } catch (e) {}
+/* ---------- نشانی صفحه (URL) ----------
+   هر چت یک نشانی واقعی و قابل رفرش/اشتراک دارد:
+     /app?room=dm%3Aali%7Csara&uid=100005
+   «uid» شناسهٔ عددی طرف مقابل است تا در نوار آدرس مرورگر هم قابل بررسی باشد،
+   و «room» باعث می‌شود دکمهٔ برگشت مرورگر دقیقاً به چت قبلی برگردد. */
+function urlRoom() {
+  try { return new URLSearchParams(location.search).get('room') || null; } catch (e) { return null; }
+}
+function syncUrl(rid, opts) {
+  opts = opts || {};
+  if (state._restoringNav) return;          /* در حال بازگردانی: URL از قبل درست است */
+  try {
+    const sp = new URLSearchParams();
+    if (rid) sp.set('room', rid);
+    const uid = rid ? roomUid(rid) : 0;
+    if (uid) sp.set('uid', String(uid));
+    if (opts.view) sp.set('view', opts.view);
+    const q = sp.toString();
+    const url = location.pathname + (q ? '?' + q : '');
+    const st = { vx: 1, nav: opts.view || 'chats', room: rid || null, view: opts.view || null };
+    if (opts.replace) history.replaceState(st, '', url);
+    else history.pushState(st, '', url);
+  } catch (e) {}
+}
+/* تازه‌سازی اجباری یک چت: کش را نامعتبر می‌کنیم تا سرور تاریخچهٔ کامل بفرستد */
+function invalidateRoom(rid) {
+  const r = state.rooms[rid];
+  if (r) r.lastSync = 0;
+}
+/* بازگرداندن وضعیت از روی URL بعد از دکمهٔ برگشت/فوروارد مرورگر.
+   برمی‌گردد به چت قبلی و همان چت از سرور دوباره بارگذاری می‌شود. */
+function restoreFromUrl(rid) {
+  const cur = state.room || null;
+  state._restoringNav = true;
+  try {
+    /* لایهٔ اطلاعات چت با جابه‌جایی بین صفحه‌ها نباید باز بماند */
+    const ri = document.querySelector('.ri-backdrop'); if (ri) ri.remove();
+    if (rid) {
+      /* هر بار که از تاریخچه به چتی می‌رسیم، کش آن چت نامعتبر می‌شود تا
+         سرور تاریخچهٔ کامل را دوباره بفرستد (رفتار «برگشت + بروزرسانی») */
+      invalidateRoom(rid);
+      openRoom(rid, { fromHistory: true });
+      return true;
+    }
+    if (!cur) return false;
+    /* بدون room در URL ⇒ برگشت به لیست چت (/app) */
+    state.room = null; state.nav = 'chats';
+    if (viewHost && !viewHost.classList.contains('hidden')) { viewHost.innerHTML = ''; viewHost.dataset.view = ''; }
+    setMode('chats');
+    $('conversation').classList.remove('chat-open');
+    $('chat-list-column').classList.add('m-open');
+    showScrim(false); closeDrawers();
+    buildChatList();
+    document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === 'chats'));
+    return true;
+  } finally { state._restoringNav = false; }
+}
+/* یک entry در history برای نگه داشتن برنامه و رهگیری دکمه برگشت.
+   در مرورگر، خودِ URL entry می‌سازد؛ در Capacitor در حافظه نگه می‌داریم. */
+const _vxStack = [];
+function vxPush(snap) {
+  if (state._restoringNav) return;
+  const s = snap || navSnapshot();
+  if (isCapacitor) { _vxStack.push(s); return; }
+  try {
+    if (s.overlay) history.pushState({ vx: 1, overlay: 1, room: s.room || null, nav: s.nav || 'chats' }, '', location.href);
+    else syncUrl(s.room || null, { view: s.view || null });
+  } catch (e) {}
+}
+/* وضعیت فعلی صفحه برای ذخیره در history: کدام nav، کدام room و کدام صفحه */
+function navSnapshot() {
+  const v = viewHost && !viewHost.classList.contains('hidden') ? viewHost.dataset.view : null;
+  return { vx: 1, nav: state.nav || 'chats', room: state.room || null, view: v || null };
+}
+/* بازگرداندن صفحه‌ای که کاربر قبل از این یکی باز کرده بود (چت قبلی، لیست چت یا /app) */
+const _NAV_IDS = ['ai', 'cloud', 'tasks', 'calendar', 'contacts', 'settings', 'admin', 'profile'];
+function restoreNav(s) {
+  if (!s || s.vx !== 1) return false;
+  /* لایه‌های رویی (اطلاعات چت، پروفایل، منوها) سطحبندی بستن خودشان را دارند */
+  if (s.overlay) return false;
+  const nav = s.nav || 'chats';
+  const isChat = nav === 'chats';
+  const isKnownView = !isChat && _NAV_IDS.indexOf(s.view || nav) !== -1;
+  if (!isChat && !isKnownView) return false; /* entry ناشناخته → به vxBack بسپار */
+  const cur = navSnapshot();
+  if (cur.nav === nav && (cur.room || null) === (s.room || null) && (cur.view || null) === (s.view || null)) return true;
+  state._restoringNav = true;
+  try {
+    if (isChat && s.room) { openRoom(s.room, { fromHistory: true }); return true; }
+    if (isKnownView) {
+      if (viewHost && !viewHost.classList.contains('hidden')) { viewHost.innerHTML = ''; viewHost.dataset.view = ''; }
+      switchNav(nav);
+      return true;
+    }
+    /* برگشت به لیست چت / صفحهٔ اصلی */
+    if (viewHost && !viewHost.classList.contains('hidden')) { viewHost.innerHTML = ''; viewHost.dataset.view = ''; setMode('chats'); }
+    state.room = null;
+    state.nav = 'chats';
+    $('conversation').classList.remove('chat-open');
+    $('chat-list-column').classList.add('m-open');
+    showScrim(false);
+    buildChatList();
+    document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === 'chats'));
+    return true;
+  } finally { state._restoringNav = false; }
+}
+/* فقط لایه‌های رویی (منوی کناری، اطلاعات چت، پروفایل/صفحه‌های داخلی) را می‌بندد.
+   به چت دست نمی‌زند؛ بازگرداندن چت با restoreFromUrl انجام می‌شود. */
+function closeTopOverlay() {
+  const ri = document.querySelector('.ri-backdrop');
+  if (ri) {
+    ri.remove();
+    if (viewHost && !viewHost.classList.contains('hidden') && viewHost.querySelector('.roominfo-view')) { viewHost.innerHTML = ''; setMode('chats'); }
+    return true;
+  }
+  const ns = $('nav-sidebar');
+  if (isMobile() && ns && ns.classList.contains('m-open')) { ns.classList.remove('m-open'); showScrim(false); return true; }
+  if (viewHost && !viewHost.classList.contains('hidden')) {
+    const back = viewHost.querySelector('[data-act="back"], #view-back');
+    if (back) { back.click(); return true; }
+    viewHost.innerHTML = ''; viewHost.dataset.view = '';
+    setMode(state.room ? 'chats' : 'chats');
+    return true;
+  }
+  return false;
 }
 /* سطحبندی بازگشت: سیستم، منوی موبایل، پروفایل/اطلاعات، چت، nav، ریشه */
 function vxBack(allowExit) {
@@ -5257,6 +5549,8 @@ function vxBack(allowExit) {
 if (isCapacitor) {
   document.addEventListener('backbutton', (e) => {
     e.preventDefault();
+    /* اول به صفحهٔ قبلی برمی‌گردیم (چت/صفحهٔ قبلی)، بعد منطق سطحبندی قدیمی */
+    if (_vxStack.length) { const s = _vxStack.pop(); state._restoringNav = true; try { restoreNav(s); } finally { state._restoringNav = false; } return; }
     vxBack(false); /* در ریشه: بدون عمل (خروج با دکمهی خود اپ) */
   }, false);
   try {
@@ -5267,19 +5561,20 @@ if (isCapacitor) {
     }
   } catch (e) {}
 } else {
-  /* مرورگر (PWA): دکمهی فیزیکی برگشت = popstate. لایهها را میبندیم و اجازهی
-     خروج فقط با «دوبار پشتسرهم» داده میشود — تا برنامه به سادگی بسته نشود. */
-  let _exitTs = 0;
-  window.addEventListener('popstate', () => {
-    if (!isMobile()) return;
+  /* مرورگر (PWA): دکمهٔ برگشت مرورگر = popstate.
+     نشانی صفحه مرجع است: به چت قبلی برمی‌گردیم و همان چت از سرور تازه می‌شود،
+     و اگر صفحهٔ قبلی /app (لیست چت) بود، به لیست چت برمی‌گردیم. */
+  window.addEventListener('popstate', (e) => {
     if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return;
     if (_pinScreenOpen()) return;
-    if (vxBack(false)) { vxPush(); return; }
-    const now = Date.now();
-    if (now - _exitTs < 2200) return; /* دومی: اجازهی خروج */
-    _exitTs = now;
-    toast('برای بستن، دوباره دکمهی برگشت را بزنید');
-    vxPush();
+    const rid = urlRoom();
+    const sp = new URLSearchParams(location.search);
+    /* روی لیست چت: فقط لایهٔ رویی (منو/اطلاعات چت) بسته شود، نه خود چت */
+    if (!rid && !sp.get('view')) { if (closeTopOverlay()) return; }
+    if (restoreFromUrl(rid)) return;
+    if (restoreNav(e.state)) return;
+    if (closeTopOverlay()) return;
+    /* چیزی برای بازگرداندن نیست ⇒ اجازهٔ رفتن به صفحهٔ قبلی مرورگر */
   });
 }
 
