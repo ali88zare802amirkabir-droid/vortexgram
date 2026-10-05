@@ -1143,6 +1143,30 @@ function findMsg(roomId, id) {
 app.get('/api/react-config', (req, res) => {
   res.json({ reactions: REACTIONS });
 });
+/* ---------- پیکربندی نقشه (برای انتخاب موقعیت روی مپ) ----------
+   کاشی‌های پیش‌فرض بدون کلید و بدون CDN اضافه‌اند. اگر کلید نشان یا سرویس
+   دلخواهی دارید، با متغیرهای محیطی زیر جایگزین کنید:
+     VX_MAP_TILE_URL   الگوی کاشی، مثلاً نشان:  https://api.neshan.org/v1/map/{z}/{x}/{y}.png?api_key=KEY
+     VX_MAP_ATTRIB     متن نگهدارندهٔ نقشه که روی نقشه نمایش داده می‌شود
+     VX_TRAFFIC_URL    الگوی کاشی ترافیک (اختیاری؛ بدون تنظیم، لایهٔ ترافیک غیرفعال است)
+   فقط مقادیر https و الگوی {z}/{x}/{y} پذیرفته می‌شوند. */
+const MAP_ATTRIB_DEFAULT = '© OpenStreetMap';
+app.get('/api/map-config', (req, res) => {
+  const safeTemplate = (tpl) => {
+    const s = String(tpl || '').trim();
+    if (!s) return '';
+    if (!/^https:\/\//i.test(s)) return '';
+    if (!/\{z\}/.test(s) || !/\{x\}/.test(s) || !/\{y\}/.test(s)) return '';
+    return s;
+  };
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    tileUrl: safeTemplate(process.env.VX_MAP_TILE_URL),
+    tileAttrib: String(process.env.VX_MAP_ATTRIB || MAP_ATTRIB_DEFAULT).slice(0, 120),
+    trafficUrl: safeTemplate(process.env.VX_TRAFFIC_URL),
+    maxZoom: 19,
+  });
+});
 // قانون تک‌واکنش: هر کاربر فقط یک واکنش روی هر پیام می‌تواند داشته باشد.
 // این منطق single-thread است؛ هیچ دو درخواستی همزمان mutating نمی‌شوند (atomic).
 app.post('/api/reactions', auth, (req, res) => {
@@ -2216,15 +2240,27 @@ wss.on('connection', (ws, req) => {
         if (user.blocked && Array.isArray(user.blocked) && user.blocked.includes(other)) return wsSend(ws, { type: 'error', text: 'شما این کاربر را مسدود کرده‌اید' });
       }
       if (!canPost(roomId, username)) return wsSend(ws, { type: 'error', text: 'در کانال فقط مدیران می‌توانند پیام بفرستند' });
-      const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'voice', 'file', 'poll', 'checklist', 'album'].includes(data.kind) ? data.kind : 'text';
+      const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'voice', 'file', 'poll', 'checklist', 'album', 'location'].includes(data.kind) ? data.kind : 'text';
       const maxLen = (user.isPremium || user.isAdmin) ? MAX_MSG_LEN : 700;
 
       // اعتبارسنجی بار پیام بر اساس نوع
       let content = '';
-      let album = undefined, poll = undefined, checklist = undefined;
+      let album = undefined, poll = undefined, checklist = undefined, geo = undefined;
       if (kind === 'text') {
         content = String(data.content ?? '').slice(0, maxLen);
         if (!content.trim()) return;
+      } else if (kind === 'location') {
+        /* موقعیت مکانی: فقط عددِ واقعی در بازهٔ جغرافیایی پذیرفته می‌شود.
+           Number(null) و Number('') هر دو 0 می‌شوند، پس اول خودِ نوع بررسی می‌شود
+           تا مختصات خالی/نامعتبر به مرکز زمین تبدیل نشود. */
+        const rawLat = data.lat, rawLng = data.lng;
+        const numOk = (v) => (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+        if (!numOk(rawLat) || !numOk(rawLng)) return;
+        const lat = Number(rawLat), lng = Number(rawLng);
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+        const label = String(data.label ?? '').trim().slice(0, 160);
+        geo = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, label: label || null };
+        content = label || ('📍 ' + geo.lat + ', ' + geo.lng);
       } else if (kind === 'sticker') {
         const stk = typeof data.sticker === 'string' ? data.sticker.trim().slice(0, 300) : '';
         if (!stk || !/^(https?:\/\/[\w.-]+\.\w{2,}|\/uploads\/[\w.-]+)/.test(stk)) return;
@@ -2272,7 +2308,7 @@ wss.on('connection', (ws, req) => {
         name: typeof data.name === 'string' ? data.name.slice(0, 80) : undefined, size: typeof data.size === 'number' && data.size > 0 ? data.size : undefined, duration: typeof data.duration === 'number' && data.duration > 0 ? Math.min(3600, data.duration) : undefined, time: now,
         wave: Array.isArray(data.wave) ? data.wave.map((v) => Number(v)).filter((v) => Number.isFinite(v)).map((v) => Math.max(0, Math.min(1, v))).slice(0, 100) : undefined,
         fromAvatar: user.avatar || undefined, fromPremium: !!user.isPremium,
-        replyTo, album, poll, checklist,
+        replyTo, album, poll, checklist, geo,
         reactions: {}, silent: !!data.silent,
         fwdFrom: typeof data.fwdFrom === 'string' ? data.fwdFrom.slice(0, 40) : undefined,
       };

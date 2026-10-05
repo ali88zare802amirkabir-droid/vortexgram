@@ -700,6 +700,7 @@ function previewText(m) {
   if (m.kind === 'sticker') return 'استیکر';
   if (m.kind === 'poll') return '📊 نظرسنجی';
   if (m.kind === 'checklist') return '✅ چک‌لیست';
+  if (m.kind === 'location') return '📍 ' + ((m.geo && m.geo.label) || (m.content || 'موقعیت')).slice(0, 50);
   return (m.content || '').slice(0, 60);
 }
 function msgSenderName(m) {
@@ -810,11 +811,24 @@ function renderRoomHeader() {
   $('conv-name').style.cursor = 'pointer';
 }
 $('conv-info').onclick = () => { if (!state.room) return; openRoomInfo(state.room); };
-/* دکمهٔ برگشت داخل چت: در موبایل از history مرورگر استفاده می‌کند تا به
-   چت/صفحهٔ قبلی برگردد، نه فقط لیست چت. */
+/* دکمهٔ برگشت داخل چت (گوشهٔ بالای صفحهٔ چت): همیشه برمی‌گردد به صفحهٔ اصلی
+   لیست چت‌ها (/app) — نه به چت قبلی در history مرورگر. */
 $('conv-back').onclick = () => {
-  if (isMobile() && !isCapacitor) { history.back(); return; }
-  state.room = null; buildChatList(); setMode('chats'); if (isMobile()) { $('conversation').classList.remove('chat-open'); }
+  state._restoringNav = true;
+  try {
+    const vw = (viewHost && !viewHost.classList.contains('hidden')) ? viewHost.dataset.view : null;
+    state.room = null;
+    state.nav = 'chats';
+    if (viewHost && !viewHost.classList.contains('hidden')) { viewHost.innerHTML = ''; viewHost.dataset.view = ''; }
+    setMode('chats');
+    $('conversation').classList.remove('chat-open');
+    $('chat-list-column').classList.add('m-open');
+    showScrim(false); closeDrawers();
+    buildChatList();
+    document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === 'chats'));
+    /* نشانی صفحه هم به /app برگردد تا رفرش، همان لیست چت را باز کند */
+    try { history.replaceState({ vx: 1, nav: 'chats', room: null, view: vw || null }, '', location.pathname); } catch (e) {}
+  } finally { state._restoringNav = false; }
 };
 $('scrim').onclick = () => closeDrawers();
 $('conv-search').onclick = () => { const sb = $('conv-searchbox'); const wasHidden = sb.classList.contains('hidden'); sb.classList.toggle('hidden'); if (wasHidden) { $('conv-search-input').value = ''; $('conv-search-input').focus(); searchChatMessages(''); } else { searchChatMessages(''); } };
@@ -1068,6 +1082,7 @@ function bodyEl(m) {
   else if (m.kind === 'sticker') { const s = document.createElement('img'); s.className = 'sticker'; s.src = m.sticker || m.content; b.appendChild(s); }
   else if (m.kind === 'poll') { b.appendChild(pollEl(m)); }
   else if (m.kind === 'checklist') { b.appendChild(checklistEl(m)); }
+  else if (m.kind === 'location') { b.appendChild(window.VXMapLocationCard ? window.VXMapLocationCard(m) : document.createTextNode(m.content || '📍')); }
   else { b.innerHTML = formatText(m.content || ''); }
   if (m.edited || m.editedAt) { const t = document.createElement('span'); t.className = 'msg-edited'; t.textContent = ' (ویرایش شد)'; b.appendChild(t); }
   return b;
@@ -2705,13 +2720,25 @@ function sendAttachSelection() {
   items.forEach((item) => { sendFileMessage(item.file, item.file.name || 'file'); });
 }
 function handleLocationShare() {
+  /* انتخاب موقعیت روی نقشه (پنجرهٔ نقشه) به‌جای فرستادن مختصات خام */
+  if (window.VXMapOpenPicker) {
+    window.VXMapOpenPicker({
+      onPick: function (p) {
+        doSend({ kind: 'location', lat: p.lat, lng: p.lon, label: p.label || '' });
+        closeAttachPop();
+      },
+    });
+    closeAttachPop();
+    return;
+  }
+  /* اگر به هر دلیلی نقشه در دسترس نبود ⇒ موقعیت فعلی خودم */
   if (!navigator.geolocation) { toast('موقعیت‌یابی در این مرورگر پشتیبانی نمی‌شود'); return; }
   toast('در حال دریافت موقعیت...');
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const lat = pos.coords.latitude.toFixed(6);
       const lng = pos.coords.longitude.toFixed(6);
-      doSend({ kind: 'text', content: '📍 موقعیت من: ' + lat + ', ' + lng + '\nhttps://maps.google.com/?q=' + lat + ',' + lng });
+      doSend({ kind: 'location', lat: Number(lat), lng: Number(lng), label: 'موقعیت من' });
       closeAttachPop();
     },
     (err) => {
@@ -3704,6 +3731,13 @@ function openMsgCtx(m, anchor, pos) {
   /* گیرنده هم بتواند GIF فرستاده‌شده را در «GIFهای من» خودش ذخیره کند و بعداً بفرستد */
   if (m.kind === 'gif' && (m.src || m.url)) {
     mk('ذخیره در GIFهای من', 'bookmark', function() { saveReceivedGif(m.src || m.url); }, true);
+  }
+  /* موقعیت مکانی: باز کردن در نشان/گوگل‌مپ و شروع مسیریابی */
+  if (m.kind === 'location' && m.geo && window.VXMapOpenApps) {
+    const g = m.geo;
+    mk('باز کردن در نقشه', 'map-pin', function() { window.VXMapOpenApps(g.lat, g.lon, g.label || ''); }, true);
+    mk('شروع مسیریابی', 'navigation', function() { window.VXMapOpenApps(g.lat, g.lon, g.label || ''); }, true);
+    mk('رونوشت مختصات', 'clipboard', function() { copyText(g.lat + ', ' + g.lon); }, true);
   }
   if (m.from === state.me.username) mk('ویرایش', 'edit-3', function() { uPrompt('ویرایش پیام', m.content, 'متن جدید پیام').then(function(t) { if (t && state.ws) state.ws.send(JSON.stringify({ type: 'edit-message', roomId: state.room, id: m.id, content: t })); }); });
   if (m.from === state.me.username || (state.me && state.me.isAdmin)) mk('حذف', 'trash-2', function() { askDeleteScope().then(function(d) { if (d) sendDeleteMsg(m.id, d.forEveryone); }); });
@@ -5832,15 +5866,37 @@ function vxOverlayClose() {
 }
 /* لایهٔ روییِ تمام‌صفحه که باید با دکمهٔ برگشت بسته شود */
 function vxFullOverlay() {
-  return document.querySelector('.viewer, .modal-ov, .ve-pop, .modal-overlay');
+  for (const k of VX_FULL_OVERLAYS) {
+    const el = document.querySelector(k.sel);
+    if (!el) continue;
+    /* عنصر پنهان (hidden) باز نیست ⇒ نباید برگشت را مصرف کند */
+    if (el.classList && el.classList.contains('hidden')) continue;
+    if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') continue;
+    return el;
+  }
+  return null;
 }
 function vxCloseFullOverlay() {
   const ov = vxFullOverlay();
   if (!ov) return false;
-  if (typeof ov._vxClose === 'function') { try { ov._vxClose(); } catch (e) { ov.remove(); } }
+  const kind = VX_FULL_OVERLAYS.find((k) => ov.matches(k.sel));
+  /* اگر تابع بستنِ خودمان را دارد صدایش می‌زنیم (history هم درست می‌شود) */
+  if (kind && kind.close && typeof ov[kind.close] === 'function') { try { ov[kind.close](); } catch (e) { ov.remove(); } }
+  else if (typeof ov._vxClose === 'function') { try { ov._vxClose(); } catch (e) { ov.remove(); } }
   else ov.remove();
   return true;
 }
+/* کلاس‌های پوشش‌های تمام‌صفحه که دکمهٔ برگشت باید ببندد (نام کلاس + نام تابع بستن)
+   فقط لایه‌هایی که واقعاً در DOM ساخته می‌شوند؛ عناصر دائمیِ hidden
+   (مثل #attach-pop) نباید اینجا باشند وگرنه هر بارِ برگشت را می‌بلعند. */
+const VX_FULL_OVERLAYS = [
+  { sel: '.vxmp', close: 'close' },              /* انتخاب موقعیت روی نقشه */
+  { sel: '.vxmap-sheet-wrap', close: 'close' },  /* باز کردن موقعیت در اپ نقشه */
+  { sel: '.viewer', close: '_vxClose' },        /* نمایش‌گر تصویر/ویدیو */
+  { sel: '.modal-ov', close: '_vxClose' },      /* ادیتور عکس و … */
+  { sel: '.ve-pop', close: '_vxClose' },         /* ادیتور ویدیو و مبدل GIF */
+  { sel: '.modal-overlay', close: '_vxClose' },  /* مودال‌های عمومی */
+];
 /* وضعیت فعلی صفحه برای ذخیره در history: کدام nav، کدام room و کدام صفحه */
 function navSnapshot() {
   const v = viewHost && !viewHost.classList.contains('hidden') ? viewHost.dataset.view : null;
