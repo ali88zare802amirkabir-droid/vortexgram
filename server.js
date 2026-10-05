@@ -112,23 +112,31 @@ let saveTimer = null;
 
 /* ---------- شناسه عددی یکتا برای هر کاربر (UID) ---------- */
 /* موقع ساخت اکانت داده می‌شود و اکانت‌های قدیمی موقع بالا آمدن سرور
-   به‌صورت خودکار می‌گیرند. از ۱۰۰۰۰۱ شروع می‌شود تا با ایندکس اشتباه نشود. */
+   به‌صورت خودکار می‌گیرند.
+   عددها «رندوم» هستند و پشت‌سرهم نمی‌شوند: یک عدد ۶ رقمی تصادفی انتخاب
+   می‌شود و تا وقتی تکراری نباشد دوباره قرعه می‌اندازیم. بازه از ۱۰۰۰۰۱
+   شروع می‌شود تا ۱۰۰۰۰۰ (شناسهٔ رزروشدهٔ ربات) اشتباه نشود. */
+const UID_MIN = 100001;
+const UID_MAX = 999999;
 function nextUid() {
-  let n = Number(db.nextUid) || 100001;
   const used = new Set(db.users.map((u) => u.uid));
-  while (used.has(n)) n++;
-  db.nextUid = n + 1;
-  return n;
+  for (let i = 0; i < 8000; i++) {
+    const n = crypto.randomInt(UID_MIN, UID_MAX + 1);
+    if (!used.has(n)) return n;
+  }
+  /* حالت اضطراری: اگر بازه تقریباً پر شده باشه، خطی دنبال جای خالی می‌گردیم */
+  for (let n = UID_MIN; n <= UID_MAX; n++) if (!used.has(n)) return n;
+  throw new Error('UID space exhausted');
 }
 function backfillUids() {
   let changed = false;
   for (const u of db.users) {
-    if (typeof u.uid !== 'number' || !Number.isFinite(u.uid)) {
+    if (typeof u.uid !== 'number' || !Number.isFinite(u.uid) || u.uid < UID_MIN || u.uid > UID_MAX) {
       u.uid = nextUid();
       changed = true;
     }
   }
-  // یکتاسازی احتیاطی اگر دستی چیزی خراب شده باشد
+  // یکتاسازی احتیاطی اگر دستی چیزی خراب شده یا شناسه تکراری شده باشد
   const seen = new Set();
   for (const u of db.users) {
     if (seen.has(u.uid)) { u.uid = nextUid(); changed = true; }

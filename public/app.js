@@ -797,10 +797,11 @@ function roomUid(rid) {
   return uid;
 }
 function renderRoomHeader() {
-  const uid = roomUid(state.room);
+  roomUid(state.room); /* فقط برای کامل شدن نشانی صفحه (uid در URL می‌ماند) */
   const on = roomOnline(state.room);
   $('conv-name').textContent = roomTitle(state.room);
-  $('conv-sub').textContent = uid ? ('شناسه: ' + uid + (on ? ' • ' + on : '')) : on;
+  /* شناسهٔ عددی عمداً روی صفحه نمایش داده نمی‌شود؛ فقط در نشانی مرورگر است */
+  $('conv-sub').textContent = on || '';
   let avSrc = null;
   if (state.room && state.room.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === state.room); if (g && g.avatar) avSrc = g.avatar; }
   const av = avatarEl(avSrc ? { avatar: avSrc, displayName: roomTitle(state.room) } : { displayName: roomTitle(state.room) }, 'sm');
@@ -3100,6 +3101,38 @@ document.addEventListener('pointerdown', (e) => {
   if (e.target.closest('#messages .msg')) _tapPtr = { x: e.clientX, y: e.clientY, t: Date.now() };
 }, { passive: true });
 document.addEventListener('pointercancel', () => { _tapPtr = null; }, { passive: true });
+/* نگه‌داشتن انگشت روی عکس در چت ⇒ منوی پیام (پاسخ/فوروارد/ویرایش/دانلود) */
+let _imgLp = null;
+$('messages').addEventListener('pointerdown', (e) => {
+  const tg = e.target.closest('img');
+  if (!tg || tg.classList.contains('sticker')) return;
+  const msgEl = e.target.closest('.msg');
+  if (!msgEl || !msgEl.dataset.id) return;
+  const m = (state.rooms[state.room] || {}).messages.find((x) => x.id === msgEl.dataset.id);
+  if (!m) return;
+  const startX = e.clientX, startY = e.clientY;
+  _imgLp = { m: m, msgEl: msgEl, done: false };
+  const timer = setTimeout(() => {
+    if (!_imgLp) return;
+    _imgLp.done = true;
+    _imgLp = null;
+    window.__vxImgLp = true;
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (err) {} }
+    openMsgCtx(m, msgEl.querySelector('.bubble') || msgEl, { x: startX, y: startY });
+  }, 420);
+  const cancel = () => { clearTimeout(timer); if (_imgLp && _imgLp.m === m) _imgLp = null; };
+  const mv = (ev) => {
+    if (!_imgLp) return;
+    if (Math.abs(ev.clientX - startX) > 10 || Math.abs(ev.clientY - startY) > 10) { cancel(); document.removeEventListener('pointermove', mv); }
+  };
+  document.addEventListener('pointermove', mv, { passive: true });
+  document.addEventListener('pointerup', function up() { cancel(); document.removeEventListener('pointerup', up); }, { once: true });
+  document.addEventListener('pointercancel', function pc() { cancel(); document.removeEventListener('pointercancel', pc); }, { once: true });
+}, { passive: true });
+/* اگر نگه‌داشتن انگشت منو را باز کرد، کلیک بعدی روی عکس نباید نمایش‌گر را باز کند */
+document.addEventListener('click', (e) => {
+  if (window.__vxImgLp) { window.__vxImgLp = false; e.preventDefault(); e.stopPropagation(); }
+}, true);
 $('messages').addEventListener('click', (e) => {
   if (!isMobile() || _selectMode) return;
   if (e.target.closest('a, button, input, textarea, select, .reac, .reply-ref, .msg-actions, .emoji-pop, .react-pop, .msg-ctx, .msg-sheet, .ctx-scrim, video, audio')) return;
@@ -3659,6 +3692,11 @@ function openMsgCtx(m, anchor, pos) {
   });
   mk('رونوشت', 'clipboard', function() { copyText(m.content || ''); });
   mk('فوروارد', 'forward', function() { openForward(m.id); });
+  /* عکس‌ها: دانلود و نقاشی/ویرایش با همان ادیتور */
+  if (m.kind === 'image' && (m.src || m.url)) {
+    mk('دانلود عکس', 'download', function() { downloadMedia(m.src || m.url, (m.name || 'image.jpg')); });
+    mk('ویرایش و نقاشی', 'paintbrush', function() { editReceivedImage(m.src || m.url, m.name || 'image.jpg'); });
+  }
   if (m.kind === 'video') {
     mk('تبدیل به GIF', 'image', function() { openGifConverter(m.src || m.url || ''); }, !!m.src || !!m.url);
     mk('ویرایش ویدیو', 'edit-3', function() { openVideoEditor(m.src || m.url || ''); }, !!m.src || !!m.url);
@@ -4138,51 +4176,359 @@ function showAuth() {
 
 /* PROFILE */
 
+/* ---------- دانلود امن یک رسانهٔ دریافتی ---------- */
+async function downloadMedia(url, name) {
+  if (!url) return toast('فایلی برای دانلود نیست');
+  const nm = (name && name.indexOf('.') > 0 ? name : 'image.jpg');
+  try {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const b = await r.blob();
+    const obj = URL.createObjectURL(b);
+    const a = document.createElement('a');
+    a.href = obj; a.download = nm;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(obj); } catch (e) {} }, 2000);
+    toast('دانلود شد');
+  } catch (e) {
+    /* اگر گرفتن فایل ممکن نبود (مثلاً لینک بیرونی) همان لینک باز شود */
+    const a = document.createElement('a');
+    a.href = url; a.download = nm; a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+}
+/* ---------- نقاشی/ویرایش روی عکسی که از دیگری گرفته‌ایم ----------
+   فایل اول دانلود می‌شود، بعد همان ویرایشگر عکس باز می‌شود و نتیجه
+   به‌صورت پیام تازه فرستاده می‌شود (پیام اصلی دست‌نخورده می‌ماند). */
+async function editReceivedImage(url, name) {
+  if (!url) return toast('تصویری برای ویرایش نیست');
+  toast('در حال آماده‌سازی تصویر…');
+  let file;
+  try {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const b = await r.blob();
+    file = new File([b], (name || 'image.jpg').replace(/[\\/:*?"<>|]+/g, '_'), { type: b.type || 'image/jpeg' });
+  } catch (e) { return toast('دریافت تصویر ممکن نشد'); }
+  openPhotoEditor(file, (blob, nm) => {
+    if (blob === file) return;
+    sendFileMessage(blob, nm);
+  });
+}
+
+/* ═══════════════ پخش‌کنندهٔ اختصاصی ویدیو ═══════════════
+   رفتارها:
+     • نگه‌داشتن انگشت روی نیمهٔ چپ/راست ویدیو ⇒ رفتن به عقب/جلو
+     • در همان حالت، کشیدن انگشت به بالا/پایین ⇒ کم/زیاد شدن سرعت جست‌وجو
+     • نوار پیشرفت، زمان، سرعت پخش، صدا، تصویر‌در‌تصویر، چرخش،
+       تمام‌صفحه، دانلود، ویرایش و تبدیل به GIF                        */
+const VXP_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+function vxpFmt(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+}
+function openVideoPlayer(src, origUrl) {
+  const real = origUrl || src;
+  let name = 'video.mp4';
+  try { const p = decodeURIComponent(new URL(real, location.href).pathname.split('/').pop() || ''); if (p) name = p; } catch (e) {}
+  const v = document.createElement('div');
+  v.className = 'viewer vxp';
+  v.innerHTML =
+    '<div class="vxp-stage">'
+    +   '<video playsinline preload="metadata"></video>'
+    +   '<div class="vxp-top">'
+    +     '<button type="button" class="vxp-ib" data-a="close" title="بستن" aria-label="بستن">' + ic('x') + '</button>'
+    +     '<span class="vxp-name" title="' + esc(name) + '"></span>'
+    +     '<button type="button" class="vxp-ib" data-a="rot" title="چرخش ۹۰ درجه" aria-label="چرخش">' + ic('rotate-cw') + '</button>'
+    +   '</div>'
+    +   '<div class="vxp-hud" hidden>'
+    +     '<div class="vxp-hud-dir"></div>'
+    +     '<div class="vxp-hud-rate"></div>'
+    +     '<div class="vxp-hud-time"></div>'
+    +   '</div>'
+    +   '<button type="button" class="vxp-big" data-a="pp" title="پخش/توقف" aria-label="پخش یا توقف">' + ic('play') + '</button>'
+    +   '<div class="vxp-hint">نگه دارید: چپ = عقب، راست = جلو • بالا/پایین = تغییر سرعت</div>'
+    + '</div>'
+    + '<div class="vxp-bar">'
+    +   '<div class="vxp-line">'
+    +     '<button type="button" class="vxp-ib" data-a="pp2" title="پخش/توقف" aria-label="پخش یا توقف">' + ic('play') + '</button>'
+    +     '<span class="vxp-cur">0:00</span>'
+    +     '<div class="vxp-prog" role="slider" tabindex="0" aria-label="نوار پیشرفت"><div class="vxp-buf"></div><div class="vxp-fill"><i></i></div></div>'
+    +     '<span class="vxp-dur">0:00</span>'
+    +   '</div>'
+    +   '<div class="vxp-acts">'
+    +     '<button type="button" class="vxp-ib" data-a="b10" title="۱۰ ثانیه عقب" aria-label="ده ثانیه عقب">' + ic('rewind') + '</button>'
+    +     '<button type="button" class="vxp-ib" data-a="f10" title="۱۰ ثانیه جلو" aria-label="ده ثانیه جلو">' + ic('fast-forward') + '</button>'
+    +     '<button type="button" class="vxp-ib vxp-rate" data-a="rate" title="سرعت پخش">1x</button>'
+    +     '<button type="button" class="vxp-ib" data-a="mute" title="صدا" aria-label="صدا">' + ic('volume-2') + '</button>'
+    +     '<button type="button" class="vxp-ib" data-a="pip" title="تصویر در تصویر" aria-label="تصویر در تصویر">' + ic('picture-in-picture-2') + '</button>'
+    +     '<button type="button" class="vxp-ib" data-a="fs" title="تمام‌صفحه" aria-label="تمام‌صفحه">' + ic('maximize') + '</button>'
+    +     '<button type="button" class="vxp-ib" data-a="dl" title="دانلود" aria-label="دانلود">' + ic('download') + '</button>'
+    +     '<button type="button" class="vxp-ib" data-a="edit" title="ویرایش ویدیو" aria-label="ویرایش ویدیو">' + ic('edit-3') + '</button>'
+    +     '<button type="button" class="vxp-ib" data-a="gif" title="تبدیل به GIF" aria-label="تبدیل به GIF">' + ic('image') + '</button>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(v);
+  v.querySelector('.vxp-name').textContent = name;
+  const vd = v.querySelector('video');
+  vd.src = src;
+  applyIcons(v);
+  vxOverlayOpen();
+
+  const $ = (s) => v.querySelector(s);
+  const stage = $('.vxp-stage'), hud = $('.vxp-hud'), hudDir = $('.vxp-hud-dir');
+  const hudRate = $('.vxp-hud-rate'), hudTime = $('.vxp-hud-time');
+  const fill = $('.vxp-fill'), knob = fill.querySelector('i'), buf = $('.vxp-buf');
+  const prog = $('.vxp-prog'), curEl = $('.vxp-cur'), durEl = $('.vxp-dur');
+  const btnPP = $('[data-a="pp"]'), btnPP2 = $('[data-a="pp2"]'), btnMute = $('[data-a="mute"]');
+  const btnFs = $('[data-a="fs"]'), rateBtn = $('.vxp-rate');
+  let hintTimer = setTimeout(() => { const h = $('.vxp-hint'); if (h) h.remove(); }, 4200);
+
+  const dur = () => (isFinite(vd.duration) ? vd.duration : 0);
+  function setFill() {
+    const d = dur();
+    const p = d ? Math.max(0, Math.min(1, vd.currentTime / d)) : 0;
+    fill.style.width = (p * 100) + '%';
+    knob.style.insetInlineStart = (p * 100) + '%';
+    curEl.textContent = vxpFmt(vd.currentTime);
+    durEl.textContent = vxpFmt(d);
+  }
+  function paintPP() {
+    const icn = vd.paused ? 'play' : 'pause';
+    btnPP.innerHTML = ic(icn); btnPP2.innerHTML = ic(icn);
+    applyIcons(btnPP); applyIcons(btnPP2);
+  }
+  function setRate(r) {
+    vd.playbackRate = r;
+    rateBtn.textContent = (r % 1 === 0 ? r : r.toFixed(2).replace(/0$/, '')) + 'x';
+  }
+  function toggle() { if (vd.paused) { vd.play().catch(() => {}); } else { vd.pause(); } }
+  function seekTo(t) { try { vd.currentTime = Math.max(0, Math.min(dur() || 0, t)); } catch (e) {} setFill(); }
+  vd.addEventListener('timeupdate', setFill);
+  vd.addEventListener('progress', () => {
+    try { if (vd.buffered.length) buf.style.width = (vd.buffered.end(vd.buffered.length - 1) / (dur() || 1) * 100) + '%'; } catch (e) {}
+  });
+  vd.addEventListener('loadedmetadata', setFill);
+  vd.addEventListener('play', paintPP);
+  vd.addEventListener('pause', paintPP);
+  vd.addEventListener('volumechange', () => { btnMute.innerHTML = ic(vd.muted || vd.volume === 0 ? 'volume-x' : 'volume-2'); applyIcons(btnMute); });
+  vd.addEventListener('error', () => { toast('پخش این ویدیو ممکن نیست'); });
+
+  btnPP.onclick = toggle; btnPP2.onclick = toggle;
+  $('[data-a="b10"]').onclick = () => seekTo(vd.currentTime - 10);
+  $('[data-a="f10"]').onclick = () => seekTo(vd.currentTime + 10);
+  btnMute.onclick = () => { vd.muted = !vd.muted; if (!vd.muted && vd.volume === 0) vd.volume = 1; };
+  $('[data-a="pip"]').onclick = () => {
+    try {
+      if (document.pictureInPictureElement) document.exitPictureInPicture();
+      else if (vd.requestPictureInPicture) vd.requestPictureInPicture().catch(() => toast('تصویر در تصویر در این مرورگر ممکن نیست'));
+      else toast('تصویر در تصویر پشتیبانی نمی‌شود');
+    } catch (e) { toast('تصویر در تصویر پشتیبانی نمی‌شود'); }
+  };
+  $('[data-a="rot"]').onclick = () => {
+    const deg = (((v.dataset.deg | 0) + 90) % 360);
+    v.dataset.deg = deg;
+    vd.style.transform = 'rotate(' + deg + 'deg)';
+    v.classList.toggle('vxp-rot90', deg === 90 || deg === 270);
+  };
+  const fsIcon = () => { const full = document.fullscreenElement === v || document.fullscreenElement === vd; btnFs.innerHTML = ic(full ? 'minimize' : 'maximize'); applyIcons(btnFs); };
+  btnFs.onclick = () => {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (v.requestFullscreen) v.requestFullscreen().catch(() => toast('تمام‌صفحه ممکن نیست'));
+      else if (vd.webkitEnterFullscreen) vd.webkitEnterFullscreen();
+    } catch (e) { toast('تمام‌صفحه ممکن نیست'); }
+  };
+  document.addEventListener('fullscreenchange', fsIcon);
+  $('[data-a="dl"]').onclick = () => { const a = document.createElement('a'); a.href = real; a.download = name; a.click(); };
+  $('[data-a="edit"]').onclick = () => { close(); openVideoEditor(real); };
+  $('[data-a="gif"]').onclick = () => { close(); openGifConverter(real); };
+
+  /* ---------- منوی سرعت ---------- */
+  let pop = null;
+  function closePop() { if (pop) { pop.remove(); pop = null; } }
+  rateBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (pop) { closePop(); return; }
+    pop = document.createElement('div');
+    pop.className = 'vxp-pop';
+    VXP_RATES.forEach((r) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'vxp-pop-item' + (vd.playbackRate === r ? ' active' : '');
+      b.innerHTML = ic(r < 1 ? 'rewind' : r > 1 ? 'fast-forward' : 'play') + '<span>' + r + 'x</span>';
+      b.onclick = () => { setRate(r); closePop(); };
+      pop.appendChild(b);
+    });
+    v.appendChild(pop);
+    const r = rateBtn.getBoundingClientRect();
+    pop.style.bottom = (v.clientHeight - r.top + 8) + 'px';
+    pop.style.insetInlineStart = '8px';
+    const ph = pop.offsetHeight;
+    if (r.top - ph - 8 < 8) { pop.style.bottom = ''; pop.style.top = (r.bottom + 8) + 'px'; }
+  };
+
+  /* ---------- نوار پیشرفت: کلیک و کشیدن ---------- */
+  const progSeek = (e) => {
+    const r = prog.getBoundingClientRect();
+    const p = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    if (dur()) seekTo(p * dur());
+  };
+  let dragging = false;
+  prog.addEventListener('pointerdown', (e) => { dragging = true; prog.setPointerCapture(e.pointerId); progSeek(e); });
+  prog.addEventListener('pointermove', (e) => { if (dragging) progSeek(e); });
+  const endDrag = () => { dragging = false; };
+  prog.addEventListener('pointerup', endDrag);
+  prog.addEventListener('pointercancel', endDrag);
+
+  /* ---------- نگه‌داشتن چپ/راست = جست‌وجو؛ بالا/پایین = سرعت ---------- */
+  const HOLD_MS = 180;
+  let hold = null, scrub = null, scrubRaf = 0, wasPlaying = false, tapMoved = false;
+  const zoneOf = (x) => (x < stage.getBoundingClientRect().width / 2 ? -1 : 1);
+  function onDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.closest('button, .vxp-prog, .vxp-pop')) return;
+    closePop();
+    const dir = zoneOf(e.clientX);
+    tapMoved = false;
+    hold = setTimeout(() => {
+      hold = null;
+      startScrub(dir, e.clientY);
+    }, HOLD_MS);
+    const move = (ev) => {
+      if (scrub) { updateScrub(ev.clientY); return; }
+      if (hold && (Math.abs(ev.clientX - e.clientX) > 8 || Math.abs(ev.clientY - e.clientY) > 8)) { clearTimeout(hold); hold = null; }
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', up);
+      if (hold) { clearTimeout(hold); hold = null; if (!tapMoved) toggle(); }
+      if (scrub) endScrub();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
+  }
+  function startScrub(dir, y0) {
+    scrub = { dir: dir, y0: y0, rate: 1, from: vd.currentTime, t: 0 };
+    wasPlaying = !vd.paused;
+    vd.pause();
+    v.classList.add('vxp-scrub');
+    hud.hidden = false;
+    hudRate.textContent = '1x';
+    paintHud();
+    const step = (now) => {
+      if (!scrub) return;
+      const dt = Math.min(0.05, (now - (scrub.last || now)) / 1000);
+      scrub.last = now;
+      scrub.t += dir * scrub.rate * dt;
+      seekTo(scrub.from + scrub.t);
+      paintHud();
+      scrubRaf = requestAnimationFrame(step);
+    };
+    scrubRaf = requestAnimationFrame(step);
+  }
+  function updateScrub(y) {
+    if (!scrub) return;
+    /* بالا ⇒ سرعت بیشتر، پایین ⇒ کمتر (پله‌ای و نرم) */
+    const dy = scrub.y0 - y;
+    const steps = Math.round(dy / 26);
+    const idx = Math.max(-4, Math.min(8, steps));
+    scrub.rate = Math.pow(1.6, idx);
+    paintHud();
+  }
+  function paintHud() {
+    if (!scrub) return;
+    const back = scrub.t < 0;
+    hudDir.innerHTML = ic(scrub.dir < 0 ? 'rewind' : 'fast-forward')
+      + '<span>' + (scrub.dir < 0 ? 'عقب' : 'جلو') + '</span>'
+      + (scrub.rate >= 1.001 ? ic('chevrons-up') : ic('chevrons-down'));
+    hudRate.textContent = (scrub.rate >= 10 ? scrub.rate.toFixed(0) : scrub.rate.toFixed(1)) + 'x';
+    const d = dur();
+    hudTime.textContent = vxpFmt(Math.max(0, Math.min(d || 0, scrub.from + scrub.t))) + ' / ' + vxpFmt(d);
+    hud.classList.toggle('back', back);
+  }
+  function endScrub() {
+    if (scrubRaf) cancelAnimationFrame(scrubRaf);
+    scrubRaf = 0; scrub = null;
+    v.classList.remove('vxp-scrub');
+    hud.hidden = true;
+    if (wasPlaying) vd.play().catch(() => {});
+  }
+  stage.addEventListener('pointerdown', onDown);
+  stage.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  /* ---------- کیبورد ---------- */
+  const onKey = (e) => {
+    if (!document.body.contains(v)) { document.removeEventListener('keydown', onKey); return; }
+    const k = e.key;
+    if (k === ' ' || k === 'k' || k === 'K') { toggle(); e.preventDefault(); }
+    else if (k === 'ArrowRight') { seekTo(vd.currentTime + 5); e.preventDefault(); }
+    else if (k === 'ArrowLeft') { seekTo(vd.currentTime - 5); e.preventDefault(); }
+    else if (k === 'ArrowUp') { vd.muted = false; vd.volume = Math.min(1, vd.volume + 0.1); e.preventDefault(); }
+    else if (k === 'ArrowDown') { vd.volume = Math.max(0, vd.volume - 0.1); if (vd.volume === 0) vd.muted = true; e.preventDefault(); }
+    else if (k === 'm' || k === 'M') { vd.muted = !vd.muted; }
+    else if (k === 'f' || k === 'F') { btnFs.click(); }
+    else if (k === 'j' || k === 'J') { seekTo(vd.currentTime - 10); }
+    else if (k === 'l' || k === 'L') { seekTo(vd.currentTime + 10); }
+  };
+  document.addEventListener('keydown', onKey);
+
+  /* ---------- بستن ---------- */
+  let closed = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    clearTimeout(hintTimer);
+    if (scrubRaf) cancelAnimationFrame(scrubRaf);
+    closePop();
+    try { vd.pause(); } catch (e) {}
+    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('fullscreenchange', fsIcon);
+    if (document.fullscreenElement === v) { try { document.exitFullscreen(); } catch (e) {} }
+    v.remove();
+    vxOverlayClose();
+  }
+  v._vxClose = close;
+  $('[data-a="close"]').onclick = close;
+  v.onclick = (e) => { if (e.target === v || e.target === stage) toggle(); };
+  setRate(1);
+  setFill();
+  paintPP();
+  vd.play().catch(() => {});
+  return v;
+}
+
 /* VIEWER — custom, swipe up/down to dismiss, uses cached blob if available */
 function openViewer(src, kind, origUrl) {
+  if (kind === 'video') return openVideoPlayer(src, origUrl);
   const v = document.createElement('div'); v.className = 'viewer';
   const useSrc = src;
   const escSrc = esc(useSrc);
-  // try to use origUrl for display; src may be blob
-  if(kind==='video'){
-    v.innerHTML = '<div class="vxv-wrap"><video src="'+escSrc+'" playsinline></video><div class="vxv-ctrl"><button class="vxv-btn" data-a="play">'+ic('play')+'</button><div class="vxv-prog"><div class="vxv-fill"></div></div><span class="vxv-time">0:00 / 0:00</span><button class="vxv-btn" data-a="fs">'+ic('maximize')+'</button><button class="vxv-btn" data-a="dl">'+ic('download')+'</button><button class="vxv-btn" data-a="edit" title="ویرایش ویدیو">'+ic('edit-3')+'</button><button class="vxv-btn" data-a="gif" title="تبدیل به GIF">'+ic('image')+'</button><button class="vxv-btn" data-a="close">'+ic('x')+'</button></div></div>';
-  } else {
-    v.innerHTML = '<img src="'+escSrc+'" draggable="false"><div class="v-close">'+ic('x')+'</div>';
-  }
+  v.innerHTML = '<img src="' + escSrc + '" draggable="false"><div class="v-close">' + ic('x') + '</div>';
   document.body.appendChild(v); luc();
-  // video custom controls
-  if(kind==='video'){
-    const vd=v.querySelector('video'), btn=v.querySelector('[data-a="play"]'), fill=v.querySelector('.vxv-fill'), tm=v.querySelector('.vxv-time');
-    const fmt=s=>{ s=Math.floor(s||0); return Math.floor(s/60)+":"+String(s%60).padStart(2,'0'); };
-    const upd=()=>{ if(vd.duration) { fill.style.width=Math.round(vd.currentTime/vd.duration*100)+"%"; tm.textContent=fmt(vd.currentTime)+" / "+fmt(vd.duration); } };
-    vd.addEventListener('timeupdate',upd); vd.addEventListener('loadedmetadata',upd);
-    btn.onclick=()=>{ if(vd.paused) vd.play(); else vd.pause(); };
-    vd.addEventListener('play',()=>{ btn.innerHTML=ic('pause'); luc(); }); vd.addEventListener('pause',()=>{ btn.innerHTML=ic('play'); luc(); });
-    v.querySelector('[data-a="fs"]').onclick=()=>{ if(vd.requestFullscreen) vd.requestFullscreen(); };
-    v.querySelector('[data-a="dl"]').onclick=()=>{ const a=document.createElement('a'); a.href=useSrc; a.download='video'; a.click(); };
-    v.querySelector('[data-a="edit"]').onclick=()=>{ v.remove(); openVideoEditor(origUrl || useSrc); };
-    v.querySelector('[data-a="gif"]').onclick=()=>{ v.remove(); openGifConverter(origUrl || useSrc); };
-    v.querySelector('[data-a="close"]').onclick=()=>v.remove();
-    v.querySelector('.vxv-prog').onclick=(e)=>{ const r=e.currentTarget.getBoundingClientRect(); const p=(e.clientX-r.left)/r.width; if(vd.duration) vd.currentTime=p*vd.duration; };
-    vd.play().catch(()=>{});
-  } else {
-    v.querySelector('.v-close').onclick=()=>v.remove();
-  }
-  v.onclick=(e)=>{ if(e.target===v) v.remove(); };
+  applyIcons(v);
+  vxOverlayOpen();
+  let closed = false;
+  const closeImg = () => { if (closed) return; closed = true; cleanup(); v.remove(); vxOverlayClose(); };
+  v._vxClose = closeImg;
+  v.querySelector('.v-close').onclick = closeImg;
   // swipe up/down to dismiss
-  let sy=0, dy=0, dragging=false;
-  const el = kind==='video' ? v.querySelector('.vxv-wrap') : v.querySelector('img');
-  const onDown=(e)=>{ dragging=true; sy=(e.touches?e.touches[0].clientY:e.clientY); v.style.transition='none'; };
-  const onMove=(e)=>{ if(!dragging) return; const y=(e.touches?e.touches[0].clientY:e.clientY); dy=y-sy; if(el){ el.style.transform='translateY('+dy+'px) scale('+(1-Math.min(0.2,Math.abs(dy)/600))+')'; v.style.background='rgba(0,0,0,'+(0.9-Math.min(0.5,Math.abs(dy)/400))+')'; } };
-  const onUp=()=>{ if(!dragging) return; dragging=false; v.style.transition=''; if(Math.abs(dy)>90) v.remove(); else { if(el) el.style.transform=''; v.style.background=''; } dy=0; };
-  v.addEventListener('touchstart',onDown,{passive:true}); v.addEventListener('touchmove',onMove,{passive:true}); v.addEventListener('touchend',onUp);
-  v.addEventListener('mousedown',onDown); window.addEventListener('mousemove',onMove); window.addEventListener('mouseup',onUp);
+  let sy = 0, dy = 0, dragging = false;
+  const el = v.querySelector('img');
+  const onDown = (e) => { dragging = true; sy = (e.touches ? e.touches[0].clientY : e.clientY); v.style.transition = 'none'; };
+  const onMove = (e) => { if (!dragging) return; const y = (e.touches ? e.touches[0].clientY : e.clientY); dy = y - sy; if (el) { el.style.transform = 'translateY(' + dy + 'px) scale(' + (1 - Math.min(0.2, Math.abs(dy) / 600)) + ')'; v.style.background = 'rgba(0,0,0,' + (0.9 - Math.min(0.5, Math.abs(dy) / 400)) + ')'; } };
+  const onUp = () => { if (!dragging) return; dragging = false; v.style.transition = ''; if (Math.abs(dy) > 90) closeImg(); else { if (el) el.style.transform = ''; v.style.background = ''; } dy = 0; };
+  v.addEventListener('touchstart', onDown, { passive: true }); v.addEventListener('touchmove', onMove, { passive: true }); v.addEventListener('touchend', onUp);
+  v.addEventListener('mousedown', onDown); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
   // cleanup on remove
-  const cleanup=()=>{ window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); document.removeEventListener('keydown',escH); };
+  const cleanup = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); document.removeEventListener('keydown', escH); };
   // esc close
-  const escH=(e)=>{ if(e.key==='Escape'){ v.remove(); cleanup(); } }; document.addEventListener('keydown',escH);
-  // observe removal for other close paths (close btn, click overlay, fs)
-  const mo=new MutationObserver(()=>{ if(!document.body.contains(v)){ cleanup(); mo.disconnect(); }}); mo.observe(document.body,{childList:true,subtree:true});
+  const escH = (e) => { if (e.key === 'Escape') closeImg(); };
+  document.addEventListener('keydown', escH);
+  return v;
 }
 
 /* IN-APP DIALOGS (موبایل: بدون prompt/confirm مرورگر که روی iOS باز نمی‌شود) */
@@ -5468,6 +5814,33 @@ function vxPush(snap) {
     else syncUrl(s.room || null, { view: s.view || null });
   } catch (e) {}
 }
+/* ---------- لایه‌های تمام‌صفحه (نمایش‌گر تصویر/ویدیو و ادیتورها) ----------
+   هر لایه یک entry در history می‌گیرد تا دکمهٔ برگشت (مرورگر یا اندروید)
+   اول همان لایه را ببندد و بعد به چت/صفحهٔ قبلی برگردد. */
+function vxOverlayOpen() {
+  if (state._restoringNav) return;
+  if (isCapacitor) { _vxStack.push({ vx: 1, overlay: 1, room: state.room || null, nav: state.nav || 'chats' }); return; }
+  try { history.pushState({ vx: 1, overlay: 1, room: state.room || null, nav: state.nav || 'chats' }, '', location.href); } catch (e) {}
+}
+function vxOverlayClose() {
+  /* entry لایه را با وضعیت واقعی صفحه جایگزین می‌کنیم تا یک Back اضافه لازم نشود */
+  try {
+    if (isCapacitor) { if (_vxStack.length) _vxStack.pop(); return; }
+    const vw = (viewHost && !viewHost.classList.contains('hidden')) ? viewHost.dataset.view : null;
+    history.replaceState({ vx: 1, nav: state.nav || 'chats', room: state.room || null, view: vw || null }, '', location.href);
+  } catch (e) {}
+}
+/* لایهٔ روییِ تمام‌صفحه که باید با دکمهٔ برگشت بسته شود */
+function vxFullOverlay() {
+  return document.querySelector('.viewer, .modal-ov, .ve-pop, .modal-overlay');
+}
+function vxCloseFullOverlay() {
+  const ov = vxFullOverlay();
+  if (!ov) return false;
+  if (typeof ov._vxClose === 'function') { try { ov._vxClose(); } catch (e) { ov.remove(); } }
+  else ov.remove();
+  return true;
+}
 /* وضعیت فعلی صفحه برای ذخیره در history: کدام nav، کدام room و کدام صفحه */
 function navSnapshot() {
   const v = viewHost && !viewHost.classList.contains('hidden') ? viewHost.dataset.view : null;
@@ -5508,6 +5881,8 @@ function restoreNav(s) {
 /* فقط لایه‌های رویی (منوی کناری، اطلاعات چت، پروفایل/صفحه‌های داخلی) را می‌بندد.
    به چت دست نمی‌زند؛ بازگرداندن چت با restoreFromUrl انجام می‌شود. */
 function closeTopOverlay() {
+  /* اول نمایش‌گر تصویر/ویدیو و ادیتورها (لایهٔ تمام‌صفحه) */
+  if (vxCloseFullOverlay()) return true;
   const ri = document.querySelector('.ri-backdrop');
   if (ri) {
     ri.remove();
@@ -5529,6 +5904,7 @@ function closeTopOverlay() {
 function vxBack(allowExit) {
   if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return false;
   if (_pinScreenOpen() && $('app').classList.contains('hidden')) return true;
+  if (vxCloseFullOverlay()) return true;      /* نمایش‌گر تصویر/ویدیو و ادیتورها */
   const ri = document.querySelector('.ri-backdrop');
   if (ri) { ri.remove();
     if (viewHost && !viewHost.classList.contains('hidden') && viewHost.querySelector('.roominfo-view')) { viewHost.innerHTML = ''; setMode('chats'); } return true; }
@@ -5567,6 +5943,8 @@ if (isCapacitor) {
   window.addEventListener('popstate', (e) => {
     if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return;
     if (_pinScreenOpen()) return;
+    /* لایهٔ تمام‌صفحه (نمایش‌گر/ادیتور) با یک Back بسته می‌شود و URL دست‌نخورده می‌ماند */
+    if (vxCloseFullOverlay()) return;
     const rid = urlRoom();
     const sp = new URLSearchParams(location.search);
     /* روی لیست چت: فقط لایهٔ رویی (منو/اطلاعات چت) بسته شود، نه خود چت */
@@ -6035,8 +6413,13 @@ function veOpenModal(title) {
     + '<div class="ve-foot"></div>'
     + '</div>';
   document.body.appendChild(pop);
-  pop.querySelector('[data-a="close"]').onclick = () => pop.remove();
-  pop.addEventListener('mousedown', (e) => { if (e.target === pop) pop.remove(); });
+  applyIcons(pop);
+  /* دکمهٔ برگشت گوشی/مرورگر هم این پنجره را می‌بندد */
+  const kill = () => { pop.remove(); vxOverlayClose(); };
+  pop._vxClose = kill;
+  pop.querySelector('[data-a="close"]').onclick = kill;
+  pop.addEventListener('mousedown', (e) => { if (e.target === pop) kill(); });
+  vxOverlayOpen();
   return pop;
 }
 function veRange2(min, max, val, label) {

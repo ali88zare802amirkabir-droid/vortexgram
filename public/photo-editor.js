@@ -67,13 +67,13 @@ function openPhotoEditor(file, onDone, opts = {}) {
     const undo = [];
 
     const m = document.createElement('div');
-    m.className = 'modal-ov';
-    m.innerHTML = '<div class="modal pe-modal">'
-      + '<h3 class="modal-title">' + ic('image') + ' ویرایش عکس</h3>'
-      /* نوار حالت: همیشه دیده می‌شود، نه داخل منوی کشویی */
-      + '<div class="pe-modes">'
-      +   '<button type="button" class="pe-mode" data-m="draw">' + ic('paintbrush') + ' نقاشی و سانسور</button>'
-      +   '<button type="button" class="pe-mode" data-m="crop">' + ic('crop') + ' برش عکس</button>'
+    m.className = 'modal-ov pe-ov';
+    m.innerHTML = '<div class="pe-modal">'
+      /* نوار بالا فقط بستن + عنوان کوچک؛ بدون منو و بدون دکمه‌های اضافه */
+      + '<div class="pe-top">'
+      +   '<button type="button" class="pe-ib" id="pe-cancel" title="بستن" aria-label="بستن">' + ic('x') + '</button>'
+      +   '<span class="pe-top-ttl">' + ic('image') + ' ویرایش عکس</span>'
+      +   '<button type="button" class="pe-ib" id="pe-reset" title="برگشت به عکس اصلی" aria-label="بازنشانی">' + ic('rotate-ccw') + '</button>'
       + '</div>'
       + '<div class="pe-stage" id="pe-stage">'
       +   '<div class="pe-wrap" id="pe-wrap">'
@@ -81,24 +81,37 @@ function openPhotoEditor(file, onDone, opts = {}) {
       +     '<div class="pe-crop" id="pe-crop"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div>'
       +   '</div>'
       + '</div>'
-      /* ابزارهای نقاشی */
-      + '<div class="pe-tools" id="pe-tools"></div>'
-      + '<div class="pe-colors" id="pe-colors"></div>'
-      + '<div class="pe-slider-row">'
-      +   '<span class="pe-lbl">اندازهٔ قلم</span>'
-      +   '<input type="range" id="pe-size" min="6" max="140" value="' + size + '">'
-      +   '<span class="pe-val" id="pe-size-val"></span>'
+      /* نوار پایین: فقط دو گروه ابزار (قلم و سانسور) و (اندازه و برش) + واگرد + ارسال */
+      + '<div class="pe-bar">'
+      +   '<button type="button" class="pe-group" id="pe-g-draw" data-g="draw">' + ic('paintbrush') + '<span>قلم و سانسور</span></button>'
+      +   '<button type="button" class="pe-group" id="pe-g-crop" data-g="crop">' + ic('crop') + '<span>اندازه و برش</span></button>'
+      +   '<button type="button" class="pe-ib" id="pe-undo" title="واگرد" aria-label="واگرد">' + ic('undo-2') + '</button>'
+      +   '<button type="button" class="pe-ib pe-send" id="pe-ok" title="ارسال" aria-label="ارسال">' + ic('check') + '</button>'
+      + '</div>'
+      /* پنل شناور «قلم و سانسور»: ابزارها + رنگ + اندازه */
+      + '<div class="pe-panel" id="pe-panel" hidden>'
+      +   '<div class="pe-tools" id="pe-tools"></div>'
+      +   '<div class="pe-colors" id="pe-colors"></div>'
+      +   '<div class="pe-slider-row">'
+      +     '<span class="pe-lbl">' + ic('sliders-horizontal') + ' اندازه</span>'
+      +     '<input type="range" id="pe-size" min="6" max="140" value="' + size + '">'
+      +     '<span class="pe-val" id="pe-size-val"></span>'
+      +   '</div>'
+      + '</div>'
+      /* پنل شناور «اندازه و برش»: نسبت‌ها + بزرگ‌نمایی خروجی */
+      + '<div class="pe-panel" id="pe-panel-crop" hidden>'
+      +   '<div class="pe-ratios" id="pe-ratios"></div>'
+      +   '<div class="pe-slider-row">'
+      +     '<span class="pe-lbl">' + ic("zoom-in") + ' بزرگ‌نمایی</span>'
+      +     '<input type="range" id="pe-zoom" min="100" max="300" step="5" value="100">'
+      +     '<span class="pe-val" id="pe-zoom-val">۱۰۰٪</span>'
+      +   '</div>'
       + '</div>'
       + '<div class="pe-status" id="pe-status"></div>'
-      + '<div class="modal-actions">'
-      +   '<button class="btn ghost" id="pe-cancel">' + ic('x') + ' انصراف</button>'
-      +   '<button class="btn ghost" id="pe-undo">' + ic('undo-2') + ' واگرد</button>'
-      +   '<button class="btn ghost" id="pe-reset">' + ic('rotate-ccw') + ' بازنشانی</button>'
-      +   '<button class="btn primary" id="pe-ok">' + ic('check') + ' ارسال</button>'
-      + '</div>'
       + '</div>';
     document.body.appendChild(m);
     applyIcons(m);
+    vxOverlayOpen();
 
     const wrap = m.querySelector('#pe-wrap');
     const cv = m.querySelector('#pe-canvas');
@@ -143,21 +156,60 @@ function openPhotoEditor(file, onDone, opts = {}) {
       ctx.restore();
     }
 
-    /* ---------- نوار حالت ---------- */
-    const modeBtns = [...m.querySelectorAll('.pe-mode')];
+    /* ---------- دو گروه ابزار: «قلم و سانسور» و «اندازه و برش» ---------- */
+    const groupBtns = [...m.querySelectorAll('.pe-group')];
+    const panelDraw = m.querySelector('#pe-panel');
+    const panelCrop = m.querySelector('#pe-panel-crop');
     function setMode(nm) {
       mode = nm;
-      modeBtns.forEach((b) => b.classList.toggle('active', b.dataset.m === nm));
+      groupBtns.forEach((b) => b.classList.toggle('active', b.dataset.g === nm));
       cropEl.classList.toggle('on', nm === 'crop');
-      m.querySelector('#pe-tools').style.opacity = nm === 'crop' ? '.4' : '1';
-      m.querySelector('#pe-tools').style.pointerEvents = nm === 'crop' ? 'none' : '';
-      m.querySelector('#pe-colors').style.opacity = nm === 'crop' ? '.4' : '1';
-      cv.style.cursor = nm === 'crop' ? 'crosshair' : 'crosshair';
+      panelDraw.hidden = nm !== 'draw';
+      panelCrop.hidden = nm !== 'crop';
+      cv.style.cursor = 'crosshair';
       if (nm === 'crop') say('روی عکس بکشید تا ناحیهٔ برش مشخص شود؛ گوشه‌ها را برای تغییر اندازه بکشید');
       else say('');
       paint();
     }
-    modeBtns.forEach((b) => { b.onclick = () => setMode(b.dataset.m); });
+    groupBtns.forEach((b) => { b.onclick = () => setMode(b.dataset.g); });
+
+    /* نسبت‌های آمادهٔ برش (نگه‌داشتن = نسبت دلخواه) */
+    const RATIOS = [
+      { k: 'free', label: 'آزاد', ratio: 0 },
+      { k: '1', label: '۱:۱', ratio: 1 },
+      { k: '4', label: '۴:۵', ratio: 4 / 5 },
+      { k: '16', label: '۱۶:۹', ratio: 16 / 9 },
+      { k: '9', label: '۹:۱۶', ratio: 9 / 16 },
+    ];
+    let ratio = 0;
+    const ratiosEl = m.querySelector('#pe-ratios');
+    RATIOS.forEach((r) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pe-ratio' + (r.k === 'free' ? ' active' : '');
+      b.textContent = r.label;
+      b.onclick = () => {
+        ratio = r.ratio;
+        ratiosEl.querySelectorAll('.pe-ratio').forEach((x) => x.classList.toggle('active', x === b));
+        /* نسبت تازه را روی مرکز ناحیهٔ فعلی اعمال کن */
+        if (ratio) {
+          const cur = curRect();
+          const cx = (cur.x1 + cur.x2) / 2, cy = (cur.y1 + cur.y2) / 2;
+          let w = cur.x2 - cur.x1, h = cur.y2 - cur.y1;
+          /* ناحیه را داخل تصویر نگه دار */
+          let nw = w, nh = w / ratio;
+          if (nh > h) { nh = h; nw = h * ratio; }
+          nw = Math.min(nw, 1); nh = Math.min(nh, 1);
+          const x1 = Math.max(0, Math.min(1 - nw, cx - nw / 2));
+          const y1 = Math.max(0, Math.min(1 - nh, cy - nh / 2));
+          applyRect({ x1: x1, y1: y1, x2: x1 + nw, y2: y1 + nh });
+        }
+        say(ratio ? 'نسبت برش: ' + r.label : 'برش آزاد');
+      };
+      ratiosEl.appendChild(b);
+    });
+    const zoomIn = m.querySelector('#pe-zoom'), zoomVal = m.querySelector('#pe-zoom-val');
+    zoomIn.addEventListener('input', () => { zoomVal.textContent = Number(zoomIn.value).toLocaleString('fa-IR') + '٪'; });
 
     /* ---------- ابزارها ---------- */
     const toolsEl = m.querySelector('#pe-tools');
@@ -389,9 +441,13 @@ function openPhotoEditor(file, onDone, opts = {}) {
       document.removeEventListener('keydown', onEsc);
       m.remove();
       URL.revokeObjectURL(url);
+      /* اگر به هر دلیلی بیرون از مسیر معمول بسته شد، entry تاریخچه هم پاک شود */
+      try { vxOverlayClose(); } catch (e) {}
     }
     const onEsc = (e) => { if (e.key === 'Escape') { cleanup(); if (opts.onCancel) opts.onCancel(); } };
     document.addEventListener('keydown', onEsc);
+    /* دکمهٔ برگشت مرورگر/اندروید ⇒ خروج از ادیتور */
+    m._vxClose = function () { cleanup(); if (opts.onCancel) opts.onCancel(); };
     m.onclick = (e) => { if (e.target === m) { cleanup(); if (opts.onCancel) opts.onCancel(); } };
     m.querySelector('#pe-ok').onclick = commit;
     m.querySelector('#pe-cancel').onclick = () => { cleanup(); if (opts.onCancel) opts.onCancel(); };
