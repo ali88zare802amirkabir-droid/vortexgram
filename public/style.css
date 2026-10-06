@@ -1917,14 +1917,17 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 .vxmap-3d .vxmap-view::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 80% at 50% 0%,rgba(120,180,255,.10),transparent 60%);}
 .vxmap-ov{position:absolute;left:0;top:0;}
 .vxmap-ovtile{position:absolute;left:0;top:0;opacity:.85;mix-blend-mode:screen;filter:saturate(1.2);}
-.vxmap-marker,.vxmap-me{position:absolute;left:0;top:0;z-index:4;pointer-events:none;transform-origin:50% 100%;}
-.vxmap-pin{display:block;width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#ea4335;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.45);}
-.vxmap-me{display:grid;place-items:center;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);}
-.vxmap-me .icon{width:14px;height:14px;color:#fff;}
-.vxmap-cross{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;z-index:5;pointer-events:none;}
-.vxmap-cross::before,.vxmap-cross::after{content:"";position:absolute;background:rgba(255,255,255,.9);box-shadow:0 0 0 1px rgba(0,0,0,.35);}
-.vxmap-cross::before{left:50%;top:0;width:2px;height:100%;margin-left:-1px;}
-.vxmap-cross::after{top:50%;left:0;height:2px;width:100%;margin-top:-1px;}
+.vxmap-marker,.vxmap-me{position:absolute;left:0;top:0;z-index:4;pointer-events:none;}
+.vxmap-marker{margin-left:-14px;margin-top:-40px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.45));}
+.vxmap-marker .vxmap-pin{display:block;width:28px;height:40px;}
+.vxmap-marker::after{content:"";position:absolute;left:50%;bottom:-5px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:rgba(0,0,0,.28);}
+.vxmap-me{display:grid;place-items:center;width:24px;height:24px;margin:-12px 0 0 -12px;}
+.vxmap-me .vxmap-dot{display:block;width:24px;height:24px;filter:drop-shadow(0 2px 5px rgba(0,0,0,.45));}
+.vxmap-me-pulse{position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(26,115,232,.28);animation:vxmePulse 2.4s ease-out infinite;}
+@keyframes vxmePulse{0%{transform:scale(.4);opacity:.85;}70%{transform:scale(1.5);opacity:0;}100%{transform:scale(1.5);opacity:0;}}
+/* نشانگر انتخاب نقطه: حلقهٔ نازک با ضربان ملایم */
+.vxmap-cross{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;z-index:5;pointer-events:none;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1.5px rgba(0,0,0,.45),0 0 0 5px rgba(217,45,32,.28);}
+.vxmap-cross::before{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#d92d20;box-shadow:0 0 0 1px rgba(255,255,255,.9);}
 .vxmap-ctrl{position:absolute;inset-inline-start:8px;top:8px;display:flex;flex-direction:column;gap:6px;z-index:6;}
 .vxmap-cbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:rgba(20,24,32,.82);color:#fff;font-size:18px;font-weight:700;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(6px);}
 .vxmap-cbtn:active{background:var(--primary);}
@@ -1972,7 +1975,7 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 .vxloc-b .icon{width:14px;height:14px;}
 .vxloc-b.primary{background:var(--primary);color:var(--on-primary);border-color:transparent;}
 
-/* ---------- ????? �??? ???? ?? ?? ????� ---------- */
+/* ---------- ????? �??? ???? ?? ?? ????� ---------- */
 .vxmap-sheet-wrap{position:fixed;inset:0;z-index:1300;background:rgba(4,7,12,.6);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .15s ease;}
 .vxmap-sheet{width:min(460px,100%);background:var(--surface-container);border:1px solid var(--border);border-radius:20px 20px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));box-shadow:var(--shadow-lg);}
 @media(min-width:700px){.vxmap-sheet-wrap{align-items:center;}.vxmap-sheet{border-radius:20px;}}

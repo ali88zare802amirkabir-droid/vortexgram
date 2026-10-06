@@ -26,6 +26,28 @@
   };
   var SUB = ['a', 'b', 'c'];
 
+  /* نشانگر انتخاب‌شده: سوزن قطره‌ای با نوک دقیقاً روی نقطه */
+  var VX_PIN_SVG =
+    '<svg class="vxmap-pin" viewBox="0 0 28 40" width="28" height="40" aria-hidden="true">' +
+      '<defs>' +
+        '<linearGradient id="vxpinG" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0" stop-color="#ff6b57"/><stop offset="1" stop-color="#d92d20"/>' +
+        '</linearGradient>' +
+        '<filter id="vxpinS" x="-40%" y="-25%" width="180%" height="170%">' +
+          '<feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity=".45"/>' +
+        '</filter>' +
+      '</defs>' +
+      '<path d="M14 39.5 C14 39.5 27 24.5 27 14.5 A13 13 0 1 0 1 14.5 C1 24.5 14 39.5 14 39.5 Z" fill="url(#vxpinG)" filter="url(#vxpinS)"/>' +
+      '<circle cx="14" cy="14.5" r="4.6" fill="#fff"/>' +
+    '</svg>';
+  /* نشانگر «موقعیت فعلی من»: نقطهٔ آبی با حلقهٔ تپنده */
+  var VX_DOT_SVG =
+    '<svg class="vxmap-dot" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="12" fill="#fff"/>' +
+      '<circle cx="12" cy="12" r="9.5" fill="#1a73e8"/>' +
+      '<circle cx="12" cy="12" r="3.4" fill="#fff" opacity=".95"/>' +
+    '</svg>';
+
   /* ---------- کمکی‌های مختصات ---------- */
   function lonToX(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
   function latToY(lat, z) {
@@ -95,9 +117,9 @@
     this.el.innerHTML =
       '<div class="vxmap-view">' +
         '<div class="vxmap-plane"></div>' +
-        '<div class="vxmap-marker" hidden><span class="vxmap-pin"></span></div>' +
+        '<div class="vxmap-marker" hidden>' + VX_PIN_SVG + '</div>' +
         '<div class="vxmap-cross" hidden></div>' +
-        '<div class="vxmap-me" hidden><i data-lucide="crosshair" class="icon"></i></div>' +
+        '<div class="vxmap-me" hidden><span class="vxmap-me-pulse"></span>' + VX_DOT_SVG + '</div>' +
       '</div>' +
       '<div class="vxmap-ctrl">' +
         '<button type="button" class="vxmap-cbtn" data-m="zoom-in" title="نزدیک‌تر" aria-label="نزدیک‌تر">+</button>' +
@@ -128,7 +150,8 @@
     view.style.touchAction = 'none';
 
     view.addEventListener('pointerdown', function (e) {
-      view.setPointerCapture(e.pointerId);
+      /* گرفتن اشاره‌گر اختیاری است؛ اگر خطا داد نباید حرکت نقشه متوقف شود */
+      try { view.setPointerCapture(e.pointerId); } catch (err) {}
       self._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (self._pointers.size === 1) {
         moved = false;
@@ -198,55 +221,65 @@
     return Math.hypot(a.x - b.x, a.y - b.y);
   };
 
-  /* جابه‌جایی نقشه به اندازهٔ پیکسل روی صفحه */
-  VXMap.prototype._panBy = function (dx, dy) {
-    var cx = lonToX(this.lon, this.zoom) * TILE - this._cx();
-    var cy = latToY(this.lat, this.zoom) * TILE - this._cy();
-    var nx = cx + dx, ny = cy + dy;
-    this.lon = xToLon(nx / TILE, this.zoom);
-    this.lat = clampLat(yToLat(ny / TILE, this.zoom));
-    this.render();
-  };
-
+  /* ---------- هندسه: همه‌چیز روی «زومِ صحیحِ کاشی» حساب می‌شود ----------
+     کاشی‌ها با زومِ صحیح (z) کشیده می‌شوند و زومِ کسری فقط با scale روی
+     صفحه اعمال می‌شود. اگر این دو قاطی شوند، یک پیکسل حرکت انگشت چند
+     کیلومتر جابه‌جا می‌کند و جهت حرکت هم برعکس می‌شود. */
+  VXMap.prototype._z = function () { return Math.round(this.zoom); };
+  VXMap.prototype._scale = function () { return Math.pow(2, this.zoom - Math.round(this.zoom)); };
   VXMap.prototype._cx = function () { return this.view.clientWidth / 2; };
   VXMap.prototype._cy = function () { return this.view.clientHeight / 2; };
 
-  /* مختصات نقطهٔ دلخواه در صفحه ⇒ lon/lat (برای زوم روی نقطه و انتخاب نقطه) */
-  VXMap.prototype._lonAt = function (px, py) {
-    var vw = this.view.clientWidth, vh = this.view.clientHeight;
-    var cx = lonToX(this.lon, this.zoom) * TILE;
-    var cy = latToY(this.lat, this.zoom) * TILE;
-    /* در حالت چرخیده/کج‌شده باید برعکسِ ترنسفور روی بردار حرکت اعمال شود */
-    var dx = px - vw / 2, dy = py - vh / 2;
-    if (this.bearing || this.pitch) dx = this._invertVec(dx, dy);
-    return { lon: xToLon((cx + dx) / TILE, this.zoom), lat: clampLat(yToLat((cy + dy) / TILE, this.zoom)) };
+  /* جابه‌جایی نقشه با حرکت انگشت.
+     کشیدن نقشه به راست ⇒ محتوا راست می‌رود ⇒ طول جغرافیایی مرکز کم می‌شود. */
+  VXMap.prototype._panBy = function (dx, dy) {
+    var z = this._z(), s = this._scale();
+    var cx = lonToX(this.lon, z) * TILE;
+    var cy = latToY(this.lat, z) * TILE;
+    var nx = cx - dx / s;
+    var ny = cy - dy / s;
+    this.lon = xToLon(nx / TILE, z);
+    this.lat = clampLat(yToLat(ny / TILE, z));
+    this.render();
   };
 
-  /* بردار صفحه را به فضای نقشه برمی‌گرداند (چون صفحه کج/چرخیده است) */
-  VXMap.prototype._invertVec = function (dx, dy) {
-    var a = -this.bearing * Math.PI / 180, p = this.pitch * Math.PI / 180;
-    var x = dx, y = dy / Math.cos(Math.max(0.01, p));
-    var c = Math.cos(a), s = Math.sin(a);
-    return { x: x * c - y * s, y: x * s + y * c };
+  /* مختصات دلخواه صفحه ⇒ lon/lat (برای انتخاب نقطه و زوم روی نقطه) */
+  VXMap.prototype._lonAt = function (px, py) {
+    var z = this._z(), s = this._scale();
+    var vw = this.view.clientWidth, vh = this.view.clientHeight;
+    var cx = lonToX(this.lon, z) * TILE;
+    var cy = latToY(this.lat, z) * TILE;
+    var dx = px - vw / 2, dy = py - vh / 2;
+    /* در نمای چرخیده/کج، بردار صفحه را به فضای نقشه برمی‌گردانیم
+       (همان ترنسفور plane، ولی معکوس) و بعد scale را برمی‌داریم. */
+    if (this.bearing || this.pitch) {
+      var a = this.bearing * Math.PI / 180;
+      var c = Math.cos(a), sn = Math.sin(a);
+      var rx = dx * c - dy * sn;
+      var ry = dx * sn + dy * c;
+      dx = rx;
+      dy = ry * Math.cos(Math.max(0.01, this.pitch * Math.PI / 180));
+    }
+    dx /= s; dy /= s;
+    return { lon: xToLon((cx + dx) / TILE, z), lat: clampLat(yToLat((cy + dy) / TILE, z)) };
   };
 
   VXMap.prototype.zoomBy = function (d) { this.zoomTo(this.zoom + d, this._cx(), this._cy()); };
+  /* نقطهٔ صفحه ⇒ مختصات (عمومی؛ تست‌ها و افزونه‌ها از همین استفاده می‌کنند) */
+  VXMap.prototype.pointAt = function (px, py) { return this._lonAt(px, py); };
   VXMap.prototype.zoomTo = function (z, px, py) {
     if (px == null) { px = this._cx(); py = this._cy(); }
-    var cfg = this.cfg || TILE_STYLES[this.style] || TILE_STYLES.std;
-    var max = this.custom ? (cfg.max || 19) : ((TILE_STYLES[this.style] || TILE_STYLES.std).max || 19);
+    var cfg = this.custom || TILE_STYLES[this.style] || TILE_STYLES.std;
+    var max = (cfg && cfg.max) || 19;
     var nz = Math.max(2, Math.min(max, z));
+    /* نقطه‌ای که انگشت/نشانگر روی آن است باید همان‌جا بماند */
     var anchor = this._lonAt(px, py);
     this.zoom = nz;
-    this.lat = anchor.lat; this.lon = anchor.lon;
-    /* بعد از تغییر زوم، مرکز را روی همان نقطه برمی‌گردانیم */
-    var t = this._pointAt(px, py);
-    this.lat = clampLat(this.lat + (anchor.lat - t.lat));
-    this.lon = this.lon + (anchor.lon - t.lon);
+    /* مرکز را طوری جابه‌جا می‌کنیم که anchor زیر همان نقطه بیفتد */
+    var now = this._lonAt(px, py);
+    this.lon += anchor.lon - now.lon;
+    this.lat = clampLat(this.lat + (anchor.lat - now.lat));
     this.render();
-  };
-  VXMap.prototype._pointAt = function (px, py) {
-    return this._lonAt(px, py);
   };
 
   VXMap.prototype.setView = function (lat, lon, zoom) {
@@ -310,26 +343,28 @@
     var vw = this.view.clientWidth || 300, vh = this.view.clientHeight || 200;
     var z = Math.round(this.zoom);
     this.z = z;
-    var scale = Math.pow(2, this.zoom - z);
+    var scale = this._scale();
 
     var cx = lonToX(this.lon, z) * TILE;
     var cy = latToY(this.lat, z) * TILE;
-    this._origin = { cx: cx, cy: cy, vw: vw, vh: vh };
+    this._origin = { cx: cx, cy: cy, vw: vw, vh: vh, scale: scale };
 
-    /* چرخش و کج‌شدن صفحه (نمای سه‌بعدی) */
-    var t = 'translate(-50%,-50%)';
+    /* صفحهٔ نقشه با زومِ کسری بزرگ/کوچک می‌شود تا حرکت انگشت نرم باشد.
+       اندازهٔ plane تقسیم بر scale است تا بعد از scale دقیقاً اندازهٔ نما شود. */
+    var pw = vw / scale, ph = vh / scale;
+    var t = 'translate(-50%,-50%) scale(' + scale + ')';
     if (this.bearing) t += ' rotate(' + (-this.bearing) + 'deg)';
     if (this.pitch) t += ' rotateX(' + this.pitch + 'deg) scale(' + (1 / Math.cos(this.pitch * Math.PI / 180)) + ')';
     this.plane.style.transform = t;
-    this.plane.style.width = vw + 'px';
-    this.plane.style.height = vh + 'px';
+    this.plane.style.width = pw + 'px';
+    this.plane.style.height = ph + 'px';
 
     var pad = 1;
     var n = Math.pow(2, z);
-    var x0 = Math.floor((cx - vw / 2) / TILE) - pad;
-    var x1 = Math.floor((cx + vw / 2) / TILE) + pad;
-    var y0 = Math.floor((cy - vh / 2) / TILE) - pad;
-    var y1 = Math.floor((cy + vh / 2) / TILE) + pad;
+    var x0 = Math.floor((cx - pw / 2) / TILE) - pad;
+    var x1 = Math.floor((cx + pw / 2) / TILE) + pad;
+    var y0 = Math.floor((cy - ph / 2) / TILE) - pad;
+    var y1 = Math.floor((cy + ph / 2) / TILE) + pad;
 
     var need = {};
     for (var x = x0; x <= x1; x++) {
@@ -338,8 +373,8 @@
         var xx = ((x % n) + n) % n;
         var key = z + ':' + xx + ':' + y;
         need[key] = { z: z, x: xx, y: y };
-        var left = x * TILE - cx + vw / 2;
-        var top = y * TILE - cy + vh / 2;
+        var left = x * TILE - cx + pw / 2;
+        var top = y * TILE - cy + ph / 2;
         var el = this._els[key];
         if (!el) {
           el = document.createElement('img');
@@ -418,23 +453,27 @@
     }
   };
 
-  /* گذاشتن نشانگر روی مختصات */
+  /* گذاشتن نشانگر روی مختصات (مختصات صفحه، نه فضای plane) */
   VXMap.prototype._place = function (el, ll) {
     if (!el) return;
     if (!ll) { el.hidden = true; return; }
     var z = this.z || Math.round(this.zoom);
+    var s = this._scale();
     var cx = lonToX(this.lon, z) * TILE, cy = latToY(this.lat, z) * TILE;
     var vw = this.view.clientWidth, vh = this.view.clientHeight;
-    var px = lonToX(ll.lon, z) * TILE - cx + vw / 2;
-    var py = latToY(ll.lat, z) * TILE - cy + vh / 2;
-    /* در حالت کج/چرخیده، نقطه را در صفحه می‌چرخانیم */
-    if (this.bearing || this.pitch) {
-      var a = -this.bearing * Math.PI / 180;
-      var k = 1 / Math.cos(Math.max(0.01, this.pitch * Math.PI / 180));
-      var rx = px * Math.cos(a) - (py / k) * Math.sin(a);
-      var ry = px * Math.sin(a) + (py / k) * Math.cos(a);
-      px = rx; py = ry * k;
+    /* بردار در فضای plane، بعد به صفحه */
+    var px = lonToX(ll.lon, z) * TILE - cx;
+    var py = latToY(ll.lat, z) * TILE - cy;
+    /* اگر چرخیده/کج است، همان ترنسفور plane را روی بردار بگردان تا دقیقاً بچسبد */
+    if (this.bearing) {
+      var a = this.bearing * Math.PI / 180;
+      var c = Math.cos(a), sn = Math.sin(a);
+      var rx = px * c - py * sn, ry = px * sn + py * c;
+      px = rx; py = ry;
     }
+    if (this.pitch) py *= Math.cos(Math.max(0.01, this.pitch * Math.PI / 180));
+    px = px * s + vw / 2;
+    py = py * s + vh / 2;
     el.hidden = false;
     el.style.transform = 'translate(' + px + 'px,' + py + 'px)';
   };
