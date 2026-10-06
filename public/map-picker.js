@@ -17,13 +17,20 @@
   'use strict';
 
   var TILE = 256;
-  var TILE_STYLES = {
-    std: { label: 'استاندارد', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', max: 19, dark: false },
-    light: { label: 'روشن', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', max: 19, dark: false },
-    dark: { label: 'تیره', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', max: 19, dark: true },
-    topo: { label: 'توپوگرافی', url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', max: 17, dark: false },
-    sat: { label: 'ماهواره‌ای', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', max: 18, dark: true },
+  /* پس‌زمینه‌های نقشه.
+   نکتهٔ مهم: فقط از سرویس‌هایی استفاده می‌کنیم که استفادهٔ بدون‌کلید را
+   مجاز بدانند. OSM رایگان است ولی «سیاست کاری» سختی دارد: باید Referer
+   بفرستیم (هدر Referrer-Policy سایت را برای همین strict-origin تنظیم کردیم)
+   و نباید حجم زیادی کاشی بکشیم یا کاشی‌ها را بی‌نهایت کش نکنیم.
+   آینه‌ها هم در کنار هم هستند تا اگر یکی خطا داد، بقیه کار کنند. */
+var TILE_STYLES = {
+    std: { label: 'استاندارد', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', max: 19, dark: false, attrib: '© OpenStreetMap' },
+    de: { label: 'OSM آلمان', url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png', max: 18, dark: false, attrib: '© OpenStreetMap' },
+    fr: { label: 'OSM فرانسه', url: 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', max: 19, dark: false, attrib: '© OpenStreetMap' },
+    dark: { label: 'تیره', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', max: 19, dark: true, attrib: '© OpenStreetMap' },
   };
+/* اگر سرویس پیش‌فرض خطا داد، به‌ترتیب روی این‌ها امتحان می‌کنیم */
+var TILE_FALLBACKS = ['fr', 'de', 'std'];
   var SUB = ['a', 'b', 'c'];
 
   /* نشانگر انتخاب‌شده: سوزن قطره‌ای با نوک دقیقاً روی نقطه */
@@ -290,9 +297,31 @@
   VXMap.prototype.setStyle = function (k) {
     if (!TILE_STYLES[k]) return;
     this.style = k;
-    this._tiles = {}; this._els = {};
-    this.plane.innerHTML = '';
+    this._fails = 0;
+    this._els = {}; this.plane.innerHTML = '';
     this.render();
+  };
+
+  /* وقتی کاشی بارگذاری نشد ⇒ شمارندهٔ خطا بالا می‌رود و به آینهٔ بعدی می‌رویم.
+     پس از چند خطای پشت‌سرهم به کاربر می‌گوییم سرویس نقشه در دسترس نیست. */
+  VXMap.prototype._tileFailed = function (key) {
+    if (this._switching) return;
+    this._fails = (this._fails || 0) + 1;
+    if (this._fails < 4) return;
+    var order = TILE_FALLBACKS;
+    var cur = order.indexOf(this.style);
+    var next = order[(cur + 1) % order.length];
+    if (this.style === next) return;
+    this._switching = true;
+    var self = this;
+    setTimeout(function () {
+      self._switching = false;
+      self._fails = 0;
+      self.style = next;
+      self._els = {}; self.plane.innerHTML = '';
+      if (self.onTileFallback) self.onTileFallback(next);
+      self.render();
+    }, 60);
   };
   VXMap.prototype.set3d = function (on, pitch) {
     this.pitch = on ? (pitch == null ? 52 : pitch) : 0;
@@ -339,7 +368,11 @@
   };
 
   VXMap.prototype._render = function () {
+    var self = this;
     var cfg = this.custom || TILE_STYLES[this.style] || TILE_STYLES.std;
+    /* حالت تیره با فیلتر روی همان کاشی‌های OSM ساخته می‌شود (سرویس جدا لازم نیست) */
+    var isDark = !this.custom && !!(cfg && cfg.dark);
+    this.plane.classList.toggle('vxmap-dark', isDark);
     var vw = this.view.clientWidth || 300, vh = this.view.clientHeight || 200;
     var z = Math.round(this.zoom);
     this.z = z;
@@ -381,7 +414,11 @@
           el.className = 'vxmap-tile';
           el.decoding = 'async';
           el.alt = '';
-          el.referrerPolicy = 'no-referrer';
+          /* ارسال مبدأ به سرویس کاشی الزامی است (سیاست کاری OSM) */
+          el.referrerPolicy = 'origin';
+          /* اگر سرویس کاشی خطا داد، خودکار به آینهٔ بعدی می‌رویم تا نقشه
+             سفید نماند */
+          el.addEventListener('error', function () { self._tileFailed(key); });
           this.plane.appendChild(el);
           this._els[key] = el;
         }
@@ -438,7 +475,7 @@
         img.className = 'vxmap-ovtile';
         img.alt = '';
         img.decoding = 'async';
-        img.referrerPolicy = 'no-referrer';
+        img.referrerPolicy = 'origin';
         img.dataset.ov = key;
         ov.appendChild(img);
       }
@@ -737,6 +774,12 @@
         };
         sw.appendChild(b);
       });
+      /* اگر سرویس کاشی مسدود شد یا خطا داد، خودکار آینهٔ بعدی روشن می‌شود */
+      map.onTileFallback = function (nextKey) {
+        var b2b = sw.querySelector('[data-k="' + nextKey + '"]');
+        if (b2b) sw.querySelectorAll('.vxmp-sbtn').forEach(function (x) { x.classList.toggle('active', x === b2b); });
+        toast('سرویس نقشهٔ قبلی پاسخ نداد؛ آینهٔ ' + (TILE_STYLES[nextKey] ? TILE_STYLES[nextKey].label : '') + ' روشن شد');
+      };
 
       /* ترافیک */
       /* ساختمان‌ها */

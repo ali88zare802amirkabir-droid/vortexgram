@@ -499,7 +499,13 @@ if (TRUST_PROXY !== '0') app.set('trust proxy', TRUST_PROXY === '1' ? 1 : TRUST_
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
+  /* سیاست Referrer: نه کاملاً باز، نه بسته.
+     ارسال نشانی کامل مسیرهای داخلی به سرویس‌های بیرونی لازم نیست و نشت
+     اطلاعات می‌دهد؛ اما «no-referrer» برای سرویس‌هایی مثل کاشی نقشه خطاست:
+     سیاست استفادهٔ آن‌ها معرفی کردن اپ را الزامی می‌کند و نبودِ Referer
+     باعث مسدود شدن (403) می‌شود. 'strict-origin-when-cross-origin' فقط مبدأ
+     را می‌فرستد: هم حریم خصوصی حفظ می‌شود، هم اپ قابل شناسایی است. */
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   // 'blob:' در connect-src لازم است: کش دائمی رسانه‌ها (IndexedDB) blob URL را با
   // fetch می‌خواند و بدون آن مرورگر درخواست را به‌خاطر CSP بلاک می‌کند.
