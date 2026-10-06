@@ -264,6 +264,8 @@
   VXMap.prototype.set3d = function (on, pitch) {
     this.pitch = on ? (pitch == null ? 52 : pitch) : 0;
     this.el.classList.toggle('vxmap-3d', !!on);
+    /* در نمای سه‌بعدی ساختمان‌ها روشن می‌شوند؛ در دوبعدی خاموش */
+    this.setBuildings(!!on);
     this.render();
   };
   VXMap.prototype.setBearing = function (deg) { this.bearing = deg % 360; this.render(); };
@@ -369,6 +371,8 @@
     /* نشانگرها */
     this._place(this.marker, this._pin);
     this._place(this.me, this._meLL);
+    this._drawBuildings();
+    if (this.wantBuildings) this.loadBuildings(false);
     this.cross.hidden = !this.pickMode;
     var at = this.el.querySelector('.vxmap-attrib');
     if (at) at.textContent = this.traffic && this._trafficCfg ? this._trafficCfg.attrib : (this.custom ? this.customAttrib : cfg.attrib || '');
@@ -440,16 +444,161 @@
   window.VXMAP_TILE_STYLES = TILE_STYLES;
 
   /* =======================================================================
+     ساختمان‌های سه‌بعدی
+     پایهٔ ساختمان‌ها از سرور خودمان (/api/map-buildings ⇒ Overpass) گرفته
+     می‌شود و روی canvas به‌صورت حجم کشیده می‌شود: هر ضلعی که رو به دوربین
+     است پر می‌شود و بالای ساختمان روشن‌تر کشیده می‌شود تا حجم دیده شود.
+     ======================================================================= */
+  var BLD_MIN_ZOOM = 14;
+
+  VXMap.prototype.loadBuildings = function (force) {
+    var self = this;
+    if (!this.wantBuildings) return;
+    var z = Math.round(this.zoom);
+    if (z < BLD_MIN_ZOOM) { this._clearBuildings(); return; }
+    var key = this.lat.toFixed(3) + ',' + this.lon.toFixed(3) + ',' + z;
+    if (!force && this._bldKey === key) return;
+    this._bldKey = key;
+    fetch('/api/map-buildings?lat=' + encodeURIComponent(this.lat.toFixed(5))
+      + '&lng=' + encodeURIComponent(this.lon.toFixed(5)) + '&zoom=' + z, { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : { buildings: [] }; })
+      .then(function (d) {
+        /* اگر کاربر بین درخواست و پاسخ جابه‌جا شده، پاسخ قدیمی نادیده گرفته می‌شود */
+        if (self._bldKey !== key) return;
+        self.buildings = (d && d.buildings) || [];
+        self.buildingsUnavailable = !!(d && d.unavailable);
+        if (self.onBuildingsState) self.onBuildingsState(self.buildingsUnavailable ? 'unavailable' : (self.buildings.length ? 'ok' : 'empty'));
+        self.render();
+      })
+      .catch(function () {
+        self.buildings = [];
+        self.buildingsUnavailable = true;
+        if (self.onBuildingsState) self.onBuildingsState('unavailable');
+        self.render();
+      });
+  };
+
+  VXMap.prototype._clearBuildings = function () {
+    if (this.bldCv) { this.bldCv.remove(); this.bldCv = null; }
+    this.buildings = [];
+    this._bldKey = null;
+  };
+
+  VXMap.prototype._ensureBldCv = function () {
+    if (this.bldCv) return this.bldCv;
+    var cv = document.createElement('canvas');
+    cv.className = 'vxmap-bld';
+    this.view.appendChild(cv);
+    this.bldCv = cv;
+    return cv;
+  };
+
+  /* نقاط lon/lat ⇒ پیکسل روی canvas (با احترام به چرخش و کج‌شدن) */
+  VXMap.prototype._llToPx = function (lat, lon) {
+    var z = this.z || Math.round(this.zoom);
+    var cx = lonToX(this.lon, z) * TILE, cy = latToY(this.lat, z) * TILE;
+    var vw = this.view.clientWidth, vh = this.view.clientHeight;
+    var px = lonToX(lon, z) * TILE - cx + vw / 2;
+    var py = latToY(lat, z) * TILE - cy + vh / 2;
+    if (this.bearing || this.pitch) {
+      var a = -this.bearing * Math.PI / 180;
+      var k = 1 / Math.cos(Math.max(0.01, this.pitch * Math.PI / 180));
+      var rx = px * Math.cos(a) - (py / k) * Math.sin(a);
+      var ry = px * Math.sin(a) + (py / k) * Math.cos(a);
+      px = rx; py = ry * k;
+    }
+    return [px, py];
+  };
+
+  VXMap.prototype._drawBuildings = function () {
+    if (!this.wantBuildings || !this.buildings || !this.buildings.length) { if (this.bldCv) this.bldCv.style.display = 'none'; return; }
+    var cv = this._ensureBldCv();
+    cv.style.display = '';
+    var w = this.view.clientWidth, h = this.view.clientHeight;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+      cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    }
+    var g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+
+    var pitch = this.pitch * Math.PI / 180;
+    var sinP = Math.sin(pitch), cosP = Math.cos(pitch);
+    /* مقیاس ارتفاع: هر متر ≈ چند پیکسل (در زوم‌های معمول ~۱.۴ پیکسل) */
+    var mPerPx = 156543.03392 * Math.cos(latToYRad(this.lat)) / Math.pow(2, this.z);
+    var pxPerM = 1 / Math.max(1e-9, mPerPx);
+
+    var self = this;
+    this.buildings.forEach(function (b) {
+      if (!b || !b.ring || b.ring.length < 3) return;
+      var pts = [];
+      for (var i = 0; i < b.ring.length; i++) {
+        var p = self._llToPx(b.ring[i][1], b.ring[i][0]);
+        if (p[0] < -400 || p[0] > w + 400 || p[1] < -600 || p[1] > h + 400) continue;
+        pts.push(p);
+      }
+      if (pts.length < 3) return;
+
+      /* هر ضلع: از پایین به بالا کشیده می‌شود؛ فقط ضلع‌های رو به بیننده پر می‌شوند */
+      var i2, n = pts.length;
+      for (i2 = 0; i2 < n; i2++) {
+        var a = pts[i2], c = pts[(i2 + 1) % n];
+        /* نرمال ضلع برای تشخیص رو‌به‌دوربین بودن */
+        var ex = c[0] - a[0], ey = c[1] - a[1];
+        /* ضلع‌هایی که به بالای صفحه نگاه می‌کنند (ey<0) دیده می‌شوند */
+        if (ey >= 0) continue;
+        var hgt = b.h * pxPerM;
+        g.beginPath();
+        g.moveTo(a[0], a[1]);
+        g.lineTo(c[0], c[1]);
+        g.lineTo(c[0], c[1] - hgt * cosP);
+        g.lineTo(a[0], a[1] - hgt * cosP);
+        g.closePath();
+        var shade = 118 + Math.min(52, Math.round(hgt / 9));
+        g.fillStyle = 'rgb(' + shade + ',' + (shade + 4) + ',' + (shade + 10) + ')';
+        g.fill();
+        g.strokeStyle = 'rgba(255,255,255,.22)';
+        g.lineWidth = 0.6;
+        g.stroke();
+      }
+      /* سقف */
+      g.beginPath();
+      g.moveTo(pts[0][0], pts[0][1] - b.h * pxPerM * cosP);
+      for (i2 = 1; i2 < n; i2++) g.lineTo(pts[i2][0], pts[i2][1] - b.h * pxPerM * cosP);
+      g.closePath();
+      g.fillStyle = 'rgba(226,232,240,.80)';
+      g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.5)';
+      g.lineWidth = 0.8;
+      g.stroke();
+    });
+  };
+  function latToYRad(lat) { return lat * Math.PI / 180; }
+
+  /* فعال/غیرفعال کردن ساختمان‌ها (فقط در نمای سه‌بعدی معنا دارد) */
+  VXMap.prototype.setBuildings = function (on) {
+    this.wantBuildings = !!on;
+    this.el.classList.toggle('vxmap-bld-on', !!on);
+    if (!on) { this._clearBuildings(); this.render(); return; }
+    this.loadBuildings(true);
+  };
+
+  /* =======================================================================
      جست‌وجوی نام مکان
+   از /api/map-search روی سرور خودمان رد می‌شود، چون CSP سایت
+   (connect-src 'self') اجازهٔ اتصال مستقیم به سرویس بیرونی را نمی‌دهد
+   و ضمناً محدودیت نرخ Nominatim هم باید سمت سرور رعایت شود.
      ======================================================================= */
   function searchPlace(q) {
-    var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=fa&q=' + encodeURIComponent(q);
-    return fetch(url, { headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (arr) {
-        return (arr || []).map(function (a) {
-          return { lat: Number(a.lat), lon: Number(a.lon), label: a.display_name || q };
-        }).filter(function (a) { return Number.isFinite(a.lat) && Number.isFinite(a.lon); });
+    var url = '/api/map-search?q=' + encodeURIComponent(String(q || '').slice(0, 120));
+    return fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+      .then(function (d) {
+        return ((d && d.results) || []).map(function (a) {
+          return { lat: Number(a.lat), lon: Number(a.lon), label: a.label || '' };
+        });
       })
       .catch(function () { return []; });
   }
@@ -477,6 +626,7 @@
             '</div>' +
             '<div class="vxmp-srow vxmp-styles"></div>' +
             '<div class="vxmp-srow">' +
+              '<button type="button" class="vxmp-mbtn" data-a="bld">ساختمان‌ها</button>' +
               '<button type="button" class="vxmp-mbtn" data-a="traffic">ترافیک</button>' +
               '<button type="button" class="vxmp-mbtn" data-a="rotate">چرخش</button>' +
             '</div>' +
@@ -520,11 +670,15 @@
 
       /* دکمه‌های حالت */
       var b2 = ov.querySelector('[data-a="mode2d"]'), b3 = ov.querySelector('[data-a="mode3d"]');
+      var bldBtn = ov.querySelector('[data-a="bld"]');
       function setMode(is3d) {
         map.set3d(is3d, 52);
         b2.classList.toggle('active', !is3d);
         b3.classList.toggle('active', is3d);
         ov.classList.toggle('vxmp-3d', is3d);
+        /* ساختمان‌ها فقط در نمای سه‌بعدی */
+        bldBtn.classList.toggle('active', !!is3d && !!map.wantBuildings);
+        if (!is3d) map.onBuildingsState = null;
       }
       b2.onclick = function () { setMode(false); };
       b3.onclick = function () { setMode(true); };
@@ -546,6 +700,18 @@
       });
 
       /* ترافیک */
+      /* ساختمان‌ها */
+      bldBtn.onclick = function () {
+        if (map.pitch < 1) { toast('اول نمای سه‌بعدی را روشن کن'); return; }
+        var on = !map.wantBuildings;
+        map.onBuildingsState = function (st) {
+          if (st === 'unavailable') { bldBtn.classList.remove('active'); toast('سرویس دادهٔ ساختمان در دسترس نیست'); }
+          else if (st === 'empty') { toast('برای این ناحیه دادهٔ ساختمان ثبت نشده است'); }
+        };
+        map.setBuildings(on);
+        bldBtn.classList.toggle('active', on);
+        if (on) toast('در حال آوردن ساختمان‌ها…');
+      };
       var tb = ov.querySelector('[data-a="traffic"]');
       if (!cfg.trafficUrl) {
         tb.disabled = true;

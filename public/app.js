@@ -734,11 +734,13 @@ function openRoom(rid, opts) {
   state.room = rid; state.replyTo = null;
   setReply(null);
   document.querySelectorAll('.chat-item').forEach((e) => e.classList.toggle('active', e.dataset.roomId === rid));
-  renderRoomHeader(); markRead(rid);
+  renderRoomHeader();
   setMode('chats');
   /* نشانی صفحه = چت باز + شناسهٔ عددی طرف مقابل (در نوار آدرس مرورگر دیده می‌شود) */
   syncUrl(rid, { replace: !!(opts && opts.fromHistory) });
   if (isMobile()) { $('conversation').classList.add('chat-open'); showScrim(false); if (!(opts && opts.fromHistory) && isCapacitor) _vxStack.push({ vx: 1, nav: 'chats', room: rid, view: null }); }
+  /* «سین» بعد از باز شدن واقعی پنل گفت‌وگو ثبت می‌شود (نه قبل از آن) */
+  markRead(rid);
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
   const canRenderCache = cachedMsgs.length && !roomCache.previewOnly;
@@ -3377,7 +3379,39 @@ function showTyping(d) {
     sub.textContent = roomOnline(state.room);
   }
 }
-function markRead(rid) { if (!rid) return; if (!state.readState[rid]) state.readState[rid] = {}; state.readState[rid][state.me.username] = Date.now(); if (state.rooms[rid]) state.rooms[rid].unread = 0; scheduleChatListRefresh(120); if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'read', roomId: rid })); }
+/* ---------- «سین» فقط وقتی چت واقعاً دیده می‌شود ----------
+   آنلاین بودن به‌تنهایی کافی نیست: اگر برنامه در پس‌زمینه باشد، یا صفحه
+   پنهان باشد، یا گفت‌وگو روی موبایل باز نشده باشد، نباید سین بخورد.
+   فقط وقتی پیام واقعاً روی صفحه است وضعیت خوانده‌شده اعلام می‌شود. */
+function chatActuallyVisible(rid) {
+  if (!rid || rid !== state.room) return false;
+  if (document.visibilityState && document.visibilityState !== 'visible') return false;
+  /* روی موبایل باید پنل گفت‌وگو واقعاً باز باشد */
+  const conv = $('conversation');
+  if (isMobile() && conv && !conv.classList.contains('chat-open')) return false;
+  if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return false;
+  if (_pinScreenOpen && _pinScreenOpen()) return false;
+  /* اگر یک لایهٔ تمام‌صفحه (نقشه/ادیتور/نمایش‌گر) روی گفت‌وگو باز است، کاربر
+     در حال دیدن پیام‌ها نیست ⇒ سین نباید بخورد */
+  if (vxFullOverlay && vxFullOverlay()) return false;
+  return true;
+}
+function markRead(rid) {
+  if (!chatActuallyVisible(rid)) return;
+  if (!state.readState[rid]) state.readState[rid] = {};
+  const now = Date.now();
+  const prev = state.readState[rid][state.me.username] || 0;
+  if (now - prev < 1500) return;                 /* جلوگیری از اسپم شدن پیام‌های read */
+  state.readState[rid][state.me.username] = now;
+  if (state.rooms[rid]) state.rooms[rid].unread = 0;
+  scheduleChatListRefresh(120);
+  if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: 'read', roomId: rid }));
+}
+/* وقتی کاربر به برنامه/تب برگشت و همان چت باز است، تازه سین می‌خورد */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (state.room) setTimeout(() => markRead(state.room), 350);
+});
 
 
 let _roomInfoRid = null;
@@ -5884,6 +5918,8 @@ function vxCloseFullOverlay() {
   if (kind && kind.close && typeof ov[kind.close] === 'function') { try { ov[kind.close](); } catch (e) { ov.remove(); } }
   else if (typeof ov._vxClose === 'function') { try { ov._vxClose(); } catch (e) { ov.remove(); } }
   else ov.remove();
+  /* بستن لایه یعنی کاربر دوباره دارد پیام‌ها را می‌بیند ⇒ سین ثبت شود */
+  setTimeout(function () { if (typeof markRead === 'function') markRead(state.room); }, 250);
   return true;
 }
 /* کلاس‌های پوشش‌های تمام‌صفحه که دکمهٔ برگشت باید ببندد (نام کلاس + نام تابع بستن)
@@ -5996,20 +6032,20 @@ if (isCapacitor) {
   /* مرورگر (PWA): دکمهٔ برگشت مرورگر = popstate.
      نشانی صفحه مرجع است: به چت قبلی برمی‌گردیم و همان چت از سرور تازه می‌شود،
      و اگر صفحهٔ قبلی /app (لیست چت) بود، به لیست چت برمی‌گردیم. */
-  window.addEventListener('popstate', (e) => {
-    if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return;
-    if (_pinScreenOpen()) return;
-    /* لایهٔ تمام‌صفحه (نمایش‌گر/ادیتور) با یک Back بسته می‌شود و URL دست‌نخورده می‌ماند */
-    if (vxCloseFullOverlay()) return;
-    const rid = urlRoom();
-    const sp = new URLSearchParams(location.search);
-    /* روی لیست چت: فقط لایهٔ رویی (منو/اطلاعات چت) بسته شود، نه خود چت */
-    if (!rid && !sp.get('view')) { if (closeTopOverlay()) return; }
-    if (restoreFromUrl(rid)) return;
-    if (restoreNav(e.state)) return;
-    if (closeTopOverlay()) return;
-    /* چیزی برای بازگرداندن نیست ⇒ اجازهٔ رفتن به صفحهٔ قبلی مرورگر */
-  });
+/* رویداد popstate فقط وقتی لایه‌ای را می‌بندد می‌تواند دوباره سین ثبت کند */
+window.addEventListener('popstate', (e) => {
+  if ($('auth-screen') && !$('auth-screen').classList.contains('hidden')) return;
+  if (_pinScreenOpen()) return;
+  if (vxCloseFullOverlay()) { setTimeout(() => markRead(state.room), 300); return; }
+  const rid = urlRoom();
+  const sp = new URLSearchParams(location.search);
+  /* روی لیست چت: فقط لایهٔ رویی (منو/اطلاعات چت) بسته شود، نه خود چت */
+  if (!rid && !sp.get('view')) { if (closeTopOverlay()) return; }
+  if (restoreFromUrl(rid)) return;
+  if (restoreNav(e.state)) return;
+  if (closeTopOverlay()) return;
+  /* چیزی برای بازگرداندن نیست ⇒ اجازهٔ رفتن به صفحهٔ قبلی مرورگر */
+}, true);
 }
 
 // راستی‌آزمایی نشست در پس‌زمینه: اگر نشست واقعاً مرده (۴۰۱) خروج؛ اگر شبکه در دسترس نبود

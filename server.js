@@ -1167,6 +1167,146 @@ app.get('/api/map-config', (req, res) => {
     maxZoom: 19,
   });
 });
+/* جست‌وجوی نام مکان از داخل سایت.
+   چرا پروکسی؟ سیاست CSP برنامه connect-src را روی 'self' بسته است، پس مرورگر
+   اجازهٔ اتصال مستقیم به Nominatim را نمی‌دهد. ضمناً محدودیت نرخ سرویس عمومی
+   باید این‌جا و نه در مرورگر اعمال شود. */
+const MAP_SEARCH_HOST = 'nominatim.openstreetmap.org';
+let mapSearchBusy = false;
+let mapSearchLast = 0;
+app.get('/api/map-search', auth, async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 120);
+  if (q.length < 2) return res.json({ results: [] });
+  /* سقف نرخ: یک درخواست در هر ۱۱ ثانیه برای کل سرویس (سیاست Nominatim) */
+  const now = Date.now();
+  if (mapSearchBusy || now - mapSearchLast < 11000) return res.json({ results: [], throttled: true });
+  /* سقف نرخ کاربر */
+  if (!authRateOk('mapsearch:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  mapSearchBusy = true; mapSearchLast = now;
+  try {
+    const url = 'https://' + MAP_SEARCH_HOST + '/search?format=jsonv2&limit=6&accept-language=fa&q=' + encodeURIComponent(q);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(url, {
+      signal: ctl.signal,
+      /* هدر Accept برای Nominatim هم لازم است تا پاسخ JSON بدهد */
+      headers: { 'Accept': 'application/json', 'User-Agent': 'VortexMessenger/1.0 (self-hosted messenger)' },
+    });
+    clearTimeout(timer);
+    if (!r.ok) return res.json({ results: [] });
+    const arr = await r.json();
+    const results = (Array.isArray(arr) ? arr : []).slice(0, 6).map((a) => ({
+      lat: Number(a.lat), lon: Number(a.lon), label: String(a.display_name || '').slice(0, 160),
+    })).filter((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon));
+    res.set('Cache-Control', 'no-store');
+    res.json({ results });
+  } catch (e) {
+    res.json({ results: [] });
+  } finally {
+    mapSearchBusy = false;
+  }
+});
+/* ---------- ساختمان‌ها برای نمای سه‌بعدی ----------
+   از Overpass (داده‌های OSM) پایهٔ ساختمان‌ها را می‌گیریم تا در نقشه به‌صورت
+   حجم (extrusion) رسم شوند. اگر ارتفاع ثبت نشده باشد، از تعداد طبقات
+   تخمین زده می‌شود (حدود ۳ متر برای هر طبقه) و برای ساختمان‌های بدون طبقات
+   مقدار پیش‌فرض منطقی استفاده می‌شود.
+   مثل جست‌وجو، پروکسی از سرور خودمان است چون CSP سایت اتصال بیرونی را می‌بندد. */
+const OVERPASS_HOSTS = String(process.env.VX_OVERPASS_HOSTS || 'https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter,https://overpass.osm.ch/api/interpreter')
+  .split(',').map((s) => s.trim()).filter((s) => /^https:\/\/[\w.-]+\/api\/interpreter$/.test(s));
+let mapBuildingsCache = new Map();
+/* یک بار تلاش می‌کنیم و اگر نشد بین آینه‌ها جابه‌جا می‌شویم؛ نمی‌خواهیم
+   سه درخواست پشت‌سرهم به سرویس عمومی بفرستیم. */
+async function overpassQuery(q) {
+  let lastErr = null;
+  for (const host of OVERPASS_HOSTS) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 22000);
+    try {
+      const r = await fetch(host, {
+        method: 'POST', signal: ctl.signal,
+        /* هدر Accept لازم است: بدون آن پراکسی Overpass با 504 جواب می‌دهد */
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json', 'User-Agent': 'VortexMessenger/1.0 (self-hosted messenger)' },
+        body: 'data=' + encodeURIComponent(q),
+      });
+      clearTimeout(timer);
+      if (!r.ok) { lastErr = new Error(host + ' http ' + r.status); continue; }
+      const data = await r.json();
+      const els = Array.isArray(data.elements) ? data.elements : null;
+      /* پاسخ خراب یا بدون «elements» ⇒ آینه بعدی را امتحان کن */
+      if (!els) { lastErr = new Error(host + ' bad payload'); continue; }
+      /* اگر آینه صفر عنصر داد، باز هم به آینه‌های بعدی امتحان می‌کنیم چون
+         بعضی آینه‌ها ناحیهٔ داده‌ی ناقص دارند */
+      if (!els.length) { lastErr = new Error(host + ' 0 elements'); continue; }
+      return { data: data, host: host };
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+    }
+  }
+  /* اگر همه آینه‌ها خالی/خطا دادند، اگر آخرین خطا «۰ عنصر» بود یعنی سرویس
+     بالاست ولی داده‌ای برای این ناحیه نیست (بی‌ساختممان) */
+  throw lastErr || new Error('overpass unavailable');
+}
+app.get('/api/map-buildings', auth, async (req, res) => {
+  const lat = Number(req.query.lat), lon = Number(req.query.lng);
+  const zoom = Math.max(11, Math.min(18, Number(req.query.zoom) || 15));
+  const numOk = (v) => (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+  if (!numOk(lat) || !numOk(lon) || Number(lat) < -90 || Number(lat) > 90 || Number(lon) < -180 || Number(lon) > 180) {
+    return res.status(400).json({ error: 'مختصات نامعتبر' });
+  }
+  const LA = Number(lat), LO = Number(lon);
+  /* شعاع بر اساس زوم تا حجم درخواست ثابت بماند */
+  const radius = Math.max(150, Math.min(700, Math.round(320 * Math.pow(2, 15 - zoom))));
+  const key = LA.toFixed(3) + ',' + LO.toFixed(3) + ',' + zoom;
+  const hit = mapBuildingsCache.get(key);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) {
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.json(hit.body);
+  }
+  if (!authRateOk('mapbld:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  if (process.env.VX_DEBUG_MAP) console.log('[map-buildings]', req.user.username, LA, LO, 'zoom', zoom, 'radius', radius);
+  const q = '[out:json][timeout:20];(way(around:' + radius + ',' + LA + ',' + LO + ')[building];relation(around:' + radius + ',' + LA + ',' + LO + ')[building];);out geom 2;';
+  try {
+    const got = await overpassQuery(q);
+    if (process.env.VX_DEBUG_MAP) console.log('[map-buildings] host', got.host, 'elements', (got.data.elements || []).length);
+    const data = got.data;
+    const out = [];
+    for (const el of (Array.isArray(data.elements) ? data.elements : []).slice(0, 400)) {
+      const geom = el.geometry;
+      if (!Array.isArray(geom) || geom.length < 3) continue;
+      const ring = geom
+        .filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lon))
+        .map((p) => [Math.round(p.lon * 1e6) / 1e6, Math.round(p.lat * 1e6) / 1e6]);
+      if (ring.length < 3) continue;
+      const t = el.tags || {};
+      let h = 0;
+      const rawH = t['building:height'] || t.height || t['building:levels'];
+      if (rawH != null) {
+        const s = String(rawH);
+        const n = parseFloat(s.replace(/[^\d.]/g, ''));
+        if (Number.isFinite(n) && n > 0) {
+          h = /^\s*[\d.]+\s*m\b/i.test(s) ? n : n * 3.2; /* متر یا طبقات */
+        }
+      }
+      if (!(h > 0)) h = t.building === 'yes' ? 8 : 5; /* تخمین برای ساختمان بی‌طبقه */
+      out.push({ ring: ring, h: Math.min(400, Math.round(h * 10) / 10) });
+    }
+    const body = { buildings: out };
+    mapBuildingsCache.set(key, { at: Date.now(), body: body });
+    if (mapBuildingsCache.size > 200) mapBuildingsCache.clear();
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json(body);
+  } catch (e) {
+    if (process.env.VX_DEBUG_MAP) console.log('[map-buildings] FAILED', e && e.message);
+    /* صادقانه: «سرویس در دسترس نیست» را از «داده‌ای ثبت نشده» جدا می‌کنیم تا
+       کاربر اشتباه فکر نکند نقشه خالی است یا اینکه مشکل از سمت ماست */
+    const msg = String(e && e.message || '');
+    const noData = /0 elements/.test(msg);
+    res.set('Cache-Control', 'no-store');
+    res.json(noData ? { buildings: [], unavailable: false } : { buildings: [], unavailable: true });
+  }
+});
 // قانون تک‌واکنش: هر کاربر فقط یک واکنش روی هر پیام می‌تواند داشته باشد.
 // این منطق single-thread است؛ هیچ دو درخواستی همزمان mutating نمی‌شوند (atomic).
 app.post('/api/reactions', auth, (req, res) => {

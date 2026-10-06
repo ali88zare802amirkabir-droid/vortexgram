@@ -1993,3 +1993,7 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 .vxmap-nav{width:100%;height:46px;border-radius:13px;border:0;background:var(--primary);color:var(--on-primary);font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;}
 .vxmap-nav .icon{width:19px;height:19px;}
 @media(max-width:560px){.vxloc{width:min(260px,70vw);}.vxloc-map{height:150px;}}
+/* ---- ??????????? ??????? ??? ???? ---- */
+.vxmap-bld{position:absolute;left:0;top:0;z-index:3;pointer-events:none;}
+.vxmap:not(.vxmap-bld-on) .vxmap-bld{display:none!important;}
+.vxloc-mini .vxmap-bld{display:none!important;}
