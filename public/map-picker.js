@@ -914,6 +914,37 @@ var TILE_FALLBACKS = ['fr', 'de', 'std'];
     } else fallback();
   }
 
+  function toFin(v) { var n = Number(v); return isFinite(n) ? n : null; }
+  /* باز کردن نقشهٔ Google: destination از مختصات، و اگر نبود از آدرس (label) */
+  function googleDirectionsUrl(lat, lng, label) {
+    var la = toFin(lat), ln = toFin(lng);
+    if (la !== null && ln !== null && la >= -90 && la <= 90 && ln >= -180 && ln <= 180)
+      return 'https://www.google.com/maps/dir/?api=1&origin=&destination=' + la + ',' + ln;
+    return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(String(label || '').trim());
+  }
+  function googleViewUrl(lat, lng, label) {
+    var la = toFin(lat), ln = toFin(lng);
+    if (la !== null && ln !== null && la >= -90 && la <= 90 && ln >= -180 && ln <= 180)
+      return 'https://www.google.com/maps/search/?api=1&query=' + la + ',' + ln;
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(label || '').trim());
+  }
+  function openUrl(url) {
+    try { window.open(url, '_blank', 'noopener'); } catch (e) { window.location.href = url; }
+  }
+  /* «مسیریابی»: Google Maps در desktop مرورگر، و روی موبایل اول اپِ Google Maps
+     (چون همون لینک در اندروید/آی‌او‌اس اپ را باز می‌کند و در غیابش مرورگر می‌رود). */
+  function openDirections(lat, lng, label) {
+    var url = googleDirectionsUrl(lat, lng, label);
+    openUrl(url);
+  }
+  function openMapsView(which, lat, lng, label) {
+    var la = toFin(lat), ln = toFin(lng);
+    if (which === 'neshan' && la !== null && ln !== null) openUrl('https://neshan.org/?lat=' + la + '&lng=' + ln);
+    else if (which === 'google') openUrl(googleViewUrl(lat, lng, label));
+    else if (which === 'waze' && la !== null && ln !== null) openUrl('https://waze.com/ul?ll=' + la + ',' + ln + '&navigate=yes');
+    else openUrl(googleViewUrl(lat, lng, label));
+  }
+
   /* برگهٔ «باز کردن با…» — نشان (ایرانی) اول از همه */
   function openMapApps(lat, lon, label) {
     var ov = document.createElement('div');
@@ -948,8 +979,9 @@ var TILE_FALLBACKS = ['fr', 'de', 'std'];
       var b = e.target.closest('.vxmap-app, .vxmap-nav');
       if (b) {
         var mode = b.dataset.m === 'nav' ? 'nav' : 'view';
+        if (mode === 'nav') { openDirections(ll.lat, ll.lon, label); close(); return; }
         var app = MAP_APPS.find(function (a) { return a.k === b.dataset.k; }) || MAP_APPS[0];
-        openInApp(app, ll, mode);
+        openInApp(app, ll, 'view');
         close();
         return;
       }
@@ -1000,9 +1032,12 @@ var TILE_FALLBACKS = ['fr', 'de', 'std'];
       var b = e.target.closest('[data-a]');
       if (!b) return;
       e.stopPropagation();
-      apps(b.dataset.a === 'nav' ? 'nav' : 'view');
+      /* دکمه‌های کارت مستقیم اجرا می‌شوند؛ ورقِ انتخاب از tap روی خودِ نقشهٔ کوچک باز می‌شود */
+      if (b.dataset.a === 'nav') openDirections(lat, lng, label);
+      else if (b.dataset.a === 'google') openMapsView('google', lat, lng, label);
+      else if (b.dataset.a === 'neshan') openMapsView('neshan', lat, lng, label);
     });
-    stage.addEventListener('click', function (e) { e.stopPropagation(); apps('view'); });
+    stage.addEventListener('click', function (e) { e.stopPropagation(); openMapApps(lat, lng, label); });
     return wrap;
   }
 
@@ -1010,4 +1045,5 @@ var TILE_FALLBACKS = ['fr', 'de', 'std'];
   window.VXMapOpenApps = openMapApps;
   window.VXMapLocationCard = locationCard;
   window.VXMapSearchPlace = searchPlace;
+  window.VXMapDirections = openDirections;
 })();

@@ -96,6 +96,10 @@ function normalizeGroups() {
   if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
   if (!Array.isArray(db.scheduled)) db.scheduled = [];
   if (!Array.isArray(db.reports)) db.reports = [];
+  if (!db.userFlags || typeof db.userFlags !== 'object') db.userFlags = {};
+  if (!db.uploadFlags || typeof db.uploadFlags !== 'object') db.uploadFlags = {};
+  if (!db.uploadCounters || typeof db.uploadCounters !== 'object') db.uploadCounters = {};
+  for (const u of (db.users || [])) { if (u.danger !== true && u.danger !== false) u.danger = !!u.danger; }
   for (const g of db.groups) {
     if (!g.type) g.type = 'group';
     g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
@@ -390,7 +394,9 @@ async function sendSMS(phone, text) {
   }
 }
 function publicUser(u) {
-  return { username: u.username, uid: (typeof u.uid === 'number' ? u.uid : null), displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null, blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
+  return { username: u.username, uid: (typeof u.uid === 'number' ? u.uid : null), displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null,     danger: !!u.danger,
+    restricted: !!u.restricted,
+    blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
 }
 // نمای عمومیِ امن برای پخش همگانی: بدون شماره، بدون لیست مسدودشده و بدون flag رمز
 function publicSafe(u) {
@@ -419,12 +425,36 @@ if (R2_ENABLED) {
     },
   });
 }
+console.log('[storage] media store:', R2_ENABLED ? 'Cloudflare R2 (direct URLs, survives restarts)' : 'local filesystem public/uploads (NOT durable on Render)');
+if (!R2_ENABLED && (process.env.RENDER || process.env.NODE_ENV === 'production')) {
+  console.warn('*** WARNING: R2 not configured — uploaded images/voice/avatars will be lost on every Render deploy/restart. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET (see .env.example). ***');
+}
 function r2Key(filename) { return 'uploads/' + filename; }
 async function r2Upload(filePath, key, contentType) {
   if (!r2) return null;
   const body = fs.createReadStream(filePath);
   await r2.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key, Body: body, ContentType: contentType }));
-  return `https://${process.env.R2_BUCKET}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${key}`;
+  // Base عمومی شیءها (r2.dev یا دامنه سفارشی)؛ بدون آن URL مستقیم نمی‌سازیم تا
+  // cliente از مسیر /uploads/... (که auth و r2Proxy دارد) استفاده کند.
+  const pubBase = (process.env.R2_PUBLIC_BASE || '').trim().replace(/\/+$/, '');
+  return pubBase ? (pubBase + '/' + key) : null;
+}
+/* آیا ذخیره‌سازیِ رسانه بادوام است یا زودگذر؟
+   مستقیماً از R2 استفاده می‌کنیم: URLِ مستقیمِ R2 ذخیره می‌شود تا حتی
+   وقتی سرور ما در Render خاموش/دوباره‌سازی می‌شود، لینک‌ها کار کنند.
+   در حالتی که R2 تنظیم نشده باشد، به `/uploads/...` (دیسک کانتینر)
+   برمی‌گردیم — مناسب توسعهٔ محلی، ولی روی Render پایدار نیست. */
+async function durableUpload(filePath, filename, contentType) {
+  let finalUrl = '/uploads/' + filename;
+  if (R2_ENABLED) {
+    try {
+      const r2Url = await r2Upload(filePath, r2Key(filename), contentType);
+      if (r2Url) finalUrl = r2Url;
+    } catch (e) {
+      console.error('R2 upload failed, falling back to local:', e && e.message);
+    }
+  }
+  return finalUrl;
 }
 async function r2Proxy(key, res) {
   if (!r2) return false;
@@ -451,6 +481,10 @@ function uploadQuotaOk(username, bytes) {
   rec.count += 1; rec.bytes += bytes;
   return true;
 }
+function _todayKey() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function uploadDailyCount(username) { const c = db.uploadCounters && db.uploadCounters[username]; const k = _todayKey(); return (c && c.date === k) ? (c.count || 0) : 0; }
+function incUploadDaily(username) { const k = _todayKey(); db.uploadCounters = db.uploadCounters || {}; let c = db.uploadCounters[username]; if (!c || c.date !== k) c = { date: k, count: 0 }; c.count = (c.count || 0) + 1; db.uploadCounters[username] = c; saveDB(); }
+function restrictedFlagsFor(username) { return (db.userFlags && db.userFlags[username]) || null; }
 function isDmAllowed(roomId, username) {
   if (typeof roomId !== 'string' || !roomId.startsWith('dm:')) return false;
   return roomId.slice(3).split('|').includes(username);
@@ -534,7 +568,9 @@ const uploadsStatic = express.static(UPLOAD_DIR, {
 app.use('/uploads', async (req, res) => {
   if (!currentUser(req)) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
   const filename = req.path.slice(1);
-  if (!filename) return res.status(404).json({ error: 'پیدا نشد' });
+  if (!filename) return res.status(404).json({ error: '???? ???' });
+  const _cu = currentUser(req);
+  if (db.uploadFlags && db.uploadFlags[filename] && !(_cu && _cu.isAdmin)) return res.status(403).json({ error: '?????????? ?????? ???? ?? ??? ????? ??' });
   const key = r2Key(filename);
   if (R2_ENABLED) {
     const ok = await r2Proxy(key, res);
@@ -854,24 +890,34 @@ const avatarUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(cleanMime(file.mimetype))),
 });
-app.post('/api/profile/avatar', auth, avatarUpload.single('file'), (req, res) => {
+app.post('/api/profile/avatar', auth, avatarUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'عکس مجاز نیست (فقط jpg/png/webp تا ۵MB)' });
-  if (req.user.avatar) {
+  const __rf = restrictedFlagsFor(req.user.username);
+  if (__rf && __rf.restricted && __rf.noAvatar !== false) { fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: '?? ??? ????? ??? ????? ???' }); }
+  flagSuspiciousUpload(req.user, req.file.path, req.file.filename, cleanMime(req.file.mimetype), 'profile-avatar');
+  incUploadDaily(req.user.username);
+  if (req.user.avatar && req.user.avatar.startsWith('/uploads/')) {
     const old = path.join(UPLOAD_DIR, path.basename(req.user.avatar));
     fs.unlink(old, () => {});
   }
-  req.user.avatar = '/uploads/' + req.file.filename;
+  req.user.avatar = await durableUpload(req.file.path, req.file.filename, cleanMime(req.file.mimetype));
+  if (R2_ENABLED) { try { fs.unlink(req.file.path, () => {}); } catch (e) {} }
   saveDB();
   pushUsers();
   broadcastProfile(req.user.username);
   res.json({ ok: true, avatar: req.user.avatar, me: publicUser(req.user) });
 });
-app.post('/api/profile/background', auth, avatarUpload.single('file'), (req, res) => {
+app.post('/api/profile/background', auth, avatarUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'تصویر مجاز نیست (فقط jpg/png/webp تا ۵MB)' });
+  const __rfBg = restrictedFlagsFor(req.user.username);
+  if (__rfBg && __rfBg.restricted && __rfBg.noAvatar !== false) { fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: '?? ??? ????? ??? ????? ???' }); }
+  flagSuspiciousUpload(req.user, req.file.path, req.file.filename, cleanMime(req.file.mimetype), 'profile-background');
+  incUploadDaily(req.user.username);
   if (req.user.profileBg && req.user.profileBg.startsWith('/uploads/')) {
     fs.unlink(path.join(UPLOAD_DIR, path.basename(req.user.profileBg)), () => {});
   }
-  req.user.profileBg = '/uploads/' + req.file.filename;
+  req.user.profileBg = await durableUpload(req.file.path, req.file.filename, cleanMime(req.file.mimetype));
+  if (R2_ENABLED) { try { fs.unlink(req.file.path, () => {}); } catch (e) {} }
   saveDB(); pushUsers();
   broadcastProfile(req.user.username);
   res.json({ ok: true, profileBg: req.user.profileBg, me: publicUser(req.user) });
@@ -885,6 +931,8 @@ function setProfileBgSafe(url) {
 app.post('/api/profile/background/url', auth, (req, res) => {
   const url = setProfileBgSafe((req.body || {}).url);
   if (!url) return res.status(400).json({ error: 'لینک تصویر معتبر نیست' });
+  const __bf = restrictedFlagsFor(req.user.username);
+  if (__bf && __bf.restricted && __bf.noAvatar !== false) return res.status(403).json({ error: '?? ??? ????? ??? ????? ???' });
   req.user.profileBg = url;
   saveDB(); pushUsers();
   broadcastProfile(req.user.username);
@@ -893,6 +941,8 @@ app.post('/api/profile/background/url', auth, (req, res) => {
 app.post('/api/profile/avatar/url', auth, (req, res) => {
   const url = setProfileBgSafe((req.body || {}).url);
   if (!url) return res.status(400).json({ error: 'لینک تصویر معتبر نیست' });
+  const __af = restrictedFlagsFor(req.user.username);
+  if (__af && __af.restricted && __af.noAvatar !== false) return res.status(403).json({ error: '?? ??? ????? ??? ????? ???' });
   req.user.avatar = url;
   saveDB(); pushUsers();
   broadcastProfile(req.user.username);
@@ -1002,9 +1052,67 @@ app.get('/api/admin/stats', auth, (req, res) => {
 });
 
 app.get('/api/admin/users', auth, (req, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  if (!req.user.isAdmin) return res.status(403).json({ error: '??? ?????' });
   res.json({ users: db.users.map(publicUser) });
 });
+
+app.get('/api/admin/reports', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: '??? ?????' });
+  const out = (db.reports || []).slice().sort((a, b) => (b.time || 0) - (a.time || 0)).map((r) => ({
+    ...r,
+    blocked: !!(db.uploadFlags && r.filename && db.uploadFlags[r.filename]),
+  }));
+  res.json({ reports: out });
+});
+
+app.post('/api/admin/reports/:id/ignore', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: '??? ?????' });
+  const idx = (db.reports || []).findIndex((r) => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: '???? ???? ???' });
+  const row = db.reports[idx];
+  if (row && row.filename && db.uploadFlags) delete db.uploadFlags[row.filename];
+  db.reports.splice(idx, 1);
+  saveDB();
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/reports/:id/delete-message', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: '??? ?????' });
+  const row = (db.reports || []).find((r) => r.id === req.params.id);
+  if (!row) return res.status(404).json({ error: '???? ???? ???' });
+  const fn = String(row.filename || '').slice(0, 120);
+  for (const rid of Object.keys(db.messages || {})) {
+    if (!Array.isArray(db.messages[rid])) continue;
+    const before = db.messages[rid].length;
+    db.messages[rid] = db.messages[rid].filter((m) => !(fn && ((m.url && String(m.url).includes(fn)) || (m.src && String(m.src).includes(fn)) || (Array.isArray(m.album) && m.album.some((u) => String(u).includes(fn))))));
+    if (db.messages[rid].length !== before) broadcast && broadcast({ type: 'message-deleted', roomId: rid, id: '', all: true });
+  }
+  try { if (fn) { const p = require('path').join(UPLOAD_DIR, fn); fs.unlink(p, () => {}); } } catch (e) {}
+  if (fn && db.uploadFlags) delete db.uploadFlags[fn];
+  db.reports = (db.reports || []).filter((r) => r.id !== row.id);
+  saveDB();
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/restrict', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: '??? ?????' });
+  const { username, restricted, maxFileMB, filesPerDay, noEdit, noAvatar } = req.body || {};
+  const u = db.users.find((x) => x.username === username);
+  if (!u) return res.status(404).json({ error: '?? ???? ???' });
+  u.restricted = !!restricted;
+  db.userFlags = db.userFlags || {};
+  db.userFlags[username] = {
+    restricted: !!restricted,
+    maxFileMB: Number(maxFileMB) || 100,
+    filesPerDay: Number(filesPerDay) || 5,
+    noEdit: noEdit !== false,
+    noAvatar: noAvatar !== false,
+    updatedAt: Date.now(),
+  };
+  saveDB();
+  res.json({ ok: true });
+});
+
 
 // جستجوی کاربران بر اساس آیدی/نام (برای شروع چت و پیدا کردن افراد)
 // جستجوی مخاطبین با شماره تلفن (همگام‌سازی مخاطبین گوشی)
@@ -1171,6 +1279,17 @@ app.get('/api/map-config', (req, res) => {
     tileAttrib: String(process.env.VX_MAP_ATTRIB || MAP_ATTRIB_DEFAULT).slice(0, 120),
     trafficUrl: safeTemplate(process.env.VX_TRAFFIC_URL),
     maxZoom: 19,
+  });
+});
+/* وضعیت سرویس؛ برای فهمیدن اینکه آیا ذخیره‌سازی رسانه پایدار است یا خیر.
+   بدون R2، فایل‌ها روی دیسکایفا → Render هر redeploy پاک می‌شوند. */
+app.get('/api/health', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    status: 'ok',
+    mediaStorage: R2_ENABLED ? 'cloudflare-r2' : 'local-filesystem',
+    durableMedia: R2_ENABLED,
+    uploadsDir: UPLOAD_DIR,
   });
 });
 /* جست‌وجوی نام مکان از داخل سایت.
@@ -1771,6 +1890,70 @@ function verifyMagicBytes(filePath, mimetype) {
     return sigs.some((sig) => sig.every((b, i) => b === null || buf[i] === b));
   } catch { return false; }
 }
+function _printableRatio(buf) {
+  if (!buf || !buf.length) return 0;
+  let ok = 0;
+  for (let i = 0; i < buf.length; i++) { const b = buf[i]; if ((b >= 0x20 && b <= 0x7e) || b === 0x0a || b === 0x0d || b === 0x09) ok++; }
+  return ok / buf.length;
+}
+function findHiddenImageText(buf) {
+  // PNG: tEXt/zTXt/iTXt chunks و دادهٔ افزوده پس از IEND
+  if (buf && buf[0] === 0x89 && buf[1] === 0x50) {
+    const iend = buf.indexOf(Buffer.from([0x49, 0x45, 0x4e, 0x44]));
+    if (iend > 0) {
+      const tail = buf.slice(iend + 12);
+      if (tail.length > 12 && _printableRatio(tail) > 0.6) return { why: 'png-trailing', sample: tail.slice(0, 80).toString('latin1') };
+    }
+    let i = 8;
+    while (i + 12 <= buf.length) {
+      const len = buf.readUInt32BE(i);
+      const type = buf.slice(i + 4, i + 8).toString('latin1');
+      if (type === 'tEXt' || type === 'zTXt' || type === 'iTXt') {
+        return { why: 'png-text-chunk', sample: buf.slice(i + 8, Math.min(i + 8 + len, i + 8 + 80)).toString('latin1') };
+      }
+      if (type === 'IEND') break;
+      i += 12 + len;
+    }
+  }
+  // JPEG: افزودهٔ پس از EOI یا طولانی‌متن‌های ASCII داخل بدنه
+  if (buf && buf[0] === 0xff && buf[1] === 0xd8) {
+    const eoi = buf.lastIndexOf(Buffer.from([0xff, 0xd9]));
+    if (eoi > 0 && eoi + 2 < buf.length) {
+      const tail = buf.slice(eoi + 2);
+      if (tail.length > 12 && _printableRatio(tail) > 0.6) return { why: 'jpeg-trailing', sample: tail.slice(0, 80).toString('latin1') };
+    }
+  }
+  // عمومی: هر رشتهٔ printable > 48 بایت در بدنه
+  let run = 0, start = 0, best = null;
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i];
+    if ((b >= 0x20 && b <= 0x7e) || b === 0x0a || b === 0x0d || b === 0x09) { if (run === 0) start = i; run++; if (run > 48) best = buf.slice(start, i + 1); }
+    else run = 0;
+  }
+  if (best) return { why: 'long-printable-run', sample: best.slice(0, 80).toString('latin1') };
+  return null;
+}
+function flagSuspiciousUpload(user, filePath, filename, mime, roomId) {
+  try {
+    const buf = fs.readFileSync(filePath);
+    const found = findHiddenImageText(buf);
+    if (!found) return false;
+    const ip = String(user && user.lastLogin && user.lastLogin.ip ? user.lastLogin.ip : '') || '';
+    const row = {
+      id: crypto.randomUUID(), type: 'suspicious-image', time: Date.now(),
+      fromUsername: user.username, fromUid: user.uid || null, fromPhone: user.phone || null,
+      fromName: user.displayName || user.username, roomId: String(roomId || ''),
+      ip: ip, device: String((user && user.devices && user.devices[0] && user.devices[0].ua) || ''),
+      mime: mime, filename: filename, excerpt: found.sample.slice(0, 240), why: found.why,
+    };
+    db.reports = db.reports || []; db.reports.push(row);
+    db.uploadFlags = db.uploadFlags || {};
+    db.uploadFlags[filename] = { filename: filename, why: found.why, time: row.time, fromUsername: user.username, roomId: String(roomId || ''), excerpt: found.sample.slice(0, 240) };
+    const u = db.users.find((x) => x.username === user.username); if (u) u.danger = true;
+    saveDB();
+    return true;
+  } catch (e) { return false; }
+}
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -1794,7 +1977,19 @@ app.post('/api/upload', auth, (req, res, next) => {
   }
   if (!uploadQuotaOk(req.user.username, req.file.size)) {
     fs.unlink(req.file.path, () => {});
-    return res.status(429).json({ error: 'سقف آپلود رسید — یک ساعت دیگر تلاش کن' });
+    return res.status(429).json({ error: '??? ????? ???? - ?? ???? ???? ???? ??' });
+  }
+  const __rf = restrictedFlagsFor(req.user.username);
+  if (__rf && __rf.restricted) {
+    if (uploadDailyCount(req.user.username) >= (Number(__rf.filesPerDay) || 5)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(403).json({ error: '?? ??? ????? ??? ????? ??' });
+    }
+    const maxFile = Number(__rf.maxFileMB) || 100;
+    if (req.file.size > maxFile * 1024 * 1024) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: `?? ??? ???? ????? (${maxFile}MB) ?? ???? ??` });
+    }
   }
   const m = cleanMime(req.file.mimetype);
   if (!verifyMagicBytes(req.file.path, m)) {
@@ -1802,7 +1997,8 @@ app.post('/api/upload', auth, (req, res, next) => {
     return res.status(400).json({ error: 'محتوای فایل با نوع اعلام‌شده مطابقت ندارد' });
   }
   const kind = m.startsWith('image/') ? (m === 'image/gif' ? 'gif' : 'image') : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : 'file';
-  
+  if (kind === 'image' || kind === 'gif') flagSuspiciousUpload(req.user, req.file.path, req.file.filename, m, '');
+  incUploadDaily(req.user.username);
   let finalUrl = '/uploads/' + req.file.filename;
   if (R2_ENABLED) {
     try {
@@ -2045,12 +2241,17 @@ app.post('/api/groups/:id/kick', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/groups/:id/avatar', auth, avatarUpload.single('avatar'), (req, res) => {
+app.post('/api/groups/:id/avatar', auth, avatarUpload.single('avatar'), async (req, res) => {
   const g = findGroup(req.params.id);
   if (!g) return res.status(404).json({ error: 'یافت نشد' });
   if (g.owner !== req.user.username && !req.user.isAdmin) return res.status(403).json({ error: 'فقط مالک' });
   if (!req.file) return res.status(400).json({ error: 'فایلی ارسال نشد' });
-  g.avatar = '/uploads/' + req.file.filename;
+  const __rfG = restrictedFlagsFor(req.user.username);
+  if (__rfG && __rfG.restricted && __rfG.noAvatar !== false) { fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: '?? ??? ????? ??? ????? ???' }); }
+  flagSuspiciousUpload(req.user, req.file.path, req.file.filename, cleanMime(req.file.mimetype), 'group:' + (g.id || req.params.id));
+  incUploadDaily(req.user.username);
+  g.avatar = await durableUpload(req.file.path, req.file.filename, cleanMime(req.file.mimetype));
+  if (R2_ENABLED) { try { fs.unlink(req.file.path, () => {}); } catch (e) {} }
   saveDB();
   broadcastGroups();
   res.json({ ok: true, avatar: g.avatar });
@@ -2374,6 +2575,8 @@ wss.on('connection', (ws, req) => {
 
       const user = db.users.find((u) => u.username === username);
       if (!user || user.banned) return;
+      const _uf = (db.userFlags && db.userFlags[username]) || {};
+      if (_uf.restricted && ['image', 'gif', 'video', 'audio', 'voice', 'file', 'location', 'album'].includes(kind)) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
       if (roomId.startsWith('dm:')) {
@@ -2472,6 +2675,8 @@ wss.on('connection', (ws, req) => {
     if (data.type === 'edit-message') {
       const { roomId, id, content } = data;
       if (!canAccess(roomId, username)) return;
+      const _uFlags = (db.userFlags && db.userFlags[username]) || {};
+      if (_uFlags.restricted) return;
       const arr = db.messages[roomId] || [];
       const msg = arr.find((m) => m.id === id);
       if (!msg || msg.from !== username || msg.kind !== 'text') return;

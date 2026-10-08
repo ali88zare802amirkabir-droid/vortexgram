@@ -48,6 +48,7 @@ function avatarEl(u, size) {
   const key = String(a.textContent || '').trim() || '?';
   let g = 0; for (let i = 0; i < key.length; i++) { g = ((g * 31) + key.charCodeAt(i)) >>> 0; }
   a.classList.add('hg-' + (g % 8));
+  if (u && (u.danger || u.restricted)) { const mf = document.createElement('span'); mf.className = 'av-flag' + (u.restricted && !u.danger ? ' av-rest' : ''); mf.textContent = u.danger ? '!' : '⛔'; a.appendChild(mf); }
   return a;
 }
 const IS_TOUCH = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
@@ -386,6 +387,7 @@ const NAV = [
   { id: 'users', label: 'کاربران', icon: 'users' },
   { id: 'signups', label: 'درخواست تغییر نام', icon: 'user-plus' },
   { id: 'stats', label: 'آمار', icon: 'bar-chart-2' },
+  { id: 'reports', label: 'گزارش‌ها', icon: 'alert-triangle' },
   { id: 'bookmarks', label: 'نشان‌ها', icon: 'bookmark' },
   { id: 'settings', label: 'تنظیمات', icon: 'settings' },
 ];
@@ -395,7 +397,7 @@ function renderNav() {
   const av = avatarEl(state.me, 'sm'); av.id = 'nav-av'; nav.replaceChild(av, $('nav-av'));
   $('nav-name').textContent = state.me.displayName;
   nav.onclick = () => openProfile(state.me.username);
-  const adminOnly = ['users', 'signups', 'stats'];
+  const adminOnly = ['users', 'signups', 'stats', 'reports'];
   NAV.forEach((n) => {
     if (adminOnly.includes(n.id) && !state.me.isAdmin) return;
     const d = document.createElement('div'); d.className = 'nav-item' + (state.nav === n.id ? ' active' : '');
@@ -4291,6 +4293,10 @@ async function editReceivedImage(url, name) {
      • نوار پیشرفت، زمان، سرعت پخش، صدا، تصویر‌در‌تصویر، چرخش،
        تمام‌صفحه، دانلود، ویرایش و تبدیل به GIF                        */
 const VXP_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+function vxpMediaItems() { try { const r = state.rooms[state.room]; if (!r || !r.messages) return []; const items = []; for (const m of r.messages) { if (m && (m.kind === 'image' || m.kind === 'gif' || m.kind === 'video')) { const url = m.url || m.src; if (url) items.push({ kind: m.kind === 'video' ? 'video' : 'image', url: url, time: m.time || 0 }); } } items.sort((a, b) => (a.time || 0) - (b.time || 0)); return items; } catch (e) { return []; } }
+function vxpMediaIndex(url) { const items = vxpMediaItems(); if (!url) return -1; let i = items.findIndex((it) => it.url === url); if (i < 0) { try { const u = new URL(url, location.href).pathname; i = items.findIndex((it) => { try { return new URL(it.url, location.href).pathname === u; } catch (e) { return false; } }); } catch (e) {} } return i; }
+function vxpOpenMedia(it) { if (!it) return; if (it.kind === 'video') openVideoPlayer(it.url, it.url); else openViewer(it.url, 'image', it.url); }
+function vxpGo(curEl, currentUrl, step) { const items = vxpMediaItems(); const i = vxpMediaIndex(currentUrl); if (i < 0) return; const j = i + step; if (j < 0 || j >= items.length) return; if (curEl && curEl._vxClose) curEl._vxClose(); vxpOpenMedia(items[j]); }
 function vxpFmt(sec) {
   sec = Math.max(0, Math.floor(sec || 0));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
@@ -4316,7 +4322,7 @@ function openVideoPlayer(src, origUrl) {
     +     '<div class="vxp-hud-time"></div>'
     +   '</div>'
     +   '<button type="button" class="vxp-big" data-a="pp" title="پخش/توقف" aria-label="پخش یا توقف">' + ic('play') + '</button>'
-    +   '<div class="vxp-hint">نگه دارید: چپ = عقب، راست = جلو • بالا/پایین = تغییر سرعت</div>'
+    +   '<div class="vxp-hint">نگه‌داشتن سمت راست: افزایش سرعت • کشیدن بالا/پایین: تنظیم سرعت • سمت چپ: عقب‌بردن</div>'
     + '</div>'
     + '<div class="vxp-bar">'
     +   '<div class="vxp-line">'
@@ -4466,7 +4472,9 @@ function openVideoPlayer(src, origUrl) {
     }, HOLD_MS);
     const move = (ev) => {
       if (scrub) { updateScrub(ev.clientY); return; }
-      if (hold && (Math.abs(ev.clientX - e.clientX) > 8 || Math.abs(ev.clientY - e.clientY) > 8)) { clearTimeout(hold); hold = null; }
+      const dxm = ev.clientX - e.clientX, dym = ev.clientY - e.clientY;
+      if (hold && (Math.abs(dxm) > 8 || Math.abs(dym) > 8)) { clearTimeout(hold); hold = null; }
+      if (!scrub && Math.abs(dxm) > 70 && Math.abs(dym) < 40) { tapMoved = true; vxpGo(v, real, dxm < 0 ? 1 : -1); }
     };
     const up = () => {
       document.removeEventListener('pointermove', move);
@@ -4480,8 +4488,18 @@ function openVideoPlayer(src, origUrl) {
     document.addEventListener('pointercancel', up);
   }
   function startScrub(dir, y0) {
-    scrub = { dir: dir, y0: y0, rate: 1, from: vd.currentTime, t: 0 };
     wasPlaying = !vd.paused;
+    if (dir > 0) {
+      scrub = { dir: dir, y0: y0, rate: 2, from: vd.currentTime, t: 0, mode: 'boost', prevRate: vd.playbackRate };
+      if (vd.paused) { vd.play().catch(() => {}); }
+      v.classList.add('vxp-scrub');
+      hud.hidden = false;
+      hudRate.textContent = '2x';
+      paintHud();
+      try { vd.playbackRate = 2; } catch (e) {}
+      return;
+    }
+    scrub = { dir: dir, y0: y0, rate: 1, from: vd.currentTime, t: 0, mode: 'seek' };
     vd.pause();
     v.classList.add('vxp-scrub');
     hud.hidden = false;
@@ -4500,8 +4518,16 @@ function openVideoPlayer(src, origUrl) {
   }
   function updateScrub(y) {
     if (!scrub) return;
-    /* بالا ⇒ سرعت بیشتر، پایین ⇒ کمتر (پله‌ای و نرم) */
     const dy = scrub.y0 - y;
+    if (scrub.mode === 'boost') {
+      const idx = Math.max(-6, Math.min(10, Math.round(dy / 26)));
+      let r = 2 * Math.pow(1.6, idx);
+      r = Math.max(0.5, Math.min(8, r));
+      scrub.rate = r;
+      try { vd.playbackRate = r; } catch (e) {}
+      paintHud();
+      return;
+    }
     const steps = Math.round(dy / 26);
     const idx = Math.max(-4, Math.min(8, steps));
     scrub.rate = Math.pow(1.6, idx);
@@ -4520,9 +4546,15 @@ function openVideoPlayer(src, origUrl) {
   }
   function endScrub() {
     if (scrubRaf) cancelAnimationFrame(scrubRaf);
+    const s = scrub;
     scrubRaf = 0; scrub = null;
     v.classList.remove('vxp-scrub');
     hud.hidden = true;
+    if (s && s.mode === 'boost') {
+      try { vd.playbackRate = s.prevRate; } catch (e) {}
+      if (s.wasPlaying) { vd.play().catch(() => {}); } else { try { vd.pause(); } catch (e) {} }
+      return;
+    }
     if (wasPlaying) vd.play().catch(() => {});
   }
   stage.addEventListener('pointerdown', onDown);
@@ -4583,12 +4615,12 @@ function openViewer(src, kind, origUrl) {
   const closeImg = () => { if (closed) return; closed = true; cleanup(); v.remove(); vxOverlayClose(); };
   v._vxClose = closeImg;
   v.querySelector('.v-close').onclick = closeImg;
-  // swipe up/down to dismiss
-  let sy = 0, dy = 0, dragging = false;
+  // swipe up/down to dismiss, left/right to navigate media
+  let sy = 0, sx = 0, dy = 0, dx = 0, dragging = false;
   const el = v.querySelector('img');
-  const onDown = (e) => { dragging = true; sy = (e.touches ? e.touches[0].clientY : e.clientY); v.style.transition = 'none'; };
-  const onMove = (e) => { if (!dragging) return; const y = (e.touches ? e.touches[0].clientY : e.clientY); dy = y - sy; if (el) { el.style.transform = 'translateY(' + dy + 'px) scale(' + (1 - Math.min(0.2, Math.abs(dy) / 600)) + ')'; v.style.background = 'rgba(0,0,0,' + (0.9 - Math.min(0.5, Math.abs(dy) / 400)) + ')'; } };
-  const onUp = () => { if (!dragging) return; dragging = false; v.style.transition = ''; if (Math.abs(dy) > 90) closeImg(); else { if (el) el.style.transform = ''; v.style.background = ''; } dy = 0; };
+  const onDown = (e) => { dragging = true; sx = (e.touches ? e.touches[0].clientX : e.clientX); sy = (e.touches ? e.touches[0].clientY : e.clientY); v.style.transition = 'none'; };
+  const onMove = (e) => { if (!dragging) return; const x = (e.touches ? e.touches[0].clientX : e.clientX); const y = (e.touches ? e.touches[0].clientY : e.clientY); dy = y - sy; dx = x - sx; if (el) { if (Math.abs(dx) > Math.abs(dy)) el.style.transform = 'translateX(' + dx + 'px)'; else el.style.transform = 'translateY(' + dy + 'px) scale(' + (1 - Math.min(0.2, Math.abs(dy) / 600)) + ')'; v.style.background = 'rgba(0,0,0,' + (0.9 - Math.min(0.5, Math.abs(dy) / 400)) + ')'; } };
+  const onUp = () => { if (!dragging) return; dragging = false; v.style.transition = ''; if (Math.abs(dy) > 90) closeImg(); else if (Math.abs(dx) > 80 && Math.abs(dy) < 50) { const step = dx < 0 ? 1 : -1; vxpGo(v, origUrl || useSrc, step); } else { if (el) el.style.transform = ''; v.style.background = ''; } dy = 0; dx = 0; };
   v.addEventListener('touchstart', onDown, { passive: true }); v.addEventListener('touchmove', onMove, { passive: true }); v.addEventListener('touchend', onUp);
   v.addEventListener('mousedown', onDown); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
   // cleanup on remove
@@ -4788,23 +4820,29 @@ async function renderUsers(wrap) {
   const users = d.users || [];
   let h = '<div class="admin-users">';
   h += '<div class="au-tools"><input id="au-search" class="inp" placeholder="جستجوی کاربر…" style="flex:1"><button class="btn sm" id="au-refresh">بازخوانی</button></div>';
+  h += '<div class="au-tabs"><button class="btn sm glass au-tab-btn active" data-tab="all">همه</button><button class="btn sm glass au-tab-btn" data-tab="danger">متخلف</button><button class="btn sm glass au-tab-btn" data-tab="restricted">محدود</button></div>';
   h += '<div class="au-list">';
   users.forEach((u) => {
-    h += '<div class="au-row" data-u="' + esc(u.username) + '">' + avatarEl(u, 'md').outerHTML +
-      '<div class="au-body"><div class="au-name">' + esc(u.displayName || u.username) + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '') + (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + '</div><div class="au-sub">@' + esc(u.username) + (u.phone ? ' • ' + esc(u.phone) : '') + ' • ' + (u.online ? 'آنلاین' : 'آفلاین') + '</div></div>' +
+    const cat = (u.danger ? 'danger' : '') + (u.restricted ? ' restricted' : '');
+    h += '<div class="au-row" data-u="' + esc(u.username) + '" data-cat="' + (cat || 'normal') + '">' + avatarEl(u, 'md').outerHTML +
+      '<div class="au-body"><div class="au-name">' + esc(u.displayName || u.username) + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '') + (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.danger ? ' <span class="badge ban">⚠ خطرناک</span>' : '') + (u.restricted ? ' <span class="badge ban">⛔ محدود</span>' : '') + '</div><div class="au-sub">@' + esc(u.username) + (u.phone ? ' • ' + esc(u.phone) : '') + ' • ' + (u.online ? 'آنلاین' : 'آفلاین') + '</div></div>' +
       '<div class="au-actions"><button class="btn sm" data-act="profile">پروفایل</button><button class="btn sm ghost" data-act="msgs">پیام‌ها</button>' +
-      (u.isAdmin ? '' : '<button class="btn sm danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدود') + '</button>') + '</div></div>';
+      (u.isAdmin ? '' : '<button class="btn sm danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدود') + '</button>') +
+      (u.isAdmin ? '' : '<button class="btn sm glass" data-act="limit">' + (u.restricted ? 'رفع محدودیت' : 'محدود') + '</button>') + '</div></div>';
   });
   h += '</div></div>';
   wrap.innerHTML = h;
   wrap.querySelector('#au-refresh').onclick = () => renderUsers(wrap);
-  const reDraw = () => { const q = (wrap.querySelector('#au-search').value || '').toLowerCase(); wrap.querySelectorAll('.au-row').forEach((r) => { const t = r.textContent.toLowerCase(); r.style.display = t.includes(q) ? '' : 'none'; }); };
+  let activeTab = 'all';
+  const reDraw = () => { const q = (wrap.querySelector('#au-search').value || '').toLowerCase(); wrap.querySelectorAll('.au-row').forEach((r) => { const t = r.textContent.toLowerCase(); const c = (r.dataset.cat || 'normal'); let showTab = activeTab === 'all' ? true : c.split(' ').includes(activeTab); r.style.display = (showTab && t.includes(q)) ? '' : 'none'; }); };
   wrap.querySelector('#au-search').oninput = reDraw;
+  wrap.querySelectorAll('.au-tab-btn').forEach((tb) => tb.onclick = () => { activeTab = tb.dataset.tab; wrap.querySelectorAll('.au-tab-btn').forEach((x) => x.classList.toggle('active', x === tb)); reDraw(); });
   wrap.querySelectorAll('.au-row').forEach((row) => {
     const u = row.dataset.u; const cur = users.find((x) => x.username === u);
     row.querySelector('[data-act="profile"]').onclick = () => openProfile(u);
     row.querySelector('[data-act="msgs"]').onclick = () => viewUserMessages(u);
     const ban = row.querySelector('[data-act="ban"]'); if (ban) ban.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u, banned: !cur.banned }) }); renderUsers(wrap); };
+    const lim2 = row.querySelector('[data-act="limit"]'); if (lim2) lim2.onclick = async () => { if (cur.restricted) { await api('/api/admin/restrict', { method: 'POST', body: JSON.stringify({ username: u, restricted: false }) }); } else { await api('/api/admin/restrict', { method: 'POST', body: JSON.stringify({ username: u, restricted: true, maxFileMB: 100, filesPerDay: 5 }) }); } renderUsers(wrap); };
   });
   luc();
 }
@@ -4849,6 +4887,33 @@ async function renderSignups(wrap) {
     row.querySelector('[data-act="reject"]').onclick = async () => { await api('/api/admin/requests/' + encodeURIComponent(id), { method: 'POST', body: JSON.stringify({ approve: false }) }); toast('درخواست رد شد'); renderSignups(wrap); };
   });
   luc();
+}
+async function renderReports(wrap) {
+  wrap.innerHTML = '<div class="ph-loading">در حال بارگذاری گزارشات…</div>';
+  const d = await (await api('/api/admin/reports')).json().catch(() => ({ reports: [] }));
+  const list = d.reports || [];
+  let h = '<div class="admin-users">';
+  if (!list.length) h += '<div class="placeholder">گزارشی وجود ندارد.</div>';
+  list.forEach((r, i) => {
+    const who = r.fromName || r.fromUsername || '';
+    h += '<div class="report-card' + (r.type === 'suspicious-image' ? ' danger' : '') + '">'
+      + '<div class="report-head">' + (r.type === 'suspicious-image' ? 'گزارش خیلی مهم' : 'گزارش') + '</div>'
+      + (r.filename ? '<img class="report-img" src="/uploads/' + esc(r.filename) + '" onerror="this.style.display=\'none\'">' : '')
+      + '<div><b>کاربر:</b> ' + esc(who) + ' (@' + esc(r.fromUsername || '') + ')</div>'
+      + '<div><b>شناسه عددی:</b> ' + esc(String(r.fromUid || '')) + ' <b>تلفن:</b> ' + esc(r.fromPhone || '') + '</div>'
+      + '<div><b>IP:</b> ' + esc(r.ip || '') + ' <b>دستگاه:</b> ' + esc(r.device || '') + '</div>'
+      + '<div><b>تاریخ:</b> ' + esc(new Date(r.time || Date.now()).toLocaleString('fa-IR')) + '</div>'
+      + '<div><b>چت/گروه:</b> ' + esc(r.roomId || '') + '</div>'
+      + '<div><b>متن/اطلاعات مشکوک:</b><pre>' + esc(r.excerpt || r.reason || '') + '</pre></div>'
+      + '<div class="report-actions">'
+      + '<button class="btn sm glass danger" data-act="del">حذف</button>'
+      + '<button class="btn sm glass" data-act="ign">نادیده گرفتن</button>'
+      + '</div></div>';
+  });
+  h += '</div>';
+  wrap.innerHTML = h;
+  wrap.querySelectorAll('[data-act="del"]').forEach((b, i) => b.onclick = async () => { if (!(await uConfirm('حذف شود؟'))) return; await api('/api/admin/reports/' + encodeURIComponent(list[i].id) + '/delete-message', { method: 'POST' }); renderReports(wrap); });
+  wrap.querySelectorAll('[data-act="ign"]').forEach((b, i) => b.onclick = async () => { await api('/api/admin/reports/' + encodeURIComponent(list[i].id) + '/ignore', { method: 'POST' }); renderReports(wrap); });
 }
 async function renderStats(wrap) {
   wrap.innerHTML = '<div class="ph-loading">در حال بارگذاری آمار…</div>';
@@ -5220,6 +5285,7 @@ function renderView(id) {
   else if (id === 'bookmarks') { wrap.innerHTML = '<div class="placeholder">🔖 پیام‌های نشان‌شده اینجا نمایش داده می‌شوند. (نمونه)</div>'; }
   else if (id === 'users') { if (state.me.isAdmin) renderUsers(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else if (id === 'signups') { if (state.me.isAdmin) renderSignups(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
+  else if (id === 'reports') { if (state.me.isAdmin) renderReports(wrap); else wrap.innerHTML = '<div class="placeholder">دسترسی ندارید.</div>'; }
   else if (id === 'stats') { if (state.me.isAdmin) renderStats(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else { wrap.innerHTML = '<div class="placeholder">این بخش در نسخه نمایشی در دسترس است.</div>'; }
   luc();

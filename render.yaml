@@ -20,3 +20,15 @@ services:
         sync: false
       - key: VX_ALLOWED_ORIGIN
         sync: false
+      # ---- Cloudflare R2 برای ذخیره‌سازی بادوام ----
+      # اگر این ۴ متغیر تنظیم نشود، آپلودها روی دیسک موقت کانتینر می‌افتد و
+      # با هر restart/deploy پاک می‌شود (همان مشکل «نمی‌توانم عکس را ببینم»).
+      # مقادیر را در داشبورد Render > Environment وارد کن (sync:false).
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
