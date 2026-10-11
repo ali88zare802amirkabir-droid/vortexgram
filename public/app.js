@@ -381,6 +381,7 @@ const NAV = [
   { id: 'contacts', label: 'مخاطبین', icon: 'contact' },
   { id: 'communities', label: 'کامیونیتی‌ها', icon: 'users' },
   { id: 'channels', label: 'کانال‌ها', icon: 'megaphone' },
+  { id: 'discover', label: 'کشف', icon: 'compass' },
   { id: 'ai', label: 'دستیار هوشمند', icon: 'sparkles' },
   { id: 'cloud', label: 'حافظه ابری', icon: 'cloud' },
   { id: 'tasks', label: 'وظایف', icon: 'check-square' },
@@ -650,7 +651,11 @@ function buildChatList() {
     wrap.appendChild(head);
     state.groupSearch.forEach((g) => wrap.appendChild(groupSearchItemEl(g)));
   }
-  if (!active.length && !archived.length && !(state.search && state.groupSearch.length)) { wrap.innerHTML = '<div class="empty" style="padding:30px"><div class="ic">💬</div><div>چتی یافت نشد</div></div>'; return; }
+  if (!active.length && !archived.length && !(state.search && state.groupSearch.length)) {
+    wrap.innerHTML = '<div class="empty-state"><div class="es-ic">💬</div><div class="es-title">چتی یافت نشد</div><div class="es-sub">یک گفتگو را شروع کنید یا از کانال‌های عمومی زیر بپیوندید</div></div><div class="explore-row" id="explore-row"><div class="skeleton" style="flex:0 0 148px;height:120px"></div><div class="skeleton" style="flex:0 0 148px;height:120px"></div><div class="skeleton" style="flex:0 0 148px;height:120px"></div></div>';
+    loadExploreRow(wrap.querySelector('#explore-row'));
+    return;
+  }
   if (archived.length) {
     const head = document.createElement('div'); head.className = 'arch-head'; head.innerHTML = ic('archive') + '<span>آرشیو (' + archived.length + ')</span>'; head.onclick = () => { state.archivedOpen = !state.archivedOpen; buildChatList(); };
     wrap.appendChild(head);
@@ -658,6 +663,38 @@ function buildChatList() {
   }
   active.forEach((r) => wrap.appendChild(chatItemEl(r)));
   applyIcons(wrap);
+}
+const GROUP_CAT_LABELS = { tech: 'تکنولوژی', finance: 'مالی و ارز', sports: 'ورزشی', culture: 'فرهنگ و ادب', fun: 'سرگرمی', learn: 'آموزش', media: 'فیلم و رسانه', games: 'بازی', study: 'تحصیلی', other: 'سایر' };
+function exploreCardEl(g) {
+  const card = document.createElement('div');
+  card.className = 'explore-card';
+  const av = avatarEl(g.avatar ? { avatar: g.avatar, displayName: g.name } : { displayName: g.name }, 'md');
+  card.innerHTML = '<div class="ex-av"></div><div class="ex-name">' + esc(g.name) + '</div><div class="ex-sub">' + (g.members || 0) + ' عضو' + (g.username ? ' • @' + esc(g.username) : '') + '</div>';
+  card.querySelector('.ex-av').appendChild(av);
+  const join = document.createElement('button');
+  join.className = 'btn sm';
+  join.textContent = 'عضویت';
+  join.setAttribute('aria-label', 'عضویت در ' + (g.name || 'کانال'));
+  join.onclick = async () => {
+    join.disabled = true;
+    try {
+      const r = await (await api('/api/groups/' + g.id + '/join', { method: 'POST' })).json().catch(() => ({}));
+      if (r && r.ok) { toast('عضویت انجام شد'); buildChatList(); setTimeout(() => openRoom('group:' + g.id), 300); }
+      else { toast((r && r.error) || 'خطا در عضویت'); join.disabled = false; }
+    } catch (e) { toast('خطا در عضویت'); join.disabled = false; }
+  };
+  card.appendChild(join);
+  return card;
+}
+async function loadExploreRow(row) {
+  if (!row) return;
+  try {
+    const d = await (await api('/api/groups/explore')).json().catch(() => ({}));
+    const list = (d && d.groups) || [];
+    row.innerHTML = '';
+    if (!list.length) { row.remove(); return; }
+    list.forEach((g) => row.appendChild(exploreCardEl(g)));
+  } catch (e) { if (row.isConnected) row.remove(); }
 }
 function chatItemEl(r) {
   const it = document.createElement('div'); it.className = 'chat-item' + (state.room === r.rid ? ' active' : ''); it.dataset.roomId = r.rid;
@@ -961,9 +998,9 @@ function renderMessagesBatch(messages) {
     const hasReactions = (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions) && Object.keys(m.reactions).some((k) => (Array.isArray(m.reactions[k]) ? m.reactions[k].length > 0 : !!m.reactions[k])));
     if (hasReactions) wrap.appendChild(reactionsEl(m));
     const actions = document.createElement('div'); actions.className = 'msg-actions';
-    let actionsHTML = '<button class="icon-btn" data-a="smile">' + ic('smile') + '</button><button class="icon-btn" data-a="reply">' + ic('reply') + '</button><button class="icon-btn" data-a="forward">' + ic('forward') + '</button>';
-    if (m.from === state.me.username) actionsHTML += '<button class="icon-btn danger" data-a="delete">' + ic('trash-2') + '</button>';
-    actionsHTML += '<button class="icon-btn" data-a="more">' + ic('more-vertical') + '</button>';
+    let actionsHTML = '<button class="icon-btn" data-a="smile" aria-label="واکنش">' + ic('smile') + '</button><button class="icon-btn" data-a="reply" aria-label="پاسخ">' + ic('reply') + '</button><button class="icon-btn" data-a="forward" aria-label="فوروارد">' + ic('forward') + '</button>';
+    if (m.from === state.me.username) actionsHTML += '<button class="icon-btn danger" data-a="delete" aria-label="حذف پیام">' + ic('trash-2') + '</button>';
+    actionsHTML += '<button class="icon-btn" data-a="more" aria-label="گزینه‌های بیشتر">' + ic('more-vertical') + '</button>';
     actions.innerHTML = actionsHTML;
     actions.querySelector('[data-a="smile"]').onclick = (e) => { e.stopPropagation(); openReactionPicker(m, bubble); };
     actions.querySelector('[data-a="reply"]').onclick = (e) => { e.stopPropagation(); setReply(m); };
@@ -972,9 +1009,9 @@ function renderMessagesBatch(messages) {
     actions.querySelector('[data-a="more"]').onclick = (e) => { e.stopPropagation(); const w = e.target.closest('.msg'); const anchor = w ? (w.querySelector('.bubble') || w) : null; openMsgCtx(m, anchor, { x: e.clientX, y: e.clientY }); };
     wrap.appendChild(actions);
     // new mini reply + reaction rail (desktop)
-    const miniReply=document.createElement('button'); miniReply.className='msg-mini-reply'; miniReply.innerHTML=ic('reply'); miniReply.title='پاسخ'; miniReply.onclick=(e)=>{ e.stopPropagation(); setReply(m); }; wrap.appendChild(miniReply);
+    const miniReply=document.createElement('button'); miniReply.className='msg-mini-reply'; miniReply.innerHTML=ic('reply'); miniReply.title='پاسخ'; miniReply.setAttribute('aria-label','پاسخ به پیام'); miniReply.onclick=(e)=>{ e.stopPropagation(); setReply(m); }; wrap.appendChild(miniReply);
     const rail=document.createElement('div'); rail.className='msg-react-rail';
-    const mainEm=document.createElement('button'); mainEm.className='rr-main'; mainEm.textContent='😊'; mainEm.title='واکنش'; rail.appendChild(mainEm);
+    const mainEm=document.createElement('button'); mainEm.className='rr-main'; mainEm.textContent='😊'; mainEm.title='واکنش'; mainEm.setAttribute('aria-label','واکنش سریع'); rail.appendChild(mainEm);
     const pop=document.createElement('div'); pop.className='rr-pop';
     const more=document.createElement('button'); more.className='rr-more'; more.innerHTML=ic('more-horizontal'); more.title='همه ایموجی‌ها'; more.onclick=(e)=>{ e.stopPropagation(); openReactionPicker(m,bubble); }; pop.appendChild(more);
     REACTIONS.forEach(em=>{ const b=document.createElement('button'); b.className='rr-emoji'; b.textContent=em; b.onclick=(e)=>{ e.stopPropagation(); toggleReaction(m.id,em,m.roomId||state.room,m); }; pop.appendChild(b); });
@@ -1270,7 +1307,7 @@ function albumEl(m) {
 function fileEl(m) {
   const d = document.createElement('div'); d.className = 'file-row';
   d.innerHTML = '<span class="file-ic">' + ic('file') + '</span><div class="file-info"><div class="file-name">' + esc(m.name || 'فایل') + '</div><div class="file-size">' + (m.size ? fmtBytes(m.size) : '') + '</div></div>';
-  const btn = document.createElement('button'); btn.className = 'file-dl'; btn.title = 'دانلود'; btn.innerHTML = ic('download');
+  const btn = document.createElement('button'); btn.className = 'file-dl'; btn.title = 'دانلود'; btn.setAttribute('aria-label', 'دانلود فایل'); btn.innerHTML = ic('download');
   d.appendChild(btn);
   const startSize = (m.size ? fmtBytes(m.size) : '');
   const sizeEl = d.querySelector('.file-size');
@@ -1327,14 +1364,15 @@ function voiceEl(m) {
     bars.push(Math.max(0.1, Math.min(1, h)));
   }
   const waveHtml = bars.map((h) => '<i style="height:' + Math.round(h * 100) + '%"></i>').join('');
-  d.innerHTML = '<button class="voice-play" aria-label="پخش">' + ic('loader') + '</button>'
+  d.innerHTML = '<button class="voice-play" aria-label="در حال بارگذاری" title="در حال بارگذاری">' + ic('loader') + '</button>'
     + '<div class="voice-wave">' + waveHtml + '<span class="voice-line"></span></div>'
     + '<span class="voice-time">' + (dur ? fmtDur(dur) : '0:00') + '</span>'
-    + '<button class="voice-speed" title="سرعت پخش">1x</button>'
+    + '<button class="voice-speed" title="سرعت پخش" aria-label="سرعت پخش">1x</button>'
     + '<audio preload="metadata"></audio>';
 
   const btn = d.querySelector('.voice-play');
   const aud = d.querySelector('audio');
+  const setVoiceBtn = (icon, label) => { btn.innerHTML = ic(icon); btn.setAttribute('aria-label', label); btn.title = label; };
   const speedBtn = d.querySelector('.voice-speed');
   const timeEl = d.querySelector('.voice-time');
   const waveEl = d.querySelector('.voice-wave');
@@ -1349,7 +1387,7 @@ function voiceEl(m) {
   function loadAudio() {
     if (audioLoaded) return;
     audioLoaded = true;
-    btn.innerHTML = ic('loader');
+    setVoiceBtn('loader', 'در حال بارگذاری');
     d.classList.add('voice-loading');
     d.classList.remove('voice-error');
     fetch(u, { credentials: 'include' }).then(async (res) => {
@@ -1360,7 +1398,7 @@ function voiceEl(m) {
     }).catch((e) => {
       d.classList.remove('voice-loading');
       d.classList.add('voice-error');
-      btn.innerHTML = ic('refresh-cw');
+      setVoiceBtn('refresh-cw', 'تلاش دوباره');
       console.error('Voice load failed:', e);
     });
   }
@@ -1374,7 +1412,7 @@ function voiceEl(m) {
       if (window._cva && window._cva !== aud) { window._cva.pause(); window._cva.currentTime = 0; }
       window._cva = aud;
       loadAudio();
-      aud.play().catch(() => { d.classList.add('voice-error'); d.classList.remove('voice-loading'); btn.innerHTML = ic('refresh-cw'); });
+      aud.play().catch(() => { d.classList.add('voice-error'); d.classList.remove('voice-loading'); setVoiceBtn('refresh-cw', 'تلاش دوباره'); });
     } else {
       aud.pause();
     }
@@ -1422,17 +1460,17 @@ function voiceEl(m) {
 
   aud.onloadedmetadata = () => {
     d.classList.remove('voice-loading');
-    btn.innerHTML = ic('play');
+    setVoiceBtn('play', 'پخش');
     if (!totalDur) timeEl.textContent = fmtDur(aud.duration);
     luc();
   };
   aud.onerror = () => {
     d.classList.remove('voice-loading');
     d.classList.add('voice-error');
-    btn.innerHTML = ic('refresh-cw');
+    setVoiceBtn('refresh-cw', 'تلاش دوباره');
     luc();
   };
-  aud.onplay = () => { d.classList.add('voice-playing'); d.classList.remove('voice-error'); btn.innerHTML = ic('pause'); paint(); luc(); showNowPlaying(aud, (m&&m.name)||'ویس', totalDur); };
+  aud.onplay = () => { d.classList.add('voice-playing'); d.classList.remove('voice-error'); setVoiceBtn('pause', 'توقف'); paint(); luc(); showNowPlaying(aud, (m&&m.name)||'ویس', totalDur); };
   function showNowPlaying(aud, name, duration) {
     const bars = [document.getElementById('now-playing'), document.getElementById('now-playing-main')];
     const t = name || 'ویس';
@@ -1458,8 +1496,8 @@ function voiceEl(m) {
     };
     window._npUpdate();
   }
-  aud.onpause = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); hideNowPlaying(); };
-  aud.onended = () => { d.classList.remove('voice-playing'); btn.innerHTML = ic('play'); luc(); paint(); if (window._cva === aud) window._cva = null; hideNowPlaying(); };
+  aud.onpause = () => { d.classList.remove('voice-playing'); setVoiceBtn('play', 'پخش'); luc(); paint(); hideNowPlaying(); };
+  aud.onended = () => { d.classList.remove('voice-playing'); setVoiceBtn('play', 'پخش'); luc(); paint(); if (window._cva === aud) window._cva = null; hideNowPlaying(); };
   function hideNowPlaying() {
     if (window._npAudio !== aud) return;
     const bars = [document.getElementById('now-playing'), document.getElementById('now-playing-main')];
@@ -2298,9 +2336,9 @@ function updateEmojiPinBtn() {
 function buildEmojiPopContent(pop) {
   if (pop.dataset.filled) { updateEmojiPinBtn(); return; }
   pop.innerHTML = '<div class="emoji-dock-head">'
-    + '<button type="button" class="icon-btn emoji-pin" title="پین کردن"></button>'
+    + '<button type="button" class="icon-btn emoji-pin" title="پین کردن" aria-label="پین کردن پنل ایموجی"></button>'
     + '<input id="emoji-search" class="input emoji-search-inp" placeholder="جستجوی ایموجی..." />'
-    + '<button type="button" class="icon-btn emoji-close" title="بستن">' + ic('x') + '</button>'
+    + '<button type="button" class="icon-btn emoji-close" title="بستن" aria-label="بستن پنل ایموجی">' + ic('x') + '</button>'
     + '</div>'
     + '<div class="emoji-dock-body">'
     + '<div class="emoji-tabs" id="emoji-tabs"></div>'
@@ -2502,7 +2540,7 @@ function toggleAttachPop() {
 function buildAttachPopContent(pop) {
   if (pop.dataset.filled) return;
   pop.innerHTML = '<div class="emoji-dock-head">'
-    + '<button type="button" class="icon-btn emoji-close" title="بستن">' + ic('x') + '</button>'
+    + '<button type="button" class="icon-btn emoji-close" title="بستن" aria-label="بستن پنل پیوست">' + ic('x') + '</button>'
     + '</div>'
     + '<div class="emoji-dock-body">'
     + '<div class="attach-options">'
@@ -2992,7 +3030,7 @@ function showVoiceFailed(el, blob, dur, w) {
   wrap.className = 'msg mine voice-failed';
   wrap.innerHTML = (showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '')
     + '<div class="bubble"><div class="msg-body"><div class="voice-cap voice-error">'
-    + '<button class="voice-play" title="ارسال مجدد">' + ic('refresh-cw') + '</button>'
+    + '<button class="voice-play" title="ارسال مجدد" aria-label="ارسال مجدد پیام صوتی">' + ic('refresh-cw') + '</button>'
     + '<span class="voice-time">خطا</span></div></div>'
     + '<div class="msg-meta"><span class="msg-time" style="color:var(--danger)">ارسال ناموفق</span></div></div>';
   msgs.appendChild(wrap);
@@ -3163,6 +3201,8 @@ $('messages').addEventListener('click', (e) => {
   if (!msgEl || !msgEl.dataset.id) return;
   const m = (state.rooms[state.room] || {}).messages.find((x) => x.id === msgEl.dataset.id);
   if (!m) return;
+  const fxUntil = Number(window.__emojiFxSuppressCtxUntil || 0);
+  if (fxUntil && Date.now() < fxUntil && window.VXEmojiFx && window.VXEmojiFx.isSingleEmojiMessage(m)) return;
   const tp = _tapPtr; _tapPtr = null;
   if (tp && (Date.now() - tp.t) < 850 && (Math.abs(e.clientX - tp.x) > 10 || Math.abs(e.clientY - tp.y) > 10)) return;
   e.preventDefault(); e.stopPropagation();
@@ -3282,7 +3322,7 @@ function showReactionsSheet(m, emoji) {
   const ov = document.createElement('div'); ov.className = 'reacts-overlay';
   const sheet = document.createElement('div'); sheet.className = 'reacts-sheet';
   sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', 'Reactions');
-  sheet.innerHTML = '<div class="rs-head"><span class="rs-emoji">' + esc(emoji) + '</span><span class="rs-title">واکنش‌ها</span><button type="button" class="icon-btn" data-rs-close>' + ic('x') + '</button></div><div class="rs-list"><div class="rs-empty">در حال بارگذاری…</div></div>';
+  sheet.innerHTML = '<div class="rs-head"><span class="rs-emoji">' + esc(emoji) + '</span><span class="rs-title">واکنش‌ها</span><button type="button" class="icon-btn" data-rs-close aria-label="بستن لیست واکنش‌ها">' + ic('x') + '</button></div><div class="rs-list"><div class="rs-empty">در حال بارگذاری…</div></div>';
   applyIcons(sheet);
   sheet.querySelector('[data-rs-close]').onclick = closeReactionsSheet;
   ov.onclick = closeReactionsSheet;
@@ -5124,7 +5164,7 @@ function openAvatarCrop(file, onDone) {
     const minZoom = (img.naturalWidth > 0 && img.naturalHeight > 0)
       ? Math.max(VIEW / img.naturalWidth, VIEW / img.naturalHeight) : 1;
     const m = document.createElement('div'); m.className = 'modal-ov';
-    m.innerHTML = '<div class="modal crop-modal">'
+    m.innerHTML = '<div class="modal crop-modal"><div class="modal-head"><b>برش تصویر</b><button class="icon-btn" data-close aria-label="بستن برش تصویر">✕</button></div>'
       + '<h3 class="modal-title">' + ic('crop') + ' تنظیم عکس پروفایل</h3>'
       + '<div class="crop-stage" id="crop-stage"><div class="crop-img" id="crop-img"></div><div class="crop-grid"></div></div>'
       + '<div class="crop-controls"><span class="crop-ico">' + ic('zoom-out') + '</span><input type="range" id="crop-zoom" min="0" max="100" value="0" aria-label="بزرگ‌نمایی"><span class="crop-ico">' + ic('zoom-in') + '</span></div>'
@@ -5192,7 +5232,7 @@ function openAvatarCrop(file, onDone) {
 function openGallery(dir, cb) {
   if (document.getElementById('gallery-modal')) return;
   const m = document.createElement('div'); m.id = 'gallery-modal'; m.className = 'modal-overlay';
-  m.innerHTML = '<div class="modal"><div class="modal-head"><b>انتخاب از گالری</b><button class="icon-btn" data-close>✕</button></div>' +
+  m.innerHTML = '<div class="modal"><div class="modal-head"><b>انتخاب از گالری</b><button class="icon-btn" data-close aria-label="بستن گالری">✕</button></div>' +
     '<div class="gallery-grid" id="gallery-grid"><div class="placeholder">در حال بارگذاری…</div></div>' +
     '<div class="modal-foot">تصویرهایی که از پینترست دانلود کردی رو توی پوشهٔ <code>public/img/' + dir + '</code> بریز تا اینجا نمایش داده شوند.</div></div>';
   document.body.appendChild(m);
@@ -5233,6 +5273,11 @@ async function startGroup(isChannel) {
     const desc = await uPrompt('توضیح کانال (اختیاری):');
     if (desc === null) return;
     if (desc.trim()) body.description = desc.trim().slice(0, 200);
+    const cats = ['tech', 'finance', 'sports', 'culture', 'fun', 'learn', 'media', 'games', 'study', 'other'];
+    const cat = await uPrompt('دسته کانال (اختیاری):\n' + cats.map((c, i) => (i + 1) + ' = ' + GROUP_CAT_LABELS[c]).join('\n'));
+    if (cat === null) return;
+    const catIdx = parseInt(String(cat).trim(), 10);
+    if (catIdx >= 1 && catIdx <= cats.length) body.category = cats[catIdx - 1];
   }
   const d = await (await api('/api/groups', { method: 'POST', body: JSON.stringify(body) })).json();
   if (!d.group || !d.group.id) { toast(d.error || 'ساخت گروه ناموفق بود'); return; }
@@ -5270,7 +5315,7 @@ function appendAIMsg(role, text) { const box = $('ai-conv'); const el = document
 function renderView(id) {
   setMode('view'); viewHost.classList.remove('hidden'); viewHost.innerHTML = ''; viewHost.dataset.view = id;
   const title = NAV.find((n) => n.id === id); const h = document.createElement('div'); h.className = 'view-head';
-  h.innerHTML = '<button class="icon-btn view-back" id="view-back"><i data-lucide="chevron-right" class="icon"></i></button>' + ic((title && title.icon) || 'layout') + '<h2>' + (title ? title.label : id) + '</h2>';
+  h.innerHTML = '<button class="icon-btn view-back" id="view-back" aria-label="بازگشت"><i data-lucide="chevron-right" class="icon"></i></button>' + ic((title && title.icon) || 'layout') + '<h2>' + (title ? title.label : id) + '</h2>';
   viewHost.appendChild(h);
   const back = h.querySelector('#view-back'); if (back) back.onclick = () => { if (id === 'settings' && state.settingsCat && state.settingsCat !== 'main') { state.settingsCat = 'main'; renderView('settings'); } else switchNav('chats'); };
   const wrap = document.createElement('div'); wrap.className = 'view-body'; viewHost.appendChild(wrap);
@@ -5286,8 +5331,9 @@ function renderView(id) {
     } else {
       renderSettingsMain(wrap);
     }
-  } else if (id === 'communities') { wrap.innerHTML = groupsHTML('group'); bindGroupCards(wrap); }
+  }   else if (id === 'communities') { wrap.innerHTML = groupsHTML('group'); bindGroupCards(wrap); }
   else if (id === 'channels') { wrap.innerHTML = groupsHTML('channel'); bindGroupCards(wrap); }
+  else if (id === 'discover') { renderDiscover(wrap); }
   else if (id === 'cloud') { wrap.innerHTML = '<div class="placeholder">☁️ حافظه ابری — فایل‌های شما اینجا نمایش داده می‌شوند. (نمونه)</div>'; }
   else if (id === 'tasks') { renderTasks(wrap); }
   else if (id === 'calendar') { renderCalendar(wrap); }
@@ -5301,6 +5347,29 @@ function renderView(id) {
   luc();
 }
 function gridCard(id, name, em) { return '<div class="grid-card" data-gc="' + id + '"><div class="gc-ic">' + em + '</div><div class="gc-name">' + name + '</div></div>'; }
+async function renderDiscover(wrap) {
+  wrap.innerHTML = '<div class="disc-sec"><div class="skeleton" style="height:120px"></div></div><div class="disc-sec"><div class="skeleton" style="height:120px"></div></div>';
+  try {
+    const d = await (await api('/api/groups/explore')).json().catch(() => ({}));
+    const list = (d && d.groups) || [];
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state"><div class="es-ic">🧭</div><div class="es-title">کانال عمومی‌ای برای کشف نیست</div><div class="es-sub">بعداً دوباره سر بزنید</div></div>'; return; }
+    const order = ['tech', 'finance', 'sports', 'culture', 'fun', 'learn', 'media', 'games', 'study', 'other'];
+    const byCat = {};
+    list.forEach((g) => { const c = (g.category && GROUP_CAT_LABELS[g.category]) ? g.category : 'other'; (byCat[c] = byCat[c] || []).push(g); });
+    wrap.innerHTML = '';
+    order.filter((c) => byCat[c] && byCat[c].length).forEach((c) => {
+      const sec = document.createElement('div');
+      sec.className = 'disc-sec';
+      const head = document.createElement('div');
+      head.className = 'disc-sec-t';
+      head.textContent = GROUP_CAT_LABELS[c];
+      const grid = document.createElement('div');
+      grid.className = 'disc-grid';
+      byCat[c].forEach((g) => grid.appendChild(exploreCardEl(g)));
+      sec.appendChild(head); sec.appendChild(grid); wrap.appendChild(sec);
+    });
+  } catch (e) { wrap.innerHTML = '<div class="empty-state"><div class="es-ic">⚠️</div><div class="es-title">خطا در بارگذاری</div></div>'; }
+}
 function groupsHTML(type) { const gs = state.groups.filter((g) => g.type === type); if (!gs.length) return '<div class="placeholder">' + (type === 'channel' ? 'کانالی' : 'کامیونیتی‌ای') + ' یافت نشد. از منوی + ایجاد کنید.</div>'; return '<div class="group-list">' + gs.map((g) => '<div class="group-card" data-gid="' + g.id + '">' + avatarEl({ displayName: g.name }, 'md').outerHTML + '<div class="gc-name">' + esc(g.name) + '</div><div class="gc-sub">' + (Array.isArray(g.members) ? g.members.length : 0) + ' عضو</div></div>').join('') + '</div>'; }
 function bindGroupCards(wrap) { wrap.querySelectorAll('.group-card').forEach((c) => { c.onclick = () => { const gid = c.dataset.gid; const me = state.me.username; const isMember = (() => { const g = state.groups.find((x) => x.id === gid); return g && g.members && g.members.some((m) => m.username === me); })(); if (isMember) openRoom('group:' + gid); else toast('ابتدا به گروه بپیوندید'); }; }); }
 
@@ -6575,7 +6644,7 @@ function veOpenModal(title) {
   const pop = document.createElement('div');
   pop.className = 've-pop';
   pop.innerHTML = '<div class="ve-box">'
-    + '<div class="ve-head"><button type="button" class="icon-btn" data-a="close">' + ic('x') + '</button><b>' + esc(title) + '</b></div>'
+    + '<div class="ve-head"><button type="button" class="icon-btn" data-a="close" aria-label="بستن ویرایشگر">' + ic('x') + '</button><b>' + esc(title) + '</b></div>'
     + '<div class="ve-body"></div>'
     + '<div class="ve-foot"></div>'
     + '</div>';

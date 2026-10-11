@@ -121,6 +121,7 @@ function normalizeGroups() {
   for (const u of (db.users || [])) { if (u.danger !== true && u.danger !== false) u.danger = !!u.danger; }
   for (const g of db.groups) {
     if (!g.type) g.type = 'group';
+    if (g.category && !cleanCategory(g.category)) delete g.category;
     g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
     if (!g.members.some((m) => m.username === g.owner)) g.members.push({ username: g.owner, role: 'owner' });
   }
@@ -2206,6 +2207,28 @@ app.use('/img', express.static(IMG_BASE, {
 }));
 
 // ---------- groups & channels ----------
+const GROUP_CATEGORIES = ['tech', 'finance', 'sports', 'culture', 'fun', 'learn', 'media', 'games', 'study', 'other'];
+function cleanCategory(v) {
+  const c = String(v || '').trim().toLowerCase();
+  return GROUP_CATEGORIES.includes(c) ? c : null;
+}
+// دسته‌بندی قطعی از فیلد ذخیره‌شده؛ در غیر این صورت حدس از روی نام/آیدی/توضیح، وگرنه «سایر»
+function categorizeChannel(g) {
+  const explicit = g && cleanCategory(g.category);
+  if (explicit) return explicit;
+  const hay = String(((g && g.username) || '') + ' ' + ((g && g.name) || '') + ' ' + ((g && g.description) || '')).toLowerCase();
+  const has = (...words) => words.some((w) => hay.includes(w));
+  if (has('tech', 'ai', 'هوش مصنوعی', 'تکنولوژی', 'فناوری', 'برنامه')) return 'tech';
+  if (has('forex', 'dollar', 'دلار', 'ارز', 'طلا', 'gold', 'بورس', 'crypto', 'کریپتو', 'بیت', 'finance', 'مالی')) return 'finance';
+  if (has('football', 'فوتبال', 'ورزش', 'sport', 'perspolis', 'esteghlal')) return 'sports';
+  if (has('hafez', 'حافظ', 'فال', 'ادبیات', 'شعر', 'کتاب', 'فرهنگ')) return 'culture';
+  if (has('joke', 'جوک', 'طنز', 'چالش', 'meme', 'میم', 'fun', 'سرگرمی')) return 'fun';
+  if (has('english', 'انگلیسی', 'زبان', 'learn', 'آموزش', 'یادگیری')) return 'learn';
+  if (has('movie', 'film', 'فیلم', 'سریال', 'سینما', 'media', 'رسانه')) return 'media';
+  if (has('game', 'بازی', 'گیم', 'gaming')) return 'games';
+  if (has('konkur', 'کنکور', 'درس', 'مطالعه', 'study', 'تحصیلی')) return 'study';
+  return 'other';
+}
 function publicGroups(username) {
   // گروه‌ها خصوصی‌اند: فقط برای اعضا نمایش داده می‌شوند
   return db.groups.filter((g) => memberOf(g, username)).map((g) => {
@@ -2254,10 +2277,16 @@ app.post('/api/groups', auth, (req, res) => {
   }
   const desc = String((req.body || {}).description || '').trim().slice(0, 200);
   if (desc) g.description = desc;
+  const catBody = (req.body || {}).category;
+  if (catBody !== undefined && catBody !== null && catBody !== '') {
+    const cat = cleanCategory(catBody);
+    if (!cat) return res.status(400).json({ error: 'دسته‌بندی نامعتبر' });
+    g.category = cat;
+  }
   db.groups.push(g);
   saveDB();
   broadcastGroups();
-  res.json({ ok: true, group: { id: g.id, name: g.name, type, username: g.username || null, visibility: g.visibility || null, description: g.description || null } });
+  res.json({ ok: true, group: { id: g.id, name: g.name, type, username: g.username || null, visibility: g.visibility || null, description: g.description || null, category: g.category || null } });
 });
 
 app.post('/api/groups/:id/join', auth, (req, res) => {
@@ -2399,7 +2428,19 @@ app.get('/api/groups/search', auth, (req, res) => {
     })
     .filter((g) => (g.username || '').includes(q) || g.name.toLowerCase().includes(q) || (g.id || '').toLowerCase() === q)
     .slice(0, 15)
-    .map((g) => ({ id: g.id, name: g.name, type: g.type || 'group', username: g.username || null, description: g.description || null, members: (g.members || []).length, avatar: g.avatar || null }));
+    .map((g) => ({ id: g.id, name: g.name, type: g.type || 'group', username: g.username || null, description: g.description || null, category: categorizeChannel(g), members: (g.members || []).length, avatar: g.avatar || null }));
+  res.json({ groups: out });
+});
+
+// ---------- پیشنهاد کانال‌های عمومی (اکسپلور) ----------
+// فقط کانال‌های عمومیِ دارای آیدی که کاربر هنوز عضو آن‌ها نیست؛ مرتب بر اساس تعداد اعضا
+app.get('/api/groups/explore', auth, (req, res) => {
+  if (!authRateOk('gexplore:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'کمی آرام‌تر' });
+  const out = db.groups
+    .filter((g) => (g.type || 'group') === 'channel' && g.visibility === 'public' && g.username && !memberOf(g, req.user.username))
+    .map((g) => ({ id: g.id, name: g.name, type: 'channel', username: g.username, description: g.description || null, category: categorizeChannel(g), members: (g.members || []).length, avatar: g.avatar || null }))
+    .sort((a, b) => b.members - a.members)
+    .slice(0, 12);
   res.json({ groups: out });
 });
 
@@ -2408,12 +2449,15 @@ app.patch('/api/groups/:id', auth, (req, res)=>{
   const g=findGroup(req.params.id);
   if(!g) return res.status(404).json({error:'یافت نشد'});
   if(g.owner!==req.user.username && !req.user.isAdmin) return res.status(403).json({error:'فقط مالک'});
-  const {name, username, visibility, description, avatar} = req.body||{};
+  const {name, username, visibility, description, avatar, category} = req.body||{};
   if(typeof name==='string'){
     const n=name.trim();
     if(n.length<2||n.length>30) return res.status(400).json({error:'نام ۲ تا ۳۰ کاراکتر'});
     g.name=n;
   }
+  const cat = category === undefined || category === null || category === '' ? undefined : cleanCategory(category);
+  if (category !== undefined && category !== null && category !== '' && !cat) return res.status(400).json({error:'دسته‌بندی نامعتبر'});
+  if (cat) g.category = cat;
   if(typeof description==='string'){
     const ds=description.trim();
     g.description = ds ? ds.slice(0,200) : undefined;

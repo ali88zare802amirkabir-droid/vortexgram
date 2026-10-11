@@ -794,3 +794,35 @@ test('security: privacy page honestly discloses access, retention, and AI provid
     }
   });
 });
+
+test('explore: lists only public unjoined channels with counts and categories', async (t) => {
+  await withServer(t, { seed: { groups: [
+    { id: 'pub1', type: 'channel', name: 'Tech News', username: 'technews', visibility: 'public', description: 'AI and tech', owner: 'bob', members: [{ username: 'bob', role: 'owner' }, { username: 'carol', role: 'member' }], createdAt: 1 },
+    { id: 'priv1', type: 'channel', name: 'Secret', username: 'secretchan', visibility: 'private', owner: 'bob', members: [{ username: 'bob', role: 'owner' }], createdAt: 1 },
+    { id: 'nouser', type: 'channel', name: 'No Handle', visibility: 'public', owner: 'bob', members: [{ username: 'bob', role: 'owner' }], createdAt: 1 },
+    { id: 'joined1', type: 'channel', name: 'Football Daily', username: 'football', visibility: 'public', owner: 'bob', members: [{ username: 'bob', role: 'owner' }, { username: 'alice', role: 'member' }], createdAt: 1 },
+    { id: 'grp1', type: 'group', name: 'Friends', owner: 'bob', members: [{ username: 'bob', role: 'owner' }], createdAt: 1 },
+  ] } }, async ({ base }) => {
+    let r = await api(base, 'GET', '/api/groups/explore');
+    assert.strictEqual(r.status, 401, 'explore requires auth');
+    r = await api(base, 'GET', '/api/groups/explore', 'tokenAlice');
+    assert.strictEqual(r.status, 200, 'explore ok');
+    assert.deepStrictEqual(r.d.groups.map((g) => g.id), ['pub1'], 'only public unjoined username channels');
+    assert.strictEqual(r.d.groups[0].members, 2, 'member count included');
+    assert.strictEqual(r.d.groups[0].category, 'tech', 'keyword category assigned');
+  });
+});
+
+test('explore: channel category validated on create and patch', async (t) => {
+  await withServer(t, { seed: {} }, async ({ base }) => {
+    let r = await api(base, 'POST', '/api/groups', 'tokenBob', { name: 'Bad Cat', type: 'channel', username: 'badcat1', visibility: 'public', category: 'bogus' });
+    assert.strictEqual(r.status, 400, 'invalid category rejected on create');
+    r = await api(base, 'POST', '/api/groups', 'tokenBob', { name: 'Gold Prices', type: 'channel', username: 'goldfx1', visibility: 'public', category: 'finance' });
+    assert.strictEqual(r.status, 200, 'valid category accepted');
+    assert.strictEqual(r.d.group.category, 'finance', 'category returned');
+    r = await api(base, 'PATCH', '/api/groups/' + r.d.group.id, 'tokenBob', { category: 'bogus' });
+    assert.strictEqual(r.status, 400, 'invalid category rejected on patch');
+    r = await api(base, 'GET', '/api/groups/explore', 'tokenAlice');
+    assert.ok(r.d.groups.some((g) => g.username === 'goldfx1' && g.category === 'finance'), 'explicit category served');
+  });
+});

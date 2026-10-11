@@ -67,6 +67,7 @@ function buildAll(data) {
     convMap.set(roomId, {
       type: (g.type === 'channel' ? 'channel' : 'group'),
       title: text(g.name) || '', avatar: text(g.avatar), owner: text(g.owner),
+      category: text(g.category),
       createdAt: num(g.createdAt) || Date.now(),
     });
     groupRoomIds.push(roomId);
@@ -168,7 +169,7 @@ function buildAll(data) {
   }
 
   for (const [roomId, info] of convMap) {
-    convRows.push([roomId, info.type, info.title, info.avatar, info.owner, null, info.createdAt || roomEarliest.get(roomId) || Date.now(), null]);
+    convRows.push([roomId, info.type, info.title, info.avatar, info.owner, null, info.createdAt || roomEarliest.get(roomId) || Date.now(), null, info.category]);
   }
 
   // --- read_state / chat_state / pinned / scheduled / rename / sessions ----
@@ -284,7 +285,7 @@ async function truncateAll(exec) {
 async function insertAll(exec, b) {
   // FK-safe order
   await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login'], b.users);
-  await _insertRows(exec, 'conversations', ['id', 'type', 'title', 'avatar', 'owner', 'invite_token', 'created_at', 'updated_at'], b.conversations);
+  await _insertRows(exec, 'conversations', ['id', 'type', 'title', 'avatar', 'owner', 'invite_token', 'created_at', 'updated_at', 'category'], b.conversations);
   await _insertRows(exec, 'conversation_members', ['conversation_id', 'user_id', 'role', 'joined_at', 'last_read_message_id'], b.members);
   await _insertRows(exec, 'messages', ['id', 'conversation_id', 'from', 'from_name', 'from_avatar', 'from_premium', 'kind', 'content', 'silent', 'fwd_from', 'edited', 'reply_to_id', 'reply_to_message_id', 'reply_to_name', 'reply_to_snippet', 'poll', 'checklist', 'album', 'time', 'updated_at', 'deleted_at'], b.messages);
   await _insertRows(exec, 'attachments', ['id', 'message_id', 'type', 'url', 'filename', 'size', 'mime_type', 'duration', 'wave', 'sort', 'created_at'], b.attachments);
@@ -335,7 +336,7 @@ async function loadAll(exec) {
   }
 
   // --- conversations + groups ----------------------------------------------
-  const convRes = (await exec.query('SELECT id, type, title, avatar, owner, created_at FROM conversations')).rows;
+  const convRes = (await exec.query('SELECT id, type, title, avatar, owner, category, created_at FROM conversations')).rows;
   const convById = new Map(convRes.map((r) => [r.id, r]));
   const memberRes = (await exec.query('SELECT conversation_id, user_id, role FROM conversation_members ORDER BY conversation_id')).rows;
   const membersByRoom = new Map();
@@ -348,6 +349,7 @@ async function loadAll(exec) {
     if (!c) continue;
     const g = { id: roomId.slice('group:'.length), type: c.type, name: c.title || '', owner: c.owner || '' };
     if (c.avatar !== null && c.avatar !== undefined) g.avatar = c.avatar;
+    if (c.category !== null && c.category !== undefined) g.category = c.category;
     g.members = (membersByRoom.get(roomId) || []).filter((m) => m.username).map((m) => ({ username: m.username, ...(m.role ? { role: m.role } : {}) }));
     setIf(g, 'createdAt', lnum(c.created_at));
     db.groups.push(g);
