@@ -7,26 +7,12 @@
   <meta name="description" content="قوانین و شرایط استفاده از سرویس پیام‌رسان VortexGram." />
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#07090f" />
-  <script>
-  (function () {
-    try {
-      var pref = localStorage.getItem('vx_lp_theme') || 'system';
-      var resolved = pref;
-      if (pref === 'system') {
-        resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-      }
-      var root = document.documentElement;
-      root.setAttribute('data-theme', resolved === 'light' ? 'light' : 'dark');
-      root.setAttribute('data-theme-pref', pref === 'light' || pref === 'dark' ? pref : 'system');
-      root.style.colorScheme = resolved;
-    } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
-  })();
-  </script>
+  <script src="landing-theme.js?v=1"></script>
   <link rel="canonical" href="https://vortexgram.onrender.com/terms.html" />
   <link rel="icon" type="image/png" sizes="192x192" href="img/icons/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="landing.css?v=2" />
   <link rel="stylesheet" href="legal.css?v=1" />
 </head>

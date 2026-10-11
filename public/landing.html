@@ -31,25 +31,11 @@
   <meta name="twitter:image" content="https://vortexgram.onrender.com/img/og-cover.png" />
 
   <!-- Theme-first: apply saved/system theme before first paint (no FOUC) -->
-  <script>
-  (function () {
-    try {
-      var pref = localStorage.getItem('vx_lp_theme') || 'system';
-      var resolved = pref;
-      if (pref === 'system') {
-        resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-      }
-      var root = document.documentElement;
-      root.setAttribute('data-theme', resolved === 'light' ? 'light' : 'dark');
-      root.setAttribute('data-theme-pref', pref === 'light' || pref === 'dark' ? pref : 'system');
-      root.style.colorScheme = resolved;
-    } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
-  })();
-  </script>
+  <script src="landing-theme.js?v=1"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="landing.css?v=8" />
 
   <script type="application/ld+json">
@@ -320,7 +306,7 @@
           <span class="stat-cap">رنگ آکسانت</span>
         </div>
         <div class="stat-tile" data-reveal="zoom">
-          <b class="stat-num" data-count="30">۰</b>
+          <b class="stat-num" data-count="14">۰</b>
           <span class="stat-cap">روز اعتبار نشست</span>
         </div>
         <div class="stat-tile" data-reveal="zoom">

@@ -17,9 +17,10 @@ function loadReactionConfig() {
     }
   }).catch(() => {});
 }
-const esc = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; };
+const esc = (s) => VXSanitize.escText(s);
+const escAttr = (s) => VXSanitize.escAttr(s);
 const initial = (n) => (n || '?').trim().charAt(0).toUpperCase();
-function ic(n) { return '<i data-lucide="' + n + '" class="icon"></i>'; }
+function ic(n) { return '<i data-lucide="' + VXSanitize.sanitizeIconName(n) + '" class="icon"></i>'; }
 function luc() { if (window.lucide) { try { lucide.createIcons(); } catch (e) {} } }
 function applyIcons(scope) { if (window.lucide && scope) { try { lucide.createIcons(scope); } catch (e) {} } }
 let _chatListTimer = null;
@@ -387,6 +388,7 @@ const NAV = [
   { id: 'users', label: 'کاربران', icon: 'users' },
   { id: 'signups', label: 'درخواست تغییر نام', icon: 'user-plus' },
   { id: 'stats', label: 'آمار', icon: 'bar-chart-2' },
+  { id: 'audit', label: 'حسابرسی ادمین', icon: 'shield' },
   { id: 'reports', label: 'گزارش‌ها', icon: 'alert-triangle' },
   { id: 'bookmarks', label: 'نشان‌ها', icon: 'bookmark' },
   { id: 'settings', label: 'تنظیمات', icon: 'settings' },
@@ -397,7 +399,7 @@ function renderNav() {
   const av = avatarEl(state.me, 'sm'); av.id = 'nav-av'; nav.replaceChild(av, $('nav-av'));
   $('nav-name').textContent = state.me.displayName;
   nav.onclick = () => openProfile(state.me.username);
-  const adminOnly = ['users', 'signups', 'stats', 'reports'];
+  const adminOnly = ['users', 'signups', 'stats', 'reports', 'audit'];
   NAV.forEach((n) => {
     if (adminOnly.includes(n.id) && !state.me.isAdmin) return;
     const d = document.createElement('div'); d.className = 'nav-item' + (state.nav === n.id ? ' active' : '');
@@ -1093,19 +1095,7 @@ function bodyEl(m) {
 }
 /* MARKDOWN TEXT FORMATTING (inline: bold, italic, code, strikethrough, links, mentions) */
 function formatText(t) {
-  if (!t) return '';
-  let s = esc(t);
-  s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-  s = s.replace(/\*(.+?)\*/g, '<i>$1</i>');
-  s = s.replace(/`(.+?)`/g, '<code>$1</code>');
-  s = s.replace(/~~(.+?)~~/g, '<s>$1</s>');
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => {
-    if (!/^(https?:\/\/|\/)/i.test(url)) return m;
-    return '<a href="' + url + '" target="_blank" rel="noopener">' + text + '</a>';
-  });
-  s = s.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
-  s = s.replace(/\n/g, '<br>');
-  return s;
+  return VXSanitize.formatText(t);
 }
 function mediaEl(m) {
   const d = document.createElement('div'); d.className = 'media';
@@ -4898,7 +4888,7 @@ async function renderReports(wrap) {
     const who = r.fromName || r.fromUsername || '';
     h += '<div class="report-card' + (r.type === 'suspicious-image' ? ' danger' : '') + '">'
       + '<div class="report-head">' + (r.type === 'suspicious-image' ? 'گزارش خیلی مهم' : 'گزارش') + '</div>'
-      + (r.filename ? '<img class="report-img" src="/uploads/' + esc(r.filename) + '" onerror="this.style.display=\'none\'">' : '')
+      + (r.filename ? '<img class="report-img" src="/uploads/' + esc(r.filename) + '">' : '')
       + '<div><b>کاربر:</b> ' + esc(who) + ' (@' + esc(r.fromUsername || '') + ')</div>'
       + '<div><b>شناسه عددی:</b> ' + esc(String(r.fromUid || '')) + ' <b>تلفن:</b> ' + esc(r.fromPhone || '') + '</div>'
       + '<div><b>IP:</b> ' + esc(r.ip || '') + ' <b>دستگاه:</b> ' + esc(r.device || '') + '</div>'
@@ -4912,8 +4902,27 @@ async function renderReports(wrap) {
   });
   h += '</div>';
   wrap.innerHTML = h;
+  wrap.querySelectorAll('.report-img').forEach((img) => img.addEventListener('error', () => { img.style.display = 'none'; }, { once: true }));
   wrap.querySelectorAll('[data-act="del"]').forEach((b, i) => b.onclick = async () => { if (!(await uConfirm('حذف شود؟'))) return; await api('/api/admin/reports/' + encodeURIComponent(list[i].id) + '/delete-message', { method: 'POST' }); renderReports(wrap); });
   wrap.querySelectorAll('[data-act="ign"]').forEach((b, i) => b.onclick = async () => { await api('/api/admin/reports/' + encodeURIComponent(list[i].id) + '/ignore', { method: 'POST' }); renderReports(wrap); });
+}
+async function renderAudit(wrap) {
+  wrap.innerHTML = '<div class="ph-loading">در حال بارگذاری حسابرسی…</div>';
+  try {
+    const d = await (await api('/api/admin/audit')).json().catch(() => ({ audit: [] }));
+    const labels = { impersonate: 'ورود به حساب', promote: 'ارتقا/تنزل', ban: 'مسدودسازی', 'reset-password': 'ریست رمز', restrict: 'محدودسازی', 'room-messages-read': 'خواندن پیام‌های اتاق' };
+    const rows = [...(d.audit || [])].reverse();
+    if (!rows.length) { wrap.innerHTML = '<div class="placeholder">رویداد حسابرسی ثبت نشده است.</div>'; return; }
+    let h = '<div class="admin-users"><div class="au-list">';
+    rows.forEach((entry) => {
+      h += '<div class="au-row"><div class="au-body"><div class="au-name">' + esc(labels[entry.action] || entry.action) + '</div>'
+        + '<div class="au-sub">کنشگر: ' + esc(entry.actor || '') + ' • هدف: ' + esc(entry.target || '') + ' • ' + esc(new Date(entry.time || Date.now()).toLocaleString('fa-IR')) + '</div>'
+        + '<div class="au-sub">' + esc(JSON.stringify(entry.details || {})) + '</div></div></div>';
+    });
+    h += '</div></div>';
+    wrap.innerHTML = h;
+  } catch (e) { wrap.innerHTML = '<div class="placeholder">خطا در بارگذاری حسابرسی.</div>'; }
+  luc();
 }
 async function renderStats(wrap) {
   wrap.innerHTML = '<div class="ph-loading">در حال بارگذاری آمار…</div>';
@@ -5287,6 +5296,7 @@ function renderView(id) {
   else if (id === 'signups') { if (state.me.isAdmin) renderSignups(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else if (id === 'reports') { if (state.me.isAdmin) renderReports(wrap); else wrap.innerHTML = '<div class="placeholder">دسترسی ندارید.</div>'; }
   else if (id === 'stats') { if (state.me.isAdmin) renderStats(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
+  else if (id === 'audit') { if (state.me.isAdmin) renderAudit(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else { wrap.innerHTML = '<div class="placeholder">این بخش در نسخه نمایشی در دسترس است.</div>'; }
   luc();
 }
@@ -5649,9 +5659,8 @@ function renderPrivSub(body) {
       const r = await api('/api/password-change', { method: 'POST', body: JSON.stringify({ currentPassword: cur, newPassword: n1 }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) return toast(d.error || 'خطا');
-      toast('رمز عبور ذخیره شد — از این پس با نام کاربری و رمز هم می‌توانید وارد شوید');
-      if (state.me) state.me.hasPassword = true;
-      renderPrivSub(body);
+      toast('رمز عبور ذخیره شد — لطفاً دوباره وارد شوید');
+      logout(true);
     } catch (e) { toast('خطا: ' + e.message); }
   };
 }

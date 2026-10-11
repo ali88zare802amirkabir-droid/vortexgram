@@ -5,7 +5,6 @@ const http = require('http');
 const express = require('express');
 const multer = require('multer');
 const { WebSocketServer } = require('ws');
-const dns = require('dns');
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
@@ -58,7 +57,12 @@ const IMG_DIRS = {
 Object.values(IMG_DIRS).forEach((d) => { try { fs.mkdirSync(d, { recursive: true }); } catch (e) {} });
 const MAX_MSG_LEN = 4000;
 const HISTORY_LIMIT = 200;
-const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
+const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
+const SESSION_ABSOLUTE_MAX = 60 * 24 * 60 * 60 * 1000;
+const MESSAGE_DELETION_RETENTION_DAYS = (() => {
+  const days = Number(process.env.MESSAGE_DELETION_RETENTION_DAYS ?? 30);
+  return Number.isFinite(days) && days > 0 ? days : 30;
+})();
 
 const EXT_BY_MIME = {
   'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
@@ -89,13 +93,28 @@ function isOriginalAdmin(user) {
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const dbStore = require('./db');
-const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], reports: [], messageDeletions: [] };
+const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], reports: [], messageDeletions: [], adminAudit: [], rateLimits: { authAttempts: {} } };
 let db = { ...DEFAULT_DB };
+function purgeExpiredMessageDeletions(now = Date.now()) {
+  if (!Array.isArray(db.messageDeletions)) db.messageDeletions = [];
+  const cutoff = now - MESSAGE_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const before = db.messageDeletions.length;
+  db.messageDeletions = db.messageDeletions.filter((entry) => {
+    if (!entry || typeof entry.at !== 'number' || !Number.isFinite(entry.at)) return true;
+    return entry.at >= cutoff;
+  });
+  const removed = before - db.messageDeletions.length;
+  if (removed > 0) saveDB();
+  return removed;
+}
 function normalizeGroups() {
   if (!Array.isArray(db.groups)) db.groups = [];
   if (!db.pinned || typeof db.pinned !== 'object') db.pinned = {};
   if (!Array.isArray(db.scheduled)) db.scheduled = [];
   if (!Array.isArray(db.reports)) db.reports = [];
+  if (!Array.isArray(db.adminAudit)) db.adminAudit = [];
+  if (!db.rateLimits || typeof db.rateLimits !== 'object') db.rateLimits = { authAttempts: {} };
+  if (!db.rateLimits.authAttempts || typeof db.rateLimits.authAttempts !== 'object') db.rateLimits.authAttempts = {};
   if (!db.userFlags || typeof db.userFlags !== 'object') db.userFlags = {};
   if (!db.uploadFlags || typeof db.uploadFlags !== 'object') db.uploadFlags = {};
   if (!db.uploadCounters || typeof db.uploadCounters !== 'object') db.uploadCounters = {};
@@ -183,7 +202,7 @@ function wsRateOk(username, key, max, windowMs) {
   return true;
 }
 const pendingCodes = new Map(); // phone -> { code, exp }
-// rate-limit ساده ضد بروت‌فورس برای اندپوینت‌های احراز هویت (حافظه‌ای، هر پروسه)
+// rate-limit ساده برای مسیرهای غیرحساس (حافظه‌ای، هر پروسه)
 const authAttempts = new Map(); // key -> [timestamps]
 function authRateOk(key, max, windowMs) {
   const now = Date.now();
@@ -191,6 +210,55 @@ function authRateOk(key, max, windowMs) {
   if (arr.length >= max) { authAttempts.set(key, arr); return false; }
   arr.push(now);
   authAttempts.set(key, arr);
+  return true;
+}
+// rate-limit ضد بروت‌فورس برای مسیرهای حساس احراز هویت (پشت دیتابیس، مقاوم در برابر ری‌استارت)
+function getAuthRateStore() {
+  if (!db.rateLimits || typeof db.rateLimits !== 'object') db.rateLimits = { authAttempts: {} };
+  if (!db.rateLimits.authAttempts || typeof db.rateLimits.authAttempts !== 'object') db.rateLimits.authAttempts = {};
+  return db.rateLimits.authAttempts;
+}
+function pruneAuthRateStore(now = Date.now()) {
+  const store = getAuthRateStore();
+  let changed = false;
+  const entries = Object.entries(store).sort((a, b) => {
+    const aLast = Array.isArray(a[1].hits) && a[1].hits.length ? a[1].hits[a[1].hits.length - 1] : 0;
+    const bLast = Array.isArray(b[1].hits) && b[1].hits.length ? b[1].hits[b[1].hits.length - 1] : 0;
+    return aLast - bLast;
+  });
+  for (const [key, record] of entries.slice(0, Math.max(0, entries.length - 2000))) {
+    delete store[key];
+    changed = true;
+  }
+  for (const [key, record] of Object.entries(store)) {
+    const windowMs = Number(record && record.windowMs) || 60000;
+    const hits = Array.isArray(record && record.hits) ? record.hits.filter((t) => now - t < windowMs) : [];
+    if (hits.length) {
+      if (hits.length !== (record.hits || []).length) {
+        store[key] = { hits, windowMs };
+        changed = true;
+      }
+    } else {
+      delete store[key];
+      changed = true;
+    }
+  }
+  if (changed) saveDB();
+  return changed;
+}
+function authRateDbOk(key, max, windowMs, now = Date.now()) {
+  const store = getAuthRateStore();
+  const record = store[key] && typeof store[key] === 'object' ? store[key] : { hits: [], windowMs };
+  const hits = Array.isArray(record.hits) ? record.hits.filter((t) => now - t < windowMs) : [];
+  if (hits.length >= max) {
+    store[key] = { hits, windowMs };
+    pruneAuthRateStore(now);
+    return false;
+  }
+  hits.push(now);
+  store[key] = { hits, windowMs };
+  pruneAuthRateStore(now);
+  saveDB();
   return true;
 }
 setInterval(() => {
@@ -214,19 +282,68 @@ setInterval(() => {
 }, 30000);
 // بارگذاری نشست‌های ذخیره‌شده تا لاگین پس از ری‌استارت سرور باقی بماند (در start() پس از لود دیتابیس انجام می‌شود)
 
+function normalizeSessionRecord(token, record, now = Date.now()) {
+  if (!record || typeof record !== 'object' || typeof record.username !== 'string') {
+    sessions.delete(token);
+    return null;
+  }
+  const iat = Number.isFinite(record.iat) ? record.iat : now;
+  const maxExp = Number.isFinite(record.maxExp) ? record.maxExp : iat + SESSION_ABSOLUTE_MAX;
+  const normalized = { username: record.username, exp: Number(record.exp), iat, maxExp };
+  sessions.set(token, normalized);
+  return normalized;
+}
+
+function normalizeSessions(now = Date.now()) {
+  for (const [token, record] of [...sessions.entries()]) normalizeSessionRecord(token, record, now);
+}
+
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 function createSession(username) {
   const token = newToken();
-  sessions.set(token, { username, exp: Date.now() + SESSION_TTL });
+  const now = Date.now();
+  sessions.set(token, { username, exp: now + SESSION_TTL, iat: now, maxExp: now + SESSION_ABSOLUTE_MAX });
   saveDB();
   return token;
 }
-function getSession(token) {
-  const s = token && sessions.get(token);
-  if (!s || s.exp < Date.now()) return null;
-  return s.username;
+function getSession(token, now = Date.now()) {
+  const record = normalizeSessionRecord(token, token && sessions.get(token), now);
+  if (!record || !(record.exp > now) || !(record.maxExp > now)) {
+    if (token) {
+      sessions.delete(token);
+      saveDB();
+    }
+    return null;
+  }
+  return record.username;
+}
+function revokeUserSessions(username) {
+  let revoked = false;
+  for (const [token, record] of [...sessions.entries()]) {
+    if (record && record.username === username) {
+      sessions.delete(token);
+      revoked = true;
+    }
+  }
+  if (revoked) saveDB();
+  return revoked;
+}
+function auditAdmin(req, action, target, details = {}) {
+  db.adminAudit = Array.isArray(db.adminAudit) ? db.adminAudit : [];
+  db.adminAudit.push({
+    id: crypto.randomUUID(),
+    time: Date.now(),
+    actor: req.user.username,
+    action,
+    target: String(target || ''),
+    details,
+    ip: clientIp(req),
+    userAgent: String((req.headers && req.headers['user-agent']) || '').slice(0, 120),
+  });
+  if (db.adminAudit.length > 5000) db.adminAudit.splice(0, db.adminAudit.length - 5000);
+  saveDB();
 }
 // IP واقعی کلاینت: فقط وقتی پشت پراکسی قابل اعتماد (TRUST_PROXY) باشیم X-Forwarded-For
 // بکار می‌رود؛ در غیر این صورت از آدرس سوکت استفاده می‌شود تا کلاینت نتواند با
@@ -543,7 +660,7 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   // 'blob:' در connect-src لازم است: کش دائمی رسانه‌ها (IndexedDB) blob URL را با
   // fetch می‌خواند و بدون آن مرورگر درخواست را به‌خاطر CSP بلاک می‌کند.
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -636,7 +753,7 @@ app.get('/invite', (req, res) => {
 
 // ---------- auth api ----------
 app.post('/api/register', (req, res) => {
-  if (!authRateOk('register:' + clientIp(req), 8, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  if (!authRateDbOk('register:' + clientIp(req), 8, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const { username, password } = req.body || {};
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ error: 'نام کاربری: ۳ تا ۲۰ حرف انگلیسی/عدد/_ ' });
   if (!password || String(password).length < 6) return res.status(400).json({ error: 'رمز حداقل ۶ کاراکتر' });
@@ -658,7 +775,7 @@ app.post('/api/register', (req, res) => {
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
-  if (!authRateOk('login:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — یک دقیقه صبر کن' });
+  if (!authRateDbOk('login:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — یک دقیقه صبر کن' });
   const user = db.users.find((u) => u.username.toLowerCase() === String(username || '').toLowerCase());
   if (!user || !verifyPassword(user, String(password || ''))) {
     return res.status(401).json({ error: 'نام کاربری یا رمز اشتباه است' });
@@ -670,11 +787,13 @@ app.post('/api/login', (req, res) => {
   res.json({ token, me: publicUser(user) });
 });
 
-// خروج از حساب: توکن نشست در سمت سرور باطل می‌شود (نه فقط حذف localStorage)
+// خروج از حساب: نشست Bearer و نشست کوکی، هر دو سمت سرور باطل می‌شوند (نه فقط حذف localStorage)
 app.post('/api/logout', auth, (req, res) => {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  const cookieToken = cookieSessionToken(req);
   if (token) sessions.delete(token);
+  if (cookieToken) sessions.delete(cookieToken);
   saveDB();
   clearSessionCookie(res);
   res.json({ ok: true });
@@ -687,8 +806,8 @@ app.post('/api/send-code', async (req, res) => {
   if (phoneAuthDisabled) return res.status(403).json({ error: 'ورود با شماره موبایل موقتاً غیرفعال است — از نام کاربری و رمز عبور استفاده کن', disabled: 'phone-otp' });
   const phone = normalizePhone((req.body || {}).phone);
   if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
-  if (!authRateOk('send-code:' + phone, 5, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
-  if (!authRateOk('send-code-ip:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  if (!authRateDbOk('send-code:' + phone, 5, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
+  if (!authRateDbOk('send-code-ip:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const code = genCode();
   pendingCodes.set(phone, { code, exp: Date.now() + 2 * 60 * 1000 });
   // حالت تست بدون کد: شماره‌ی ثبت‌شده مستقیم وارد می‌شود، شماره‌ی جدید به مرحله‌ی نام می‌رود.
@@ -717,8 +836,8 @@ app.post('/api/verify-code', (req, res) => {
   const phone = normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '');
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
-  if (!authRateOk('verify-code:' + phone, 10, 5 * 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — چند دقیقه صبر کن' });
-  if (!authRateOk('verify-ip:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  if (!authRateDbOk('verify-code:' + phone, 10, 5 * 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — چند دقیقه صبر کن' });
+  if (!authRateDbOk('verify-ip:' + clientIp(req), 20, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
   const rec = pendingCodes.get(phone);
   if (!noOtpEnabled) {
     if (!rec || rec.exp < Date.now()) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
@@ -738,12 +857,13 @@ app.post('/api/verify-code', (req, res) => {
 
 app.post('/api/complete-register', (req, res) => {
   if (phoneAuthDisabled) return res.status(403).json({ error: 'ورود با شماره موبایل موقتاً غیرفعال است — از نام کاربری و رمز عبور استفاده کن', disabled: 'phone-otp' });
-  if (!authRateOk('comp-register:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  if (!authRateDbOk('comp-register:' + clientIp(req), 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const phone = normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '');
   const displayName = String((req.body || {}).displayName || '').trim();
   let username = String((req.body || {}).username || '').trim();
   if (!phone) return res.status(400).json({ error: 'شماره نامعتبر' });
+  if (!authRateDbOk('comp-register-phone:' + phone, 10, 5 * 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — چند دقیقه صبر کن' });
   const rec = pendingCodes.get(phone);
   if (!noOtpEnabled) {
     if (!rec || rec.exp < Date.now() || rec.code !== code) return res.status(401).json({ error: 'کد نامعتبر یا منقضی شده' });
@@ -780,15 +900,26 @@ app.post('/api/complete-register', (req, res) => {
   return res.json({ ok: true, token, me: publicUser(user), message: isAdmin ? 'حساب ادمین ساخته شد ✅' : 'حساب ساخته شد ✅' });
 });
 
+function cookieSessionToken(req) {
+  const c = (req && req.headers && req.headers.cookie) || '';
+  for (const part of c.split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === 'ft_sess') { try { return decodeURIComponent(v.join('=')) || null; } catch { return null; } }
+  }
+  return null;
+}
 function auth(req, res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   const username = getSession(token);
   const user = username && db.users.find((u) => u.username === username);
   if (!user || user.banned) return res.status(401).json({ error: 'احراز هویت نامعتبر' });
-  // نشست متحرک: هر فعالیت، عمر نشست را جلو می‌برد — کاربر فعال هرگز اجباری به ورود مجدد نمی‌شود
+  // نشست متحرک با سقف مطلق: هر فعالیت، عمر نشست را جلو می‌برد، اما هرگز از ۶۰ روز پس از صدور بیشتر نمی‌شود
   const s = token && sessions.get(token);
-  if (s) s.exp = Date.now() + SESSION_TTL;
+  if (s) {
+    s.exp = Math.min(Date.now() + SESSION_TTL, Number.isFinite(s.maxExp) ? s.maxExp : Infinity);
+    saveDB();
+  }
   setSessionCookie(res, token);
   req.user = user;
   next();
@@ -808,8 +939,11 @@ app.post('/api/password-change', auth, (req, res) => {
     if (!currentPassword || !verifyPassword(req.user, String(currentPassword || ''))) return res.status(403).json({ error: 'رمز فعلی اشتباه است' });
   }
   setPassword(req.user, String(newPassword));
+  revokeUserSessions(req.user.username);
   saveDB();
-  res.json({ ok: true });
+  kickUser(req.user.username);
+  auditAdmin(req, 'password-change', req.user.username, {});
+  res.json({ ok: true, reauthRequired: true });
 });
 
 // ---------- profile ----------
@@ -1110,6 +1244,7 @@ app.post('/api/admin/restrict', auth, (req, res) => {
     updatedAt: Date.now(),
   };
   saveDB();
+  auditAdmin(req, 'restrict', username, { restricted: !!restricted, maxFileMB: Number(maxFileMB) || 100, filesPerDay: Number(filesPerDay) || 5 });
   res.json({ ok: true });
 });
 
@@ -1169,6 +1304,7 @@ app.post('/api/admin/impersonate', auth, (req, res) => {
   const token = createSession(target.username);
   setSessionCookie(res, token);
   saveDB();
+  auditAdmin(req, 'impersonate', target.username, {});
   res.json({ ok: true, token, username: target.username });
 });
 
@@ -1187,10 +1323,12 @@ app.post('/api/admin/promote', auth, (req, res) => {
     if (!m) return res.status(400).json({ error: 'کاربر عضو گروه نیست' });
     m.role = role === 'admin' ? 'admin' : 'member';
     saveDB(); broadcastGroups();
+    auditAdmin(req, 'promote', target.username, { scope, role: m.role });
     return res.json({ ok: true, group: g.id, role: m.role });
   }
   target.isAdmin = role === 'admin';
   saveDB(); pushUsers();
+  auditAdmin(req, 'promote', target.username, { scope: scope || 'global', role: target.isAdmin ? 'admin' : 'member' });
   res.json({ ok: true, global: true, isAdmin: target.isAdmin });
 });
 
@@ -1226,9 +1364,11 @@ app.post('/api/admin/ban', auth, (req, res) => {
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
   if (target.isAdmin) return res.status(400).json({ error: 'ادمین قابل مسدودسازی نیست' });
   target.banned = !!banned;
+  if (banned) revokeUserSessions(target.username);
   saveDB();
   if (banned) kickUser(target.username);
   pushUsers();
+  auditAdmin(req, 'ban', target.username, { banned: !!banned });
   res.json({ ok: true });
 });
 
@@ -1241,9 +1381,11 @@ app.post('/api/admin/reset-password', auth, (req, res) => {
   if (target.isAdmin && !isOriginalAdmin(req.user)) return res.status(403).json({ error: 'برای تغییر رمز ادمین‌ها فقط ادمین اصلی اجازه دارد' });
   if (!newPassword || String(newPassword).length < 6) return res.status(400).json({ error: 'رمز جدید حداقل ۶ کاراکتر باشد' });
   setPassword(target, String(newPassword));
+  revokeUserSessions(target.username);
   saveDB();
   kickUser(target.username);
   notifyUser(target.username, { type: 'password-reset' });
+  auditAdmin(req, 'reset-password', target.username, {});
   res.json({ ok: true });
 });
 
@@ -1655,59 +1797,22 @@ app.post('/api/schedule', auth, (req, res) => {
 });
 
 // ===== پیش‌نمایش لینک =====
-const httpsMod = require('https');
-const httpMod = require('http');
-const urlMod = require('url');
-function isPrivateIp(ip) {
-  if (typeof ip !== 'string' || !ip) return true;
-  if (ip.includes(':')) return true; // IPv6 always blocked
-  const p = ip.split('.').map(Number);
-  if (p.length !== 4 || p.some((n) => isNaN(n) || n < 0 || n > 255)) return true;
-  const [a, b] = p;
-  if (a === 0 || a === 10 || a === 127 || a >= 224) return true; // loopback, private class A, multicast
-  if (a === 169 && b === 254) return true; // link-local
-  if (a === 172 && b >= 16 && b <= 31) return true; // private class B
-  if (a === 192 && b === 168) return true; // private class C
-  if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT
-  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
-  if (a === 203 && b === 0 && p[2] === 113) return true; // documentation
-  if (a === 240) return true; // reserved
-  return false;
-}
-function fetchWithRedirects(url, opts, maxRedirects = 3) {
-  const mod = url.startsWith('https:') ? httpsMod : httpMod;
-  return new Promise((resolve, reject) => {
-    const reqO = mod.get(url, opts, (r) => {
-      if ([301, 302, 303, 307, 308].includes(r.statusCode) && r.headers.location && maxRedirects > 0) {
-        r.resume();
-        try {
-          const next = new urlMod.URL(r.headers.location, url);
-          if (next.protocol !== 'http:' && next.protocol !== 'https:') return reject(new Error('bad redirect protocol'));
-          const port = Number(next.port) || (next.protocol === 'https:' ? 443 : 80);
-          if (![80, 443, 8080, 8443].includes(port)) return reject(new Error('bad redirect port'));
-          return resolve(fetchWithRedirects(next.href, opts, maxRedirects - 1));
-        } catch { return reject(new Error('bad redirect url')); }
-      }
-      resolve(r);
-    });
-    reqO.on('timeout', () => { reqO.destroy(); reject(new Error('timeout')); });
-    reqO.on('error', reject);
-  });
-}
+const { fetchPublicUrl } = require('./server/link-fetch');
 app.get('/api/link-preview', auth, async (req, res) => {
   if (!authRateOk('link-preview:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const raw = String(req.query.url || '');
   let u;
-  try { u = new urlMod.URL(raw); } catch { return res.status(400).json({ error: 'لینک نامعتبر' }); }
+  try { u = new URL(raw); } catch { return res.status(400).json({ error: 'لینک نامعتبر' }); }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return res.status(400).json({ error: 'فقط http(s)' });
   const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
   if (![80, 443, 8080, 8443].includes(port)) return res.status(400).json({ error: 'پورت غیرمجاز' });
+  let r;
   try {
-    const addrs = await dns.promises.lookup(u.hostname, { all: true });
-    if (!addrs.length || addrs.some((i) => isPrivateIp(i.address))) return res.status(400).json({ error: 'آدرس مقصد مجاز نیست' });
-  } catch { return res.status(400).json({ error: 'دامنه یافت نشد' }); }
+    r = await fetchPublicUrl(u.href, { maxRedirects: 3, timeoutMs: 3000, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'text/html' } });
+  } catch {
+    return res.status(400).json({ error: 'آدرس مقصد مجاز نیست' });
+  }
   try {
-    const r = await fetchWithRedirects(u.href, { timeout: 3000, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'text/html' } }, 3);
     const ct = r.headers['content-type'] || '';
     if (!ct.includes('text/html')) { r.resume(); return res.json({ url: raw, domain: u.hostname }); }
     let buf = ''; let n = 0;
@@ -1850,7 +1955,13 @@ app.get('/api/admin/room/messages', auth, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
   const roomId = String(req.query.roomId || '').slice(0, 120);
   const msgs = (db.messages[roomId] || []).map(enrichMsg);
+  auditAdmin(req, 'room-messages-read', roomId, { roomId, count: msgs.length });
   res.json({ roomId, messages: msgs });
+});
+
+app.get('/api/admin/audit', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  res.json({ audit: Array.isArray(db.adminAudit) ? db.adminAudit : [] });
 });
 
 // ---------- uploads ----------
@@ -2029,26 +2140,21 @@ app.post('/api/gif/ingest', auth, (req, res) => {
   if (!authRateOk('gif-ingest:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
   const raw = String(req.body && req.body.url || '');
   let u;
-  try { u = new urlMod.URL(raw); } catch { return res.status(400).json({ error: 'آدرس نامعتبر' }); }
+  try { u = new URL(raw); } catch { return res.status(400).json({ error: 'آدرس نامعتبر' }); }
   if (u.protocol !== 'https:') return res.status(400).json({ error: 'فقط https' });
   if (!GIF_REMOTE_HOSTS.has(u.hostname.toLowerCase())) return res.status(400).json({ error: 'میزبان مجاز نیست' });
   const port = Number(u.port) || 443;
   if (port !== 443) return res.status(400).json({ error: 'پورت غیرمجاز' });
 
   (async () => {
-    try {
-      const addrs = await dns.promises.lookup(u.hostname, { all: true });
-      if (!addrs.length || addrs.some((i) => isPrivateIp(i.address))) return res.status(400).json({ error: 'آدرس مقصد مجاز نیست' });
-    } catch { return res.status(400).json({ error: 'دامنه یافت نشد' }); }
-
     let r;
     try {
-      r = await fetchWithRedirects(u.href, { timeout: 6000, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'image/gif,image/*' } }, 2);
+      r = await fetchPublicUrl(u.href, { maxRedirects: 2, timeoutMs: 6000, headers: { 'User-Agent': 'VortexGramBot/1.0', 'Accept': 'image/gif,image/*' } });
     } catch { return res.status(502).json({ error: 'دریافت GIF ناموفق بود' }); }
     if (r.statusCode !== 200) { r.resume(); return res.status(502).json({ error: 'دریافت GIF ناموفق بود' }); }
     // بعد از ریدایرکت هم باید روی همان میزبان‌های مجاز مانده باشیم (ضد SSRF)
     try {
-      const fin = new urlMod.URL(r.headers.location || u.href);
+      const fin = new URL(r.finalUrl || r.headers.location || u.href);
       if (fin.protocol !== 'https:' || !GIF_REMOTE_HOSTS.has(fin.hostname.toLowerCase())) { r.resume(); return res.status(400).json({ error: 'مقصد ریدایرکت مجاز نیست' }); }
     } catch { r.resume(); return res.status(400).json({ error: 'ریدایرکت نامعتبر' }); }
 
@@ -2575,8 +2681,6 @@ wss.on('connection', (ws, req) => {
 
       const user = db.users.find((u) => u.username === username);
       if (!user || user.banned) return;
-      const _uf = (db.userFlags && db.userFlags[username]) || {};
-      if (_uf.restricted && ['image', 'gif', 'video', 'audio', 'voice', 'file', 'location', 'album'].includes(kind)) return;
       const roomId = String(data.roomId || '').slice(0, 100);
       if (!canAccess(roomId, username)) return;
       if (roomId.startsWith('dm:')) {
@@ -2590,6 +2694,8 @@ wss.on('connection', (ws, req) => {
       }
       if (!canPost(roomId, username)) return wsSend(ws, { type: 'error', text: 'در کانال فقط مدیران می‌توانند پیام بفرستند' });
       const kind = ['text', 'sticker', 'image', 'gif', 'video', 'audio', 'voice', 'file', 'poll', 'checklist', 'album', 'location'].includes(data.kind) ? data.kind : 'text';
+      const _uf = (db.userFlags && db.userFlags[username]) || {};
+      if (_uf.restricted && ['image', 'gif', 'video', 'audio', 'voice', 'file', 'location', 'album'].includes(kind)) return;
       const maxLen = (user.isPremium || user.isAdmin) ? MAX_MSG_LEN : 700;
 
       // اعتبارسنجی بار پیام بر اساس نوع
@@ -2985,13 +3091,17 @@ async function start() {
     if (loaded) {
       db = { ...DEFAULT_DB, ...loaded };
       normalizeGroups();
+      purgeExpiredMessageDeletions();
       backfillUids();
       try { if (db.sessions) for (const [k, v] of Object.entries(db.sessions)) sessions.set(k, v); } catch (e) {}
+      normalizeSessions();
     }
   } catch (e) {
     console.error('DB load failed:', e.message);
   }
   server.listen(PORT, () => console.log(`vortexgram on http://localhost:${PORT}`));
+  const deletionRetentionTimer = setInterval(purgeExpiredMessageDeletions, 60 * 60 * 1000);
+  if (deletionRetentionTimer.unref) deletionRetentionTimer.unref();
   if (Number(process.env.PORT) !== 3000 && process.env.VX_MIRROR === '1') {
     const server2 = http.createServer(app);
     server2.listen(3000, () => console.log('vortexgram mirrored on http://localhost:3000'));

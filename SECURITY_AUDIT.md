@@ -2,7 +2,7 @@
 
 **تاریخ:** ۲۰۲۶/۰۹/۲۸
 **ممیز:** Security Auditor (فقط‌خواندنی)
-**وضعیت:** کد تغییر نکرده — فقط تحلیل و گزارش
+**وضعیت:** به‌روزرسانی فاز ۱ — موارد امنیتی زیر در کد اعمال و با تست رگرسیون پوشش داده شده‌اند. موارد دست‌نخورده همچنان باز هستند.
 
 ---
 
@@ -116,7 +116,8 @@
 ### H-001: XSS از طریق `javascript:` URL در `formatText()`
 
 - **Severity:** HIGH
-- **File:** `public/app.js:1005-1016` (تابع `formatText`)
+- **Status:** ✅ رفع شد در فاز ۱
+- **File:** `public/sanitize.js`، `public/app.js` (تابع `formatText` اکنون به `VXSanitize.formatText` واگذار شده است)
 - **Root Cause:** تابع `formatText` ابتدا متن را با `esc()` escape می‌کند، اما سپس در regex لینک‌ها `[text](url)` را به `<a href="$2">` تبدیل می‌کند بدون اینکه پروتکل URL را بررسی کند. از آنجا که `esc()` کاراکترهای HTML را encode می‌کند اما `javascript:alert(1)` کاراکتر ویژه‌ای ندارد، این پروتکل در `href` باقی می‌ماند.
 - **Evidence:**
   ```javascript
@@ -136,6 +137,8 @@
   });
   ```
 - **Regression Test:** ارسال پیام با `[test](javascript:alert(1))` و بررسی اینکه `<a>` با `javascript:` ایجاد نشود
+- **Phase 1 Fix:** رندر لینک فقط برای `http:`/`https:` معتبر یا مسیر نسبی `/` ساخته می‌شود؛ نام‌کاربری/رمز در URL، `//host`، فاصله، کوتیشن، `<>"'`، بک‌اسلش و کنترل‌های جهت‌نما رد می‌شوند. `href` با `new URL()` اعتبارسنجی و با `encodeURI`/attribute-encoding امن می‌شود. قوانین Markdown داخل `href` اجرا نمی‌شوند و لینک دارای `rel="noopener noreferrer nofollow ugc"` است. همچنین `esc()` اکنون `"` و `'` را هم encode می‌کند و نام آیکون‌های `data-lucide` فقط به `[a-z0-9-]` محدود شده‌اند.
+- **Regression Tests:** `security: message markdown links cannot inject JavaScript or attributes` در `tests/security.test.js`
 
 ### H-002: `capacitor.config.json` — ناوبری نامحدود و Mixed Content
 
@@ -166,7 +169,8 @@
 ### H-003: CSP اجازه `'unsafe-inline'` برای اسکریپت‌ها
 
 - **Severity:** HIGH
-- **File:** `server.js:409`
+- **Status:** ✅ رفع شد در فاز ۱
+- **File:** `server.js`، `public/landing.html`، `public/privacy.html`، `public/terms.html`، `public/index.html`، `public/landing-theme.js`
 - **Evidence:**
   ```javascript
   res.setHeader('Content-Security-Policy',
@@ -179,6 +183,8 @@
   2. از nonce-based CSP استفاده کنید (هر درخواست nonce تصادفی بگیرد)
   3. اگر حذف ممکن نیست، حداقل `unsafe-eval` را هم اضافه نکنید
 - **Regression Test:** بعد از تغییر، مرورگر باید `<script>alert(1)</script>` را inline بلاک کند
+- **Phase 1 Fix:** همه‌ی اسکریپت‌های اجرایی inline به فایل‌های same-origin منتقل شدند (`landing-theme.js`) و `onload` ناسازگار با CSP از لینک فونت حذف شد. چون دیگر هیچ اسکریپت inline اجرایی وجود ندارد، از nonce استفاده نشد تا پیچیدگی/سطح حمله‌ی غیرضروری اضافه نشود. `script-src` اکنون فقط `'self'` است.
+- **Regression Tests:** `security: pages use a strict script CSP and contain no inline scripts/handlers` به‌علاوه‌ی بررسی headless که اسکریپت/`onclick` تزریقی اجرا نمی‌شود و `securitypolicyviolation` صادر می‌شود.
 
 ---
 
@@ -203,20 +209,25 @@
 ### M-002: محدودیت نرخ فقط در حافظه (In-Memory)
 
 - **Severity:** MEDIUM
+- **Status:** ⚠️ تا حدی رفع شد در فاز ۱
 - **File:** `server.js:128-148`
 - **Root Cause:** تمام Mapهای rate-limit (`authAttempts`, `wsRateLimits`, `wsConnTimes`, `uploadUsage`) در حافظه پروسه قرار دارند. با ری‌استارت سرور یا در چند instance، ریست می‌شوند.
 - **Impact:** مهاجم می‌تواند با ری‌استارت سرور یا استفاده از چند IP، rate-limit را دور بزند
 - **Recommended Fix:** از Redis یا یک لایه مشترک برای rate-limit استفاده کنید
+- **Phase 1 Fix:** شمارنده‌های مسیرهای حساس (`register`، `login`، `send-code`، `verify-code`، `complete-register`) در `db.rateLimits` ذخیره می‌شوند و از ری‌استارت جان سالم به در می‌برند. `complete-register` هم سقف هم‌ارز `verify-code` برای هر شماره دارد. محدودیت‌های غیرحساس همچنان حافظه‌ای‌اند و هماهنگی چند instance همچنان باز است.
+- **Regression Tests:** `security: auth rate limits survive a restart` و `security: complete-register has a restart-safe per-phone limit`
 
 ### M-003: توکن نشست در localStorage
 
 - **Severity:** MEDIUM
+- **Status:** ❌ باز است؛ در فاز ۱ مدل توکن عوض نشد
 - **File:** `public/app.js` (localStorage `ft_token`)
 - **Root Cause:** توکن نشست در `localStorage` ذخیره می‌شود که از طریق XSS قابل سرقت است. با این حال، کوکی `ft_sess` دارای `HttpOnly` است.
 - **Impact:** در صورت XSS، مهاجم می‌تواند `ft_token` را از localStorage بخواند و تمام حساب را تصاحب کند
 - **Recommended Fix:**
   1. از `HttpOnly` cookie به‌جای localStorage برای توکن استفاده کنید (httponly از دسترسی JS جلوگیری می‌کند)
   2. یا حداقل توکن را در sessionStorage بگذارید (با بستن تب پاک می‌شود)
+- **Capacitor Impact (پیشنهاد بدون اجرا):** مدل فقط-کوکی در WebView اندروید نیاز به بررسی ماندگاری کوکی بین اجراها، رفتار `SameSite` روی origin سفارشی/فایل، و تغییر همه‌ی `fetch`ها به `credentials: 'include'` دارد؛ همچنین باید محافظت CSRF صریح اضافه شود چون دیگر هدر Bearer دستی ارسال نمی‌شود. این تصمیم برگشت‌ناپذیر/پرخطر است و برای فاز بعد نگه داشته شد.
 
 ### M-004: آپلود فایل — اعتبارسنجی فقط بر اساس Extension
 
@@ -271,13 +282,14 @@
 - ✅ کوکی نشست: `HttpOnly; SameSite=Strict; Path=/; Max-Age=...` — خوب
 - ✅ توکن نشست: `crypto.randomBytes(32).toString('hex')` — 256 bit تصادفی
 - ✅ احراز هویت دو مرحله‌ای (OTP) با rate-limit
-- ✅ Session sliding (هر فعالیت عمر نشست را جلو می‌برد)
-- ✅ خروج از سمت سرور: توکن در Map حذف می‌شود (فقط Bearer token، نه cookie)
+- ✅ Session sliding ۱۴ روزه با سقف مطلق ۶۰ روزه
+- ✅ خروج از سمت سرور: هر دو نشست Bearer و کوکی حذف می‌شود
+- ✅ تغییر رمز و مسدودسازی همه‌ی نشست‌های کاربر را باطل می‌کند
 
 ### نقاط ضعف
 - ⚠️ SHA-256 fallback برای هش‌های قدیمی (M-001)
 - ⚠️ توکن در localStorage (M-003)
-- ⚠️ `authRateOk` فقط IP-based است — در  NAT ممکن است کاربران صدمنابعی تراز شوند
+- ⚠️ محدودیت‌های حساس auth اکنون در دیتابیس ذخیره می‌شوند، اما همچنان IP-based هستند — در NAT ممکن است کاربران سالم تراز شوند
 
 ---
 
@@ -302,10 +314,10 @@
 - ✅ `wss.maxPayload = 512 * 1024` — محدودیت حجم WS
 - ✅ Input validation برای username (`/^[a-zA-Z0-9_]{3,20}$/`)
 - ✅ `MAX_MSG_LEN = 4000` — محدودیت طول پیام
-- ✅ SSRF protection در link-preview (`isPrivateIp` check)
+- ✅ SSRF protection در link-preview و GIF ingest: اعتبارسنجی IP در هر هاپ و اتصال فقط به IP پین‌شده
 
 ### نقاط ضعف
-- ⚠️ `formatText()` — XSS از طریق `javascript:` URL (H-001)
+- ✅ `formatText()` — XSS از طریق `javascript:` URL در فاز ۱ رفع شد (H-001)
 - ⚠️ File upload بدون اعتبارسنجی محتوا (M-004)
 
 ---
@@ -319,22 +331,23 @@
 
 ### نقاط ضعف
 - ⚠️ `data/db.json` در git ردیابی می‌شود (C-001)
-- ⚠️ Session TTL 30 روز — طولانی است
-- ⚠️ هیچ audit log برای عملیات ادمین وجود ندارد
+- ⚠️ Session TTL اکنون ۱۴ روز با سقف مطلق ۶۰ روز است
+- ✅ گزارش حسابرسی ادمین برای impersonate/promote/ban/reset-password/restrict و خواندن پیام اتاق‌ها اضافه شد
+- ✅ باطل‌سازی نشست در تغییر رمز، مسدودسازی و خروج (Bearer + کوکی)
 
 ---
 
 ## XSS
 
 ### نقاط قوت
-- ✅ تابع `esc()` از `textContent`/`innerHTML` استفاده می‌کند — روش امن escaping
+- ✅ تابع `esc()` کاراکترهای `&<>"'` را encode می‌کند و برای متن و attribute امن است
 - ✅ اکثر رندرهای کاربر از `esc()` استفاده می‌کنند
-- ✅ CSP وجود دارد (هرچند ضعیف)
+- ✅ CSP سخت‌گیرانه‌ی `script-src 'self'` بدون اسکریپت/handler اجرایی inline
 
 ### نقاط ضعف
-- ❌ `formatText()` — `javascript:` URL (H-001)
-- ❌ CSP با `'unsafe-inline'` (H-003)
-- ⚠️ برخی `innerHTML` بدون `esc()` در موارد خاص (نیاز به بررسی دقیق‌تر)
+- ✅ `formatText()` — `javascript:` URL در فاز ۱ رفع شد (H-001)
+- ✅ CSP با `'unsafe-inline'` در فاز ۱ رفع شد (H-003)
+- ✅ همه‌ی interpolations پویای بررسی‌شده یا با `esc()` امن، یا با DOM property، یا ثابت/عددی هستند
 
 ---
 
@@ -381,11 +394,12 @@
 
 ### نقاط قوت
 - ✅ تمام مسیرهای حساس rate-limit دارند
+- ✅ شمارنده‌های حساس احراز هویت در دیتابیس ذخیره و از ری‌استارت جان سالم به در می‌برند
 - ✅ `clientIp()` فقط وقتی `TRUST_PROXY` فعال باشد XFF را می‌خواند (ضد spoofing)
 - ✅ تست‌های security.test.js پوشش دارند
 
 ### نقاط ضعف
-- ⚠️ In-memory — ری‌استارت = ریست (M-002)
+- ⚠️ محدودیت‌های غیرحساس همچنان In-memory هستند — ری‌استارت = ریست
 - ⚠️ در چند instance کار نمی‌کند
 
 ---
@@ -411,9 +425,9 @@
 |-----|--------|-------|
 | `X-Content-Type-Options` | ✅ | `nosniff` |
 | `X-Frame-Options` | ✅ | `DENY` |
-| `Referrer-Policy` | ✅ | `no-referrer` |
+| `Referrer-Policy` | ✅ | `strict-origin-when-cross-origin` |
 | `X-XSS-Protection` | ✅ | `1; mode=block` |
-| `Content-Security-Policy` | ⚠️ | `'unsafe-inline'` در script-src |
+| `Content-Security-Policy` | ✅ | `script-src 'self'` بدون اسکریپت/handler اجرایی inline |
 | `Strict-Transport-Security` | ✅ | `max-age=31536000; includeSubDomains` (فقط HTTPS) |
 | `Cache-Control` | ✅ | مناسب برای هر مسیر |
 
@@ -427,9 +441,10 @@
 - ✅ سقف ساخت گروه (2 عادی / 10 پرمیوم)
 - ✅ سیستم rename request (تایید ادمین)
 - ✅ سیستم report
+- ✅ گزارش حسابرسی append-only برای عملیات حساس ادمین
 
 ### نقاط ضعف
-- ⚠️ هیچ audit log برای عملیات ادمین (impersonate, ban, reset-password)
+- ✅ گزارش حسابرسی ادمین در فاز ۱ اضافه شد (بدون محتوای پیام)
 - ⚠️ هیچ محدودیتی برای تعداد گروه‌های public وجود ندارد
 
 ---
@@ -438,14 +453,14 @@
 
 | # | تست | روش | اولویت |
 |---|------|------|--------|
-| 1 | XSS از طریق `javascript:` URL در پیام | ارسال `[x](javascript:alert(1))` و کلیک | HIGH |
+| 1 | XSS از طریق `javascript:` URL در پیام | تست واحد `sanitize.formatText` + بررسی headless | HIGH |
 | 2 | CSRF از طریق فرم خارجی | ایجاد HTML با POST به `/api/block` | MEDIUM |
 | 3 | IDOR — دسترسی به پیام کاربر دیگر | تغییر roomId در WS `history` | HIGH |
 | 4 | بروت‌فورس OTP | ارسال 10 کد اشتباه | MEDIUM |
 | 5 | آپلود فایل مخرب | آپلود `.jpg` با محتوای HTML | HIGH |
-| 6 | SSRF در link-preview | ارسال `url=http://169.254.169.254/` | MEDIUM |
-| 7 | Session fixation | استفاده از توکن قدیمی بعد از logout | MEDIUM |
-| 8 | Rate-limit bypass | ارسال 100 درخواست/ثانیه | LOW |
+| 6 | SSRF در link-preview | ریدایرکت hostname عمومی به IP خصوصی + درخواست مستقیم `169.254.169.254` | MEDIUM |
+| 7 | Session fixation | استفاده از توکن قدیمی بعد از logout + سقف مطلق نشست | MEDIUM |
+| 8 | Rate-limit bypass | ری‌استارت سرور پس از ۸ ثبت‌نام و تلاش نهم | LOW |
 | 9 | SQL injection | ارسال `' OR 1=1--` در username | LOW |
 | 10 | بررسی git history | `git log --all -- data/db.json` | HIGH |
 
@@ -474,14 +489,14 @@
 | سطح | تعداد | موارد |
 |------|--------|-------|
 | CRITICAL | 2 | داده‌های کاربران در git |
-| HIGH | 3 | XSS در formatText، capacitor config، CSP ضعیف |
-| MEDIUM | 5 | SHA-256 fallback، rate-limit حافظه‌ای، localStorage token، آپلود بدون اعتبارسنجی محتوا، CSRF |
+| HIGH | 1 | capacitor config (H-002 باقی‌مانده) |
+| MEDIUM | 5 | SHA-256 fallback، localStorage token، آپلود بدون اعتبارسنجی محتوا، CSRF، محدودیت غیرحساس حافظه‌ای/چند instance |
 | LOW | 2 | OTP در پاسخ، بدون helmet |
 
-**امتیاز کلی امنیت:** ۶.۵/۱0
+**وضعیت فاز ۱:** H-001 و H-003 رفع شدند؛ M-002 برای مسیرهای حساس احراز هویت رفع شد. C-001/C-002، H-002، M-001، M-003، M-004، M-005، L-001 و L-002 همچنان باز هستند. امتیاز عددی بازمحاسبه نشده است.
 
-**توصیه:** اولویت اصلی پاک‌سازی داده‌ها از تاریخچه git و فیلتر XSS در `formatText` است. این دو مورد بیشترین تأثیر را دارند.
+**توصیه:** اولویت اصلی پاک‌سازی داده‌ها از تاریخچه git است.
 
 ---
 
-*این گزارش فقط‌خواندنی است — هیچ تغییری در کد اعمال نشده.*
+*این گزارش پس از فاز ۱ به‌روزرسانی شده است.*

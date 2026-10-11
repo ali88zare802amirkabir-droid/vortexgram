@@ -44,7 +44,8 @@ function seedDb(dir, opts = {}) {
     pinned: {},
     scheduled: [],
     renameRequests: [],
-    sessions: {
+    messageDeletions: opts.messageDeletions || [],
+    sessions: opts.sessions || {
       tokenAlice: { username: 'alice', exp: Date.now() + 3600000 },
       tokenBob: { username: 'bob', exp: Date.now() + 3600000 },
       tokenAdmin1: { username: 'admin1', exp: Date.now() + 3600000 },
@@ -481,5 +482,315 @@ test('security: unauthenticated client gets no API/state data (me/user/search/me
     const r = await api(base, 'GET', '/api/me');
     assert.strictEqual(r.d.users, undefined, 'no users leaked');
     assert.strictEqual(r.d.me, undefined, 'no me leaked');
+  });
+});
+
+test('security: message markdown links cannot inject JavaScript or attributes', async (t) => {
+  const sanitize = require('../public/sanitize.js');
+  for (const payload of [
+    '[click](javascript:alert(1))',
+    '[click](JaVaScRiPt:alert(1))',
+    '[x](https://example.com/"onmouseover="alert(1))',
+    "[x](https://example.com/'onmouseover='alert(1))",
+    '[x](https://user:pass@example.com/)',
+    '[x](//example.com/x)',
+  ]) {
+    const html = sanitize.formatText(payload);
+    assert.ok(!/<a[\s>]/i.test(html), 'unsafe markdown is not linkified: ' + payload);
+    assert.ok(!/<[a-zA-Z][^>]*\son[a-zA-Z]+\s*=/i.test(html), 'no event-handler attribute: ' + payload);
+    assert.ok(!/href\s*=\s*(["']?)\s*javascript:/i.test(html), 'no javascript href: ' + payload);
+  }
+  const markdownInHref = sanitize.formatText('[x](https://example.com/**bold**)');
+  assert.ok(!/<b>/i.test(markdownInHref), 'markdown does not execute inside href');
+
+  const safe = sanitize.formatText('[Example](https://example.com/a?b=1#c)');
+  assert.ok(safe.includes('<a href="https://example.com/a?b=1#c" target="_blank" rel="noopener noreferrer nofollow ugc">Example</a>'), 'safe links keep working');
+
+  const relative = sanitize.formatText('[local](/app?room=dm%3Aalice%7Cbob)');
+  assert.ok(relative.includes('<a href="/app?room=dm%3Aalice%7Cbob"'), 'same-origin links keep working');
+  assert.strictEqual(sanitize.escAttr('"\'<>&'), '&quot;&#39;&lt;&gt;&amp;');
+});
+
+test('security: pages use a strict script CSP and contain no inline scripts/handlers', async (t) => {
+  await withServer(t, { seed: {} }, async ({ base }) => {
+    for (const pathname of ['/', '/app', '/privacy.html', '/terms.html', '/invite?ref=alice']) {
+      const response = await fetch(base + pathname);
+      const csp = response.headers.get('content-security-policy') || '';
+      const scriptSrc = csp.split(';').map((part) => part.trim()).find((part) => part.startsWith('script-src ')) || '';
+      assert.ok(scriptSrc && !/(^|\s)'unsafe-inline'(\s|$)/.test(scriptSrc), 'script-src has no unsafe-inline for ' + pathname);
+      const body = await response.text();
+      const withoutJsonLd = body.replace(/<script\b[^>]*\btype=(["']?)application\/ld\+json\1[^>]*>[\s\S]*?<\/script\s*>/gi, '');
+      assert.ok(!/<script\b(?![^>]*\bsrc=)[^>]*>/i.test(withoutJsonLd), 'no executable inline script in ' + pathname);
+      assert.ok(!/<[a-zA-Z][^>]*\son[a-zA-Z]+\s*=/i.test(withoutJsonLd), 'no inline event handler in ' + pathname);
+    }
+  });
+});
+
+test('security: link-fetch validates IPs on every hop and pins DNS', async (t) => {
+  const { isPublicIpAddress, fetchPublicUrl } = require('../server/link-fetch.js');
+  for (const ip of ['10.0.0.8', '172.20.4.9', '192.168.7.44', '127.0.0.1', '0.0.0.0', '169.254.9.9', '100.65.4.3', '192.0.2.44', '198.51.100.7', '203.0.113.9', '224.0.0.5', '240.0.0.9', '::', '::1', 'fe80::7', 'fc00::9', 'ff02::1', '2001:db8::9', '::ffff:10.9.9.9']) {
+    assert.strictEqual(isPublicIpAddress(ip), false, ip + ' is not public');
+  }
+  for (const ip of ['8.8.8.8', '1.1.1.1', '2001:4860:4860::8888', '::ffff:8.8.8.8']) {
+    assert.strictEqual(isPublicIpAddress(ip), true, ip + ' is public');
+  }
+
+  const calls = [];
+  const lookup = async (hostname) => {
+    if (hostname === 'start.example.test') return [{ address: '93.184.216.34' }];
+    if (hostname === 'redirect.example.test') return [{ address: '10.9.9.9' }];
+    throw new Error('unexpected lookup ' + hostname);
+  };
+  const request = async (url, options) => {
+    const address = await new Promise((resolve, reject) => {
+      options.lookup(new URL(url).hostname, {}, (error, value) => (error ? reject(error) : resolve(value)));
+    });
+    calls.push({ url, address });
+    if (url.includes('start.example.test')) return { statusCode: 302, headers: { location: 'http://redirect.example.test/' }, resume() {} };
+    throw new Error('redirect target must never be fetched');
+  };
+  await assert.rejects(fetchPublicUrl('http://start.example.test/', { lookup, request }), /destination IP not allowed/);
+  assert.strictEqual(calls.length, 1, 'private redirect target is never fetched');
+  assert.strictEqual(calls[0].address, '93.184.216.34', 'first hop uses the validated pinned address');
+});
+
+test('security: link-preview rejects literal private IPv4/IPv6 destinations', async (t) => {
+  const http = require('node:http');
+  let hits = 0;
+  const decoy = http.createServer((req, res) => { hits++; res.end('INTERNAL'); });
+  await new Promise((resolve) => decoy.listen(0, '127.0.0.1', resolve));
+  try {
+    const port = decoy.address().port;
+    await withServer(t, { seed: {} }, async ({ base }) => {
+      for (const target of [`http://127.0.0.1:${port}/secret`, `http://[::1]:${port}/secret`]) {
+        const r = await api(base, 'GET', '/api/link-preview?url=' + encodeURIComponent(target), 'tokenAlice');
+        assert.strictEqual(r.status, 400, 'private literal destination rejected: ' + target);
+      }
+      assert.strictEqual(hits, 0, 'decoy server was never contacted');
+    });
+  } finally {
+    await new Promise((resolve) => decoy.close(resolve));
+  }
+});
+
+test('security: sessions use a 14-day sliding TTL and a 60-day absolute cap', async (t) => {
+  await withServer(t, { seed: {} }, async ({ base }) => {
+    const login = await fetch(base + '/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'alice', password: 'alicepw' }),
+    });
+    assert.strictEqual(login.status, 200, 'login ok');
+    const setCookie = login.headers.get('set-cookie') || '';
+    assert.match(setCookie, /Max-Age=1209600/, 'sliding session cookie is 14 days');
+  });
+
+  const ancient = Date.now() - 61 * 24 * 60 * 60 * 1000;
+  await withServer(t, {
+    seed: {
+      sessions: { ancientAlice: { username: 'alice', exp: Date.now() + 3600000, iat: ancient, maxExp: ancient + 60 * 24 * 60 * 60 * 1000 } },
+    },
+  }, async ({ base }) => {
+    const r = await api(base, 'GET', '/api/me', 'ancientAlice');
+    assert.strictEqual(r.status, 401, 'absolute session cap is enforced');
+  });
+});
+
+test('security: password change invalidates every session', async (t) => {
+  await withServer(t, { seed: {} }, async ({ base }) => {
+    const login = await api(base, 'POST', '/api/login', null, { username: 'alice', password: 'alicepw' });
+    assert.strictEqual(login.status, 200, 'login ok');
+    const changed = await api(base, 'POST', '/api/password-change', login.d.token, { currentPassword: 'alicepw', newPassword: 'rotated-pass-1' });
+    assert.strictEqual(changed.status, 200, 'password change ok');
+    assert.strictEqual(changed.d.reauthRequired, true, 'client is told to re-authenticate');
+    const me = await api(base, 'GET', '/api/me', login.d.token);
+    assert.strictEqual(me.status, 401, 'old session is invalid after password change');
+  });
+});
+
+test('security: banning invalidates every session', async (t) => {
+  await withServer(t, {
+    seed: {
+      users: [
+        { username: 'admin1', displayName: 'Admin One', isAdmin: true, phone: '09120000011', salt: 'x1', passHash: legacyHash('admin1pw', 'x1') },
+        { username: 'victim', displayName: 'Victim', salt: 'vv', passHash: legacyHash('victimpw', 'vv'), phone: '09120000044' },
+      ],
+    },
+  }, async ({ base, dbFile }) => {
+    const login = await api(base, 'POST', '/api/login', null, { username: 'victim', password: 'victimpw' });
+    assert.strictEqual(login.status, 200, 'victim login ok');
+    const banned = await api(base, 'POST', '/api/admin/ban', 'tokenAdmin1', { username: 'victim', banned: true });
+    assert.strictEqual(banned.status, 200, 'ban ok');
+    const me = await api(base, 'GET', '/api/me', login.d.token);
+    assert.strictEqual(me.status, 401, 'banned session is invalid');
+    await waitUntil(() => {
+      try {
+        const sessionsFile = dbFile.replace(/\.json$/i, '') + '.sessions.json';
+        const sessions = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
+        return !sessions[login.d.token];
+      } catch { return false; }
+    });
+  });
+});
+
+test('security: logout invalidates both bearer and cookie sessions', async (t) => {
+  await withServer(t, { seed: {} }, async ({ base }) => {
+    const first = await fetch(base + '/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'alice', password: 'alicepw' }),
+    });
+    const second = await fetch(base + '/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'alice', password: 'alicepw' }),
+    });
+    assert.strictEqual(first.status, 200, 'first login ok');
+    assert.strictEqual(second.status, 200, 'second login ok');
+    const bearer = (await first.json()).token;
+    const cookie = decodeURIComponent(((second.headers.get('set-cookie') || '').match(/ft_sess=([^;]+)/) || [])[1] || '');
+    assert.ok(bearer && cookie && bearer !== cookie, 'two distinct sessions exist');
+    const loggedOut = await fetch(base + '/api/logout', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + bearer, Cookie: 'ft_sess=' + cookie },
+    });
+    assert.strictEqual(loggedOut.status, 200, 'logout ok');
+    const bearerProbe = await api(base, 'GET', '/api/me', bearer);
+    const cookieProbe = await fetch(base + '/uploads/probe-' + Date.now() + '.txt', { headers: { Cookie: 'ft_sess=' + cookie } });
+    assert.strictEqual(bearerProbe.status, 401, 'bearer session revoked');
+    assert.strictEqual(cookieProbe.status, 401, 'cookie session revoked');
+  });
+});
+
+test('security: admin audit log records sensitive actions without message content', async (t) => {
+  const users = [
+    { username: 'admin1', displayName: 'Admin One', isAdmin: true, phone: '09120000011', salt: 'x1', passHash: legacyHash('admin1pw', 'x1') },
+    { username: 'alice', displayName: 'Alice', salt: 'aa', passHash: legacyHash('alicepw', 'aa'), phone: '09120000001' },
+    { username: 'bob', displayName: 'Bob', salt: 'bb', passHash: legacyHash('bobpw', 'bb'), phone: '09120000002' },
+    { username: 'carol', displayName: 'Carol', salt: 'cc', passHash: legacyHash('carolpw', 'cc'), phone: '09120000003' },
+  ];
+  await withServer(t, {
+    server: { ADMIN_PHONES: '09120000011' },
+    seed: {
+      users,
+      groups: [{ id: 'audit1', type: 'group', name: 'Audit Group', owner: 'admin1', members: [{ username: 'admin1', role: 'owner' }, { username: 'bob', role: 'member' }], createdAt: 1 }],
+      messages: { 'group:audit1': [{ id: 'audit-message', roomId: 'group:audit1', from: 'bob', fromName: 'Bob', kind: 'text', content: 'audit-content-marker', time: 2, reactions: {}, silent: false }] },
+    },
+  }, async ({ base }) => {
+    const admin = 'tokenAdmin1';
+    let r = await api(base, 'POST', '/api/admin/impersonate', admin, { username: 'bob' });
+    assert.strictEqual(r.status, 200, 'impersonate ok');
+    r = await api(base, 'POST', '/api/admin/promote', admin, { username: 'carol', scope: 'global', role: 'admin' });
+    assert.strictEqual(r.status, 200, 'promote ok');
+    r = await api(base, 'POST', '/api/admin/ban', admin, { username: 'bob', banned: true });
+    assert.strictEqual(r.status, 200, 'ban ok');
+    r = await api(base, 'POST', '/api/admin/reset-password', admin, { username: 'bob', newPassword: 'rotated-pass-2' });
+    assert.strictEqual(r.status, 200, 'reset-password ok');
+    r = await api(base, 'POST', '/api/admin/restrict', admin, { username: 'bob', restricted: true });
+    assert.strictEqual(r.status, 200, 'restrict ok');
+    r = await api(base, 'GET', '/api/admin/room/messages?roomId=' + encodeURIComponent('group:audit1'), admin);
+    assert.strictEqual(r.status, 200, 'admin room read ok');
+
+    r = await api(base, 'GET', '/api/admin/audit', admin);
+    assert.strictEqual(r.status, 200, 'audit readable by admin');
+    const actions = (r.d.audit || []).map((entry) => entry.action);
+    for (const action of ['impersonate', 'promote', 'ban', 'reset-password', 'restrict', 'room-messages-read']) {
+      assert.ok(actions.includes(action), 'audit contains ' + action);
+    }
+    assert.ok((r.d.audit || []).every((entry) => entry.actor === 'admin1'), 'audit attributes every action');
+    assert.ok(!JSON.stringify(r.d.audit).includes('audit-content-marker'), 'audit never logs message content');
+    const forbidden = await api(base, 'GET', '/api/admin/audit', 'tokenAlice');
+    assert.strictEqual(forbidden.status, 403, 'audit hidden from non-admins');
+  });
+});
+
+test('security: deleted-message archive honors retention', async (t) => {
+  const now = Date.now();
+  await withServer(t, {
+    server: { MESSAGE_DELETION_RETENTION_DAYS: '1' },
+    seed: {
+      messageDeletions: [
+        { id: 'old-deletion', roomId: 'dm:alice|bob', msg: { id: 'old', content: 'old' }, deletedBy: 'alice', at: now - 2 * 24 * 60 * 60 * 1000 },
+        { id: 'new-deletion', roomId: 'dm:alice|bob', msg: { id: 'new', content: 'new' }, deletedBy: 'alice', at: now },
+      ],
+    },
+  }, async ({ dbFile }) => {
+    await waitUntil(() => {
+      try {
+        const ids = (readDb(dbFile).messageDeletions || []).map((entry) => entry.id);
+        return !ids.includes('old-deletion') && ids.includes('new-deletion');
+      } catch { return false; }
+    });
+  });
+});
+
+async function bootEphemeralServer(dbFile, serverEnv = {}) {
+  const child = startServer({ DB_FILE: dbFile, PORT: String(PORT), ...serverEnv });
+  await waitForBanner(child, PORT);
+  return child;
+}
+
+async function terminateEphemeralServer(child) {
+  await new Promise((resolve) => {
+    child.once('exit', () => resolve());
+    child.kill();
+    setTimeout(resolve, 3000);
+  });
+}
+
+test('security: auth rate limits survive a restart', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vx-rate-'));
+  try {
+    const dbFile = seedDb(tmp, { users: [] });
+    let child = await bootEphemeralServer(dbFile);
+    try {
+      const base = 'http://127.0.0.1:' + PORT;
+      for (let i = 0; i < 8; i++) {
+        const r = await api(base, 'POST', '/api/register', null, { username: `rate${Date.now()}${i}`, password: 'sekret123' });
+        assert.strictEqual(r.status, 200, 'register ' + i + ' allowed');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    } finally {
+      await terminateEphemeralServer(child);
+    }
+    child = await bootEphemeralServer(dbFile);
+    try {
+      const base = 'http://127.0.0.1:' + PORT;
+      const r = await api(base, 'POST', '/api/register', null, { username: `rate${Date.now()}final`, password: 'sekret123' });
+      assert.strictEqual(r.status, 429, 'restart does not reset the auth rate limit');
+    } finally {
+      await terminateEphemeralServer(child);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('security: complete-register has a restart-safe per-phone limit', async (t) => {
+  await withServer(t, { seed: {} }, async ({ base, dbFile }) => {
+    const phone = '09120000999';
+    for (let i = 0; i < 10; i++) {
+      const r = await api(base, 'POST', '/api/complete-register', null, { phone, code: '000000' });
+      assert.strictEqual(r.status, 401, 'wrong code attempt ' + i + ' counted');
+    }
+    const blocked = await api(base, 'POST', '/api/complete-register', null, { phone, code: '000000' });
+    assert.strictEqual(blocked.status, 429, 'eleventh wrong-code attempt blocked');
+    await waitUntil(() => {
+      try {
+        const buckets = readDb(dbFile).rateLimits?.authAttempts || {};
+        return (buckets[`comp-register-phone:${phone}`]?.hits || []).length === 10;
+      } catch { return false; }
+    });
+  });
+});
+
+test('security: privacy page honestly discloses access, retention, and AI providers', async (t) => {
+  await withServer(t, { seed: {} }, async ({ base }) => {
+    const response = await fetch(base + '/privacy.html');
+    assert.strictEqual(response.status, 200, 'privacy page served');
+    const body = await response.text();
+    for (const phrase of ['رمزنگاری سرتاسری', 'مدیران', 'گزارش', 'حذف شود', '۳۰ روزه', 'هوش مصنوعی', 'ارائه‌دهنده']) {
+      assert.ok(body.includes(phrase), 'privacy discloses: ' + phrase);
+    }
   });
 });

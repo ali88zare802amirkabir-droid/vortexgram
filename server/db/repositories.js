@@ -207,7 +207,7 @@ function buildAll(data) {
   }
   const sessionRows = [];
   for (const [token, s] of Object.entries(sessions)) {
-    if (token && s) sessionRows.push([token, text(s.username), num(s.exp) || 0, null]);
+    if (token && s) sessionRows.push([token, text(s.username), num(s.exp) || 0, num(s.iat)]);
   }
 
   // --- message_deletions (audit log of removed messages) -------------------
@@ -444,9 +444,12 @@ async function loadAll(exec) {
     db.renameRequests.push(rr);
   }
 
-  const sessRes = (await exec.query('SELECT token, username, expires_at FROM sessions')).rows;
+  const sessRes = (await exec.query('SELECT token, username, expires_at, created_at FROM sessions')).rows;
   const sessionsObj = {};
-  for (const r of sessRes) sessionsObj[r.token] = { username: r.username, exp: Number(r.expires_at || 0) };
+  for (const r of sessRes) {
+    sessionsObj[r.token] = { username: r.username, exp: Number(r.expires_at || 0) };
+    if (r.created_at !== null && r.created_at !== undefined) sessionsObj[r.token].iat = Number(r.created_at);
+  }
   if (Object.keys(sessionsObj).length) db.sessions = sessionsObj;
 
   // --- message_deletions (audit log) ---------------------------------------
