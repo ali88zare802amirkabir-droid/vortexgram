@@ -1402,6 +1402,34 @@ function showMsgAvatar() {
   const g = state.groups.find((x) => 'group:' + x.id === state.room);
   return !g || (g.type || 'group') !== 'channel';
 }
+/* نوار اعتبار پست: برچسب «ربات»، برچسب «تولید شده با هوش مصنوعی» و لینک منبع.
+   داده‌ها ساختاریافته‌اند (m.ai / m.source) و هرگز داخل متن پیام نیستند، پس
+   اینجا جداگانه و با escaping کامل رندر می‌شوند. */
+function provenanceEl(m) {
+  const isBot = !!(m.fromBot || (m.ai && m.ai.generated) ||
+    ((state.users.find((u) => u.username === m.from) || {}).isBot) ||
+    m.from === BOT_USERNAME);
+  const ai = (m.ai && m.ai.generated) ? (m.ai.label || 'تولید شده با هوش مصنوعی') : '';
+  const src = (m.source && typeof m.source === 'object') ? m.source : null;
+  if (!isBot && !ai && !src) return null;
+
+  const row = document.createElement('div'); row.className = 'msg-prov';
+  let html = '';
+  if (isBot) html += '<span class="prov-bot" title="این پیام را یک ربات فرستاده">' + ic('robot') + 'ربات</span>';
+  if (ai) html += '<span class="prov-ai">' + ic('sparkles') + esc(ai) + '</span>';
+  if (src && src.url) {
+    // sanitizeLinkHref فقط http/https را قبول می‌کند و
+    // نام کاربری/رمز و کاراکترهای کنترلی را رد می‌کند.
+    const href = VXSanitize.sanitizeLinkHref(src.url);
+    if (href) {
+      const site = src.site || (() => { try { return new URL(href).hostname.replace(/^www\./, ''); } catch (e) { return ''; } })();
+      html += '<a class="prov-src" href="' + escAttr(href) + '" target="_blank" rel="noopener noreferrer nofollow ugc">'
+        + ic('link') + '<span>' + esc(src.title ? src.title + ' — ' + site : ('منبع: ' + site)) + '</span></a>';
+    }
+  }
+  row.innerHTML = html;
+  return row.childNodes.length ? row : null;
+}
 function renderMessagesBatch(messages) {
   if (!messages.length) return;
   const msgs = $('messages');
@@ -1426,6 +1454,9 @@ function renderMessagesBatch(messages) {
       wrap.classList.add('no-av');
     }
     const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.dataset.id = m.id; bubble.dataset.from = m.from || '';
+    // پست‌های رباتی: برچسب «ربات»، برچسب هوش مصنوعی، لینک منبع و شمار بازدید
+    const prov = provenanceEl(m);
+    if (prov) bubble.appendChild(prov);
     // inline reply quote (quoted message preview)
     if (m.replyTo && m.replyTo.id) {
       bubble.appendChild(replyRef(m.replyTo));
@@ -1447,7 +1478,10 @@ function renderMessagesBatch(messages) {
     }
     const meta = document.createElement('div'); meta.className = 'msg-meta';
     const timeHtml = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>';
-    meta.innerHTML = (m.edited || m.editedAt) ? '<span class="msg-ed">ویرایش‌شده</span>' + timeHtml : timeHtml;
+    let extraMeta = '';
+    // شمار بازدید یکتا — فقط عدد، نه هویت بیننده
+    if (typeof m.views === 'number' && m.views > 0) extraMeta += '<span class="msg-views" title="تعداد بازدیدکننده">' + ic('gauge') + ' ' + m.views.toLocaleString('fa-IR') + '</span>';
+    meta.innerHTML = extraMeta + ((m.edited || m.editedAt) ? '<span class="msg-ed">ویرایش‌شده</span>' + timeHtml : timeHtml);
     bubble.appendChild(meta);
     applyReplyBadge(wrap, m, rmap);
     wrap.appendChild(bubble);

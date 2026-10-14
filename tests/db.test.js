@@ -160,6 +160,94 @@ test('full snapshot round-trips through normalized tables', async () => {
   assert.deepStrictEqual(await repo.loadAll(pool), loaded, 'second save/load is byte-identical');
 });
 
+test('bot accounts, api keys and post provenance round-trip (migration 0004)', async () => {
+  const bots = require(path.join(__dirname, '..', 'server', 'bots.js'));
+  const data = {
+    users: [
+      { username: 'admin1', displayName: 'Admin', isAdmin: true, createdAt: 1 },
+      { username: 'news_ai_bot', displayName: 'ربات اخبار', isBot: true, uid: 100002, createdAt: 2, bio: 'اخبار' },
+      { username: 'alice', displayName: 'Alice', createdAt: 3 },
+    ],
+    groups: [{
+      id: 'abc123abc123', type: 'channel', name: 'تکنولوژی و هوش مصنوعی',
+      owner: 'news_ai_bot', members: [{ username: 'news_ai_bot', role: 'owner' }, { username: 'alice', role: 'member' }],
+      createdAt: 10, username: 'ai_news', visibility: 'public', description: 'اخبار', category: 'tech',
+    }],
+    messages: {
+      'group:abc123abc123': [
+        {
+          id: 'post1', roomId: 'group:abc123abc123', from: 'news_ai_bot', fromName: 'ربات اخبار',
+          kind: 'text', content: 'خبر امروز', time: 1000, reactions: { '🔥': ['alice'] }, silent: false,
+          views: 7, fromBot: true,
+          source: { url: 'https://example.com/x', site: 'example.com', title: 'Head', provider: 'rss' },
+          ai: { generated: true, label: 'تولید شده با هوش مصنوعی' },
+        },
+        { id: 'post2', roomId: 'group:abc123abc123', from: 'alice', kind: 'text', content: 'plain', time: 1001, reactions: {}, silent: false },
+      ],
+    },
+    pinned: {}, scheduled: [], renameRequests: [], readState: {}, chatState: {},
+    botApiKeys: [{
+      keyId: 'abc123def456', botUsername: 'news_ai_bot',
+      keyHash: 'f'.repeat(64), keyPrefix: 'vxk_abc123def456',
+      status: 'active', createdAt: 5, lastUsedAt: 9, label: 'seed:ai_news',
+    }],
+  };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await repo.truncateAll(client);
+    await repo.insertAll(client, repo.buildAll(data));
+    await client.query('COMMIT');
+  } finally { client.release(); }
+
+  const loaded = await repo.loadAll(pool);
+
+  // is_bot survives the users table round-trip
+  const bot = loaded.users.find((u) => u.username === 'news_ai_bot');
+  assert.ok(bot, 'bot user loaded');
+  assert.strictEqual(bot.isBot, true, 'is_bot flag persisted');
+  assert.strictEqual(loaded.users.find((u) => u.username === 'alice').isBot, undefined, 'non-bot stays non-bot');
+
+  // the API key round-trips as a HASH only (never a plaintext secret)
+  assert.ok(Array.isArray(loaded.botApiKeys) && loaded.botApiKeys.length === 1, 'one key loaded');
+  const key = loaded.botApiKeys[0];
+  assert.strictEqual(key.botUsername, 'news_ai_bot');
+  assert.strictEqual(key.keyHash, 'f'.repeat(64), 'key hash preserved');
+  assert.strictEqual(key.status, 'active');
+  assert.strictEqual(key.lastUsedAt, 9);
+
+  // structured provenance is NOT folded into content
+  const post1 = loaded.messages['group:abc123abc123'].find((m) => m.id === 'post1');
+  assert.ok(post1.source, 'source preserved as a structured field');
+  assert.strictEqual(post1.source.url, 'https://example.com/x');
+  assert.strictEqual(post1.source.site, 'example.com');
+  assert.strictEqual(post1.source.title, 'Head');
+  assert.ok(post1.ai && post1.ai.generated === true, 'AI flag preserved');
+  assert.strictEqual(post1.ai.label, 'تولید شده با هوش مصنوعی');
+  assert.strictEqual(post1.views, 7, 'aggregate view count preserved');
+  assert.ok(!post1.content.includes('example.com'), 'url is not embedded in content');
+  assert.deepStrictEqual(post1.reactions, { '🔥': ['alice'] }, 'reactions survive alongside meta');
+
+  // a plain message gains no provenance fields
+  const post2 = loaded.messages['group:abc123abc123'].find((m) => m.id === 'post2');
+  assert.strictEqual(post2.source, undefined, 'no phantom source');
+  assert.strictEqual(post2.ai, undefined, 'no phantom ai flag');
+
+  // idempotence: a second save/load is identical
+  const client2 = await pool.connect();
+  try {
+    await client2.query('BEGIN');
+    await repo.truncateAll(client2);
+    await repo.insertAll(client2, repo.buildAll(loaded));
+    await client2.query('COMMIT');
+  } finally { client2.release(); }
+  const again = await repo.loadAll(pool);
+  assert.deepStrictEqual(again.users, loaded.users, 'users stable across re-save');
+  assert.deepStrictEqual(again.botApiKeys, loaded.botApiKeys, 'keys stable across re-save');
+  assert.deepStrictEqual(again.messages, loaded.messages, 'messages stable across re-save');
+});
+
 test('legacy JSONB schema auto-upgrades on first boot (separate database)', async () => {
   const dbName = 'vxtest_upgrade';
   const createName = PG_URL.replace('/postgres?', '/' + dbName + '?');

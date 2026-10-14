@@ -1,0 +1,153 @@
+{
+  "name": "VortexGram - Publish news with AI rewrite",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "b7c1f0a2-1111-4a11-9a01-000000000001",
+      "name": "Every 30 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-640, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://feeds.arstechnica.com/technology-lab"
+      },
+      "id": "b7c1f0a2-2222-4a22-9a02-000000000002",
+      "name": "Read tech RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keep only the newest item and derive a stable idempotency key from it.\n// That key is what stops a re-run of this workflow from posting twice.\nconst items = $input.all();\nif (!items.length) { return []; }\nconst it = items[0].json;\nconst link = String(it.link || it.guid || '');\nconst published = String(it.pubDate || it.published || '');\nconst stamp = new Date(published || Date.now()).toISOString().slice(0, 16);\nreturn [{\n  json: {\n    title: String(it.title || '').slice(0, 300),\n    link,\n    summary: String(it.contentSnippet || it.content || it.description || '').slice(0, 4000),\n    published,\n    idempotencyKey: 'rss:' + stamp + ':' + link.slice(-60),\n  },\n}];"
+      },
+      "id": "b7c1f0a2-3333-4a33-9a03-000000000003",
+      "name": "Pick new item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, 0]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Headline: {{ $json.title }}\n\nRaw summary:\n{{ $json.summary }}\n\nWrite a short Persian news summary (max 3 sentences) for this item. Keep a neutral, factual news tone. Do not invent facts that are not in the summary.",
+        "options": {
+          "systemPrompt": "You are a Persian-language news editor. Write only fluent, concise Persian."
+        }
+      },
+      "id": "b7c1f0a2-4444-4a44-9a04-000000000004",
+      "name": "AI rewrite",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [80, 0],
+      "notes": "Set your OpenAI/Groq credential in n8n Credentials"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-DOMAIN/api/bot/post",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VORTEX_BOT_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"channelId\": \"{{ $env.VORTEX_CHANNEL_ID }}\",\n  \"kind\": \"text\",\n  \"content\": \"{{ $json.response }}\",\n  \"sourceUrl\": \"{{ $('Pick new item').item.json.link }}\",\n  \"sourceTitle\": \"{{ $('Pick new item').item.json.title }}\",\n  \"sourceProvider\": \"rss\",\n  \"aiGenerated\": true,\n  \"idempotencyKey\": \"{{ $('Pick new item').item.json.idempotencyKey }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "b7c1f0a2-5555-4a55-9a05-000000000005",
+      "name": "Post to channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 0],
+      "notes": "Put the bot key and channel id in n8n environment variables",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "stopWorkflow"
+    }
+  ],
+  "connections": {
+    "Every 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Read tech RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read tech RSS": {
+      "main": [
+        [
+          {
+            "node": "Pick new item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick new item": {
+      "main": [
+        [
+          {
+            "node": "AI rewrite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI rewrite": {
+      "main": [
+        [
+          {
+            "node": "Post to channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": [
+    {
+      "name": "vortexgram"
+    }
+  ]
+}

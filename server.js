@@ -19,6 +19,8 @@ try {
 const ai = require('./ai');
 const aiFeatures = require('./server/ai-features');
 const prompts = require('./ai/prompts');
+const bots = require('./server/bots');
+const botChannels = require('./server/bot-channels');
 
 process.on('uncaughtException', (e) => console.error('UNCAUGHT:', e));
 process.on('unhandledRejection', (e) => console.error('UNHANDLED:', e));
@@ -84,6 +86,19 @@ function botPublicUser() {
   return publicUser({ username: BOT_USERNAME, uid: BOT_UID, displayName: BOT_NAME, isAdmin: false, banned: false });
 }
 
+/* ---------- حساب‌های ربات (isBot) ---------- */
+/* یک ربات، سطری واقعی در db.users است با isBot:true تا بتواند مالک کانال باشد و
+   در فهرست اعضا دیده شود؛ اما هرگز نباید مثل آدم وارد شود. تمام مسیرهای ورود
+   (رمز، کد یک‌بارمصرف، تکمیل ثبت‌نام) isBot را رد می‌کنند — نه با پیام خطای
+   عمومی، بلکه با پیام صریح تا سوءاستفاده از حساب ربات قابل تشخیص باشد. */
+const BOT_LOGIN_ERROR = 'حساب ربات قابل ورود نیست';
+function isBotUser(user) { return !!(user && user.isBot); }
+/* نام‌هایی که هرگز نباید با ثبت‌نام عمومی گرفته شوند (ربات‌ها + نام‌های حساس) */
+const RESERVED_USERNAMES = new Set(['vortex_bot', 'vortex', 'admin', 'administrator', 'root', 'system', 'support', 'official', 'api', 'bot', 'vortexgram']);
+function botApiKeys() { return Array.isArray(db.botApiKeys) ? db.botApiKeys : (db.botApiKeys = []); }
+/* فروشگاه idempotency در حافظه است: ۲۴ ساعت، سقف ۵۰۰۰ کلید. */
+const botIdempotency = bots.createIdempotencyStore();
+
 // فقط ادمین اصلی (شماره ثبت‌شده در ADMIN_PHONES) دسترسی‌های حساس را دارد
 function isOriginalAdmin(user) {
   if (!user || !user.isAdmin) return false;
@@ -126,8 +141,9 @@ function normalizeGroups() {
   if (!db.aiTranscripts || typeof db.aiTranscripts !== 'object') db.aiTranscripts = {};
   if (!db.aiDigestText || typeof db.aiDigestText !== 'object') db.aiDigestText = {};
   if (!db.aiDigests || typeof db.aiDigests !== 'object') db.aiDigests = {};
-  if (!Array.isArray(db.aiDigestSchedules)) db.aiDigestSchedules = [];
+if (!Array.isArray(db.aiDigestSchedules)) db.aiDigestSchedules = [];
   if (!db.savedMessages || typeof db.savedMessages !== 'object') db.savedMessages = {};
+  if (!Array.isArray(db.botApiKeys)) db.botApiKeys = [];
   for (const u of (db.users || [])) { if (u.danger !== true && u.danger !== false) u.danger = !!u.danger; }
   for (const g of db.groups) {
     if (!g.type) g.type = 'group';
@@ -659,6 +675,8 @@ async function sendSMS(phone, text) {
 function publicUser(u) {
   return { username: u.username, uid: (typeof u.uid === 'number' ? u.uid : null), displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null,     danger: !!u.danger,
     restricted: !!u.restricted,
+    // نشان ربات: کلاینت با آن برچسب «ربات/AI» را کنار نام نشان می‌دهد
+    isBot: !!u.isBot,
     blocked: Array.isArray(u.blocked) ? u.blocked : [], hasPassword: !!(u.salt && u.passHash) };
 }
 // نمای عمومیِ امن برای پخش همگانی: بدون شماره، بدون لیست مسدودشده و بدون flag رمز
@@ -905,6 +923,8 @@ app.post('/api/register', (req, res) => {
   if (!password || String(password).length < 6) return res.status(400).json({ error: 'رمز حداقل ۶ کاراکتر' });
   const unameLower = username.toLowerCase();
   if (db.users.some((u) => u.username.toLowerCase() === unameLower)) return res.status(409).json({ error: 'این نام کاربری قبلا ثبت شده' });
+  // نام کاربری ربات‌ها رزرو است تا کسی خود را جای ربات جا بزند
+  if (RESERVED_USERNAMES.has(unameLower)) return res.status(409).json({ error: 'این نام کاربری رزرو شده است' });
 
   const phone = normalizePhone((req.body || {}).phone || '');
   const displayName = String((req.body || {}).displayName || '').trim().slice(0, 25) || username;
@@ -927,6 +947,8 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'نام کاربری یا رمز اشتباه است' });
   }
   if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
+  // ربات‌ها کلید API دارند، نه رمز عبور؛ ورود با رمز برایشان همیشه رد می‌شود
+  if (isBotUser(user)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
   const token = createSession(user.username);
   setSessionCookie(res, token);
   noteDevice(user, req);
@@ -961,6 +983,7 @@ app.post('/api/send-code', async (req, res) => {
     const user = db.users.find((u) => u.phone === phone);
     if (user) {
       if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
+      if (isBotUser(user)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
       const token = createSession(user.username);
       setSessionCookie(res, token);
       noteDevice(user, req);
@@ -993,6 +1016,7 @@ app.post('/api/verify-code', (req, res) => {
   if (user) {
     pendingCodes.delete(phone);
     if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
+    if (isBotUser(user)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
     const token = createSession(user.username);
     setSessionCookie(res, token);
     noteDevice(user, req);
@@ -1018,15 +1042,17 @@ app.post('/api/complete-register', (req, res) => {
   if (existing) {
     pendingCodes.delete(phone);
     if (existing.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
+    if (isBotUser(existing)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
     const token = createSession(existing.username);
     setSessionCookie(res, token);
     noteDevice(existing, req);
     return res.json({ token, me: publicUser(existing) });
   }
   if (displayName.length < 2) return res.status(400).json({ error: 'نام نمایشی حداقل ۲ حرف' });
-  if (username) {
+if (username) {
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'نام کاربری: ۳ تا ۲۰ حرف انگلیسی/عدد/_' });
     if (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) return res.status(409).json({ error: 'این نام کاربری قبلاً گرفته شده' });
+    if (RESERVED_USERNAMES.has(username.toLowerCase())) return res.status(409).json({ error: 'این نام کاربری رزرو شده است' });
   } else {
     username = 'u' + phone.slice(1);
     while (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) username += crypto.randomInt(0, 9);
@@ -1767,6 +1793,23 @@ app.get('/api/reactions/:msgId', auth, (req, res) => {
   }
   res.json({ reactions: out });
 });
+// شمارش واکنش بدون افشای هویت — برای پست‌های کانالی که می‌خواهند فقط «محبوبیت»
+// نشان دهند، نه اینکه چه کسی واکنش داده است.
+app.get('/api/reactions/:msgId/counts', auth, (req, res) => {
+  const rid = String((req.query || {}).roomId || '');
+  if (!canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(rid, String(req.params.msgId || ''));
+  if (!m) return res.status(404).json({ error: 'پیام یافت نشد' });
+  const counts = {};
+  let total = 0;
+  for (const [emojiKey, arr] of Object.entries(m.reactions || {})) {
+    const n = Array.isArray(arr) ? arr.length : 0;
+    if (!n) continue;
+    counts[emojiKey] = n;
+    total += n;
+  }
+  res.json({ counts, total, views: (typeof m.views === 'number' ? m.views : 0) });
+});
 
 // ===== گزارش پیام =====
 app.post('/api/report', auth, (req, res) => {
@@ -2245,6 +2288,41 @@ app.get('/api/users/exists/:username', auth, (req, res) => {
 // تکمیل مشخصات فرستنده در پیام‌های قدیمی که آواتار/پرمیوم ندارند
 /* hiddenFor فقط لیست «فقط برای من پاک شده» است و نباید به بقیهٔ کاربران نشت کند. */
 /* hiddenFor نباید هرگز به سمت کلاینت برود؛ فقط برای فیلتر داخلی سرور است */
+/* ═══════════════════════════════════════════════════════════════════════
+   شمارش بازدید یکتا برای پست‌های کانال (حریم خصوصی)
+   ─ «تعداد بازدیدکنندهٔ یکتا» یعنی شمارنده فقط زیاد می‌شود و هرگز فهرست
+     بیننده‌ها ذخیره یا منتشر نمی‌شود. برای اینکه شمارنده دوباره بالا نرود،
+     یک اثر انگشت غیرقابل‌بازگشت از (کاربر + پیام) در حافظه نگه می‌داریم؛
+     اگر سرور ری‌استارت شد شمارنده از صفر شروع می‌شود که بهتر از ذخیرهٔ
+     هویت بیننده‌هاست. کاربر با تعداد یکسان برای همه بینندگان مواجه است.
+   ═══════════════════════════════════════════════════════════════════════ */
+const VIEW_FP_SALT = process.env.BOT_VIEW_SALT || 'vortexgram-view-fp-v1';
+const viewSeen = new Set();      // "<fp>|<msgId>"
+const viewSeenOrder = [];        // FIFO برای محدود کردن حافظه
+const VIEW_SEEN_MAX = 20000;
+function viewerFingerprint(username, msgId) {
+  return crypto.createHash('sha256').update(VIEW_FP_SALT + '|' + username + '|' + msgId).digest('hex').slice(0, 32);
+}
+/** اگر این کاربر این پیام را قبلاً ندیده، شمارنده را یکی زیاد کن. */
+function countUniqueView(username, msgId) {
+  const fp = viewerFingerprint(username, msgId) + '|' + msgId;
+  if (viewSeen.has(fp)) return false;
+  viewSeen.add(fp); viewSeenOrder.push(fp);
+  while (viewSeenOrder.length > VIEW_SEEN_MAX) { const old = viewSeenOrder.shift(); if (old) viewSeen.delete(old); }
+  return true;
+}
+/** برای هر پیامِ کانال در این بازه، بازدید یکتا را ثبت می‌کند. */
+function recordViews(messages, username) {
+  let changed = false;
+  for (const m of messages) {
+    if (!m || !m.id || typeof m.views !== 'number') continue;
+    if (m.from === username) continue;         // نویسنده بازدید خودش را نمی‌شمارد
+    if (countUniqueView(username, m.id)) { m.views += 1; changed = true; }
+  }
+  if (changed) saveDB();
+  return changed;
+}
+
 function enrichMsg(m, forWhom) {
   const u = db.users.find((x) => x.username === m.from);
   const { hiddenFor: _hf, ...pub } = m;
@@ -2253,6 +2331,7 @@ function enrichMsg(m, forWhom) {
     reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
     fromAvatar: m.fromAvatar || (u && u.avatar) || null,
     fromPremium: m.fromPremium || !!(u && u.isPremium),
+    fromBot: !!(m.fromBot || (u && u.isBot)),
   };
 }
 // بهینه: map کاربران برای enrichMsg سریع
@@ -2270,6 +2349,7 @@ function enrichMsgBatch(messages, forWhom) {
       reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
       fromAvatar: m.fromAvatar || (u && u.avatar) || null,
       fromPremium: m.fromPremium || !!(u && u.isPremium),
+      fromBot: !!(m.fromBot || (u && u.isBot)),
     };
   });
 }
@@ -2829,6 +2909,261 @@ app.patch('/api/groups/:id', auth, (req, res)=>{
   res.json({ok:true, group:g});
 });
 
+/* ═══════════════════════════════════════════════════════════════════════
+   حساب‌های ربات و API انتشار (n8n)
+   ─ ربات یک سطر واقعی در db.users با isBot:true است؛ مالک کانال می‌شود و
+     عضویت/حضورش مثل بقیه کار می‌کند، اما ورود انسانی برایش قفل است.
+   ─ کلید API فقط به‌صورت HMAC ذخیره می‌شود و متن خام فقط یک‌بار هنگام
+     ساخت/چرخش نمایش داده می‌شود.
+   ─ پست‌های دارای منبع خارجی، فیلد ساختاریافتهٔ source می‌گیرند و پست‌های
+     تولیدشده با هوش مصنوعی برچسب ثابت می‌گیرند؛ هیچ‌کدام داخل متن پیام
+     الحاق نمی‌شوند.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// ---------- middleware: احراز هویت با کلید ربات ----------
+// کلید در هدر Authorization: Bearer می‌آید. فقط هش HMAC ذخیره‌شده مقایسه می‌شود
+// (مقایسهٔ زمان-ثابت)، پس متن خلاص هرگز از حافظه خارج نمی‌شود.
+function botAuth(req, res, next) {
+  const h = String(req.headers.authorization || '');
+  const raw = h.startsWith('Bearer ') ? h.slice(7).trim() : '';
+  if (!raw) return res.status(401).json({ error: 'کلید ربات ارسال نشده است (هدر Authorization: Bearer)' });
+  if (!raw.startsWith('vxk_')) {
+    // نشت کلید نشست کاربر به‌جای کلید ربات
+    return res.status(401).json({ error: 'قالب کلید ربات نامعتبر است' });
+  }
+  const parsed = bots.parseKey(raw);
+  if (!parsed) return res.status(401).json({ error: 'کلید ربات نامعتبر است' });
+  const rec = botApiKeys().find((k) => k.keyId === parsed.keyId);
+  if (!rec) return res.status(401).json({ error: 'کلید ربات نامعتبر است' });
+  if (rec.status !== 'active') return res.status(401).json({ error: 'این کلید ربات باطل شده است' });
+  if (!bots.safeEqualHex(rec.keyHash, bots.hashKey(parsed.secret, parsed.keyId))) {
+    return res.status(401).json({ error: 'کلید ربات نامعتبر است' });
+  }
+  const user = db.users.find((u) => u.username === rec.botUsername);
+  if (!user) return res.status(401).json({ error: 'حساب ربات یافت نشد' });
+  if (!user.isBot) return res.status(403).json({ error: 'این حساب ربات نیست' });
+  if (user.banned) return res.status(403).json({ error: 'حساب ربات مسدود شده است' });
+  rec.lastUsedAt = Date.now();
+  req.bot = user;
+  req.botKey = rec;
+  next();
+}
+
+// ---------- ساخت/نمایش/چرخش/ابطال کلید ----------
+function mintBotKey(botUsername, label) {
+  const { raw, keyId, secret } = bots.generateKey();
+  const rec = {
+    keyId,
+    botUsername,
+    keyHash: bots.hashKey(secret, keyId),
+    keyPrefix: raw.slice(0, 16),
+    status: 'active',
+    createdAt: Date.now(),
+    label: bots.cleanLine(label, 60) || null,
+  };
+  botApiKeys().push(rec);
+  return { raw, rec };
+}
+
+// ---------- API مدیریت ربات‌ها (فقط ادمین) ----------
+function requireAdmin(req, res) {
+  if (!req.user || !req.user.isAdmin) { res.status(403).json({ error: 'فقط ادمین' }); return false; }
+  return true;
+}
+
+app.get('/api/admin/bots', auth, (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const out = db.users.filter((u) => u.isBot).map((u) => ({
+    username: u.username,
+    displayName: u.displayName,
+    bio: u.bio || '',
+    avatar: u.avatar || null,
+    createdAt: u.createdAt || null,
+    banned: !!u.banned,
+    channels: db.groups.filter((g) => g.owner === u.username).map((g) => ({ id: g.id, name: g.name, username: g.username || null, type: g.type, category: g.category || null })),
+    keys: botApiKeys().filter((k) => k.botUsername === u.username).map(bots.publicKeyRecord),
+  }));
+  res.json({ bots: out });
+});
+
+app.post('/api/admin/bots', auth, (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!authRateOk('admin-bot-create:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  const body = req.body || {};
+  const username = bots.cleanLine(body.username, bots.LIMITS.botUsernameMax || 20).toLowerCase();
+  const displayName = bots.cleanLine(body.displayName, 30);
+  const bio = bots.cleanLine(body.bio, 200);
+  if (!/^[a-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'نام کاربری ربات: ۳ تا ۲۰ حرف انگلیسی کوچک/عدد/_' });
+  if (!displayName || displayName.length < 2) return res.status(400).json({ error: 'نام نمایشی حداقل ۲ حرف' });
+  if (db.users.some((u) => u.username.toLowerCase() === username)) return res.status(409).json({ error: 'این نام کاربری قبلا ثبت شده' });
+
+  // ربات عمداً بدون phone/salt/passHash ساخته می‌شود: نه رمز دارد، نه شماره،
+  // پس هیچ مسیر ورودی (رمز یا کد یک‌بارمصرف) نتیجه‌ای برایش ندارد.
+  const bot = {
+    username,
+    uid: nextUid(),
+    displayName,
+    isAdmin: false,
+    isBot: true,
+    banned: false,
+    createdAt: Date.now(),
+    avatar: null,
+    bio: bio || 'حساب ربات',
+    activeSkin: 'default',
+    profileEffect: 'off',
+    profileEffectColor: null,
+    profileBg: null,
+  };
+  db.users.push(bot);
+  const { raw, rec } = mintBotKey(username, body.keyLabel);
+  saveDB();
+  pushUsers();
+  // کلید خام فقط همین‌جا یک‌بار برگردانده می‌شود؛ در پایگاه‌داده نیست و قابل بازیابی نیست
+  auditAdmin(req, 'bot-create', username, { displayName, keyPrefix: rec.keyPrefix });
+  res.status(201).json({
+    ok: true,
+    bot: publicUser(bot),
+    // ← تنها زمان نمایش متن خام کلید
+    apiKey: raw,
+    keyPrefix: rec.keyPrefix,
+    warning: 'این کلید فقط همین یک‌بار نمایش داده می‌شود. آن را ذخیره کنید.',
+  });
+});
+
+app.post('/api/admin/bots/:username/rotate-key', auth, (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const username = String(req.params.username || '').toLowerCase();
+  const bot = db.users.find((u) => u.username === username && u.isBot);
+  if (!bot) return res.status(404).json({ error: 'ربات یافت نشد' });
+  if (!authRateOk('admin-bot-rotate:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  // کلید قبلی باطل می‌شود (چرخش کامل) تا کلید لو رفته بی‌اثر شود
+  const now = Date.now();
+  for (const k of botApiKeys()) {
+    if (k.botUsername === username && k.status === 'active') { k.status = 'revoked'; k.revokedAt = now; }
+  }
+  const { raw, rec } = mintBotKey(username, (req.body || {}).keyLabel);
+  saveDB();
+  auditAdmin(req, 'bot-key-rotate', username, { keyPrefix: rec.keyPrefix });
+  res.json({ ok: true, apiKey: raw, keyPrefix: rec.keyPrefix, warning: 'کلید قبلی باطل شد. کلید جدید فقط همین یک‌بار نمایش داده می‌شود.' });
+});
+
+app.post('/api/admin/bots/:username/revoke-keys', auth, (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const username = String(req.params.username || '').toLowerCase();
+  const bot = db.users.find((u) => u.username === username && u.isBot);
+  if (!bot) return res.status(404).json({ error: 'ربات یافت نشد' });
+  const now = Date.now();
+  let n = 0;
+  for (const k of botApiKeys()) {
+    if (k.botUsername === username && k.status === 'active') { k.status = 'revoked'; k.revokedAt = now; n++; }
+  }
+  saveDB();
+  auditAdmin(req, 'bot-key-revoke', username, { revoked: n });
+  res.json({ ok: true, revoked: n });
+});
+
+// ---------- ساخت idempotent کانال‌های محتوایی با ربات اختصاصی ----------
+// هر کانال یک ربات مخصوص خودش دارد. اجرای دوباره هیچ کانال/کلید جدیدی نمی‌سازد
+// (idempotent) و برای ربات‌های موجود کلید تازه صادر نمی‌کند تا ورک‌فلوی n8n نشکند.
+app.post('/api/admin/bots/seed-channels', auth, (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const out = botChannels.ensureSeedChannels({
+    db,
+    uid: nextUid,
+    mintKey: (botUsername, label) => mintBotKey(botUsername, label),
+    save: saveDB,
+    pushUsers,
+  });
+  broadcastGroups();
+  auditAdmin(req, 'bot-channels-seed', 'seed', {
+    channels: out.channels.length,
+    createdChannels: out.createdChannels,
+    updatedChannels: out.updatedChannels,
+    createdBots: out.createdBots.map((b) => b.username),
+  });
+  res.json({
+    ok: true,
+    createdChannels: out.createdChannels,
+    updatedChannels: out.updatedChannels,
+    createdBotCount: out.createdBots.length,
+    channels: out.channels,
+    // کلیدها فقط برای ربات‌های همین‌بار-ساخته‌شده برگردانده می‌شوند (یک‌بار)
+    newBotKeys: out.createdBots,
+  });
+});
+
+// ---------- API انتشار پست: POST /api/bot/post ----------
+app.post('/api/bot/post', botAuth, async (req, res) => {
+  const bot = req.bot;
+  // سهمیهٔ هر ربات (مستقل از کاربران عادی)
+  if (!authRateOk('bot-post:' + bot.username, bots.LIMITS.rateMax, bots.LIMITS.rateWindowMs)) {
+    return res.status(429).json({ error: 'سقف ارسال این ربات تکمیل شد — کمی بعد دوباره تلاش کنید' });
+  }
+
+  const v = bots.validatePost(req.body);
+  if (!v.ok) return res.status(v.status).json({ error: v.error });
+  const post = v.post;
+
+  const channelId = String(post.channelId);
+  const g = findGroup(channelId);
+  if (!g) return res.status(404).json({ error: 'کانال یافت نشد' });
+  if (g.type !== 'channel') return res.status(400).json({ error: 'انتشار فقط در کانال مجاز است' });
+  // ربات باید مالک یا مدیر کانال باشد — دقیقاً مثل canPost
+  if (g.owner !== bot.username && !isGroupAdmin(g, bot.username)) {
+    return res.status(403).json({ error: 'این ربات مالک یا مدیر این کانال نیست' });
+  }
+  const roomId = 'group:' + g.id;
+
+  // idempotency: تکرار درخواست (مثلاً اجرای دوبارهٔ ورک‌فلو n8n) پست تکراری نمی‌سازد
+  if (post.idempotencyKey) {
+    const prior = botIdempotency.get(bot.username, post.idempotencyKey);
+    if (prior) return res.status(200).json({ ok: true, duplicate: true, ...prior });
+  }
+
+  // تصویر: هرگز hotlink نمی‌شود؛ از فیلتر ضد-SSRF عبور می‌کند و روی سرور میزبانی می‌شود
+  let url = null, mime = null, size = null;
+  if (post.kind === 'image') {
+    const ing = await bots.ingestRemoteImage(post.imageUrl, {
+      uploadDir: UPLOAD_DIR,
+      durableUpload: (buf, filename, ct) => durableUpload(buf, filename, ct),
+    });
+    if (ing.error) return res.status(400).json({ error: ing.error });
+    url = ing.url; mime = ing.mime; size = ing.size;
+  }
+
+  const now = Date.now();
+  const msg = {
+    id: crypto.randomUUID(),
+    roomId,
+    from: bot.username,
+    fromName: bot.displayName,
+    fromAvatar: bot.avatar || null,
+    fromPremium: false,
+    fromBot: true,
+    kind: post.kind,
+    content: post.content,
+    reactions: {},
+    silent: false,
+    time: now,
+  };
+  if (post.kind === 'image') {
+    msg.url = url; msg.src = url; msg.mime = mime; msg.size = size;
+    msg.name = 'image';
+  }
+  if (post.kind === 'poll') { msg.poll = post.poll; msg.content = ''; }
+  bots.attachProvenance(msg, { ...post, countViews: true });
+
+  if (!db.messages[roomId]) db.messages[roomId] = [];
+  db.messages[roomId].push(msg);
+  if (db.messages[roomId].length > HISTORY_LIMIT) db.messages[roomId].splice(0, db.messages[roomId].length - HISTORY_LIMIT);
+  saveDB();
+  broadcast({ type: 'message', message: msg });
+
+  const result = { messageId: msg.id, roomId, time: msg.time };
+  if (post.idempotencyKey) botIdempotency.set(bot.username, post.idempotencyKey, result);
+  res.status(201).json({ ok: true, ...result });
+});
+
 // ---------- وضعیت چت‌ها: بایگانی / سنجاق ----------
 function chatStateOf(username) {
   if (!db.chatState) db.chatState = {};
@@ -3050,7 +3385,10 @@ wss.on('connection', (ws, req) => {
       else msgs = all;
       /* پیام‌هایی که کاربر «فقط برای خودش» پاک کرده از تاریخچه‌ی او حذف می‌شود */
       msgs = msgs.filter((m) => !(Array.isArray(m.hiddenFor) && m.hiddenFor.includes(username)));
-      wsSend(ws, { type: 'history', roomId, messages: enrichMsgBatch(msgs.slice(-100), username), incremental: incremental || undefined });
+      // بازدید پست‌های کانال شمرده می‌شود (فقط شمارنده؛ نه اینکه چه کسی دیده)
+      const visible = msgs.slice(-100);
+      recordViews(visible, username);
+      wsSend(ws, { type: 'history', roomId, messages: enrichMsgBatch(visible, username), incremental: incremental || undefined });
       return;
     }
 

@@ -539,6 +539,20 @@ a{color:var(--primary);text-decoration:none;}
 .msg-meta .msg-rc:hover{background:rgba(var(--primary-rgb),.14);}
 .msg.mine .msg-meta .msg-rc{color:var(--on-surface);opacity:.9;}
 .msg.mine .msg-meta .msg-rc:hover{background:rgba(255,255,255,.15);}
+/* ── اعتبار پست رباتی: برچسب ربات، برچسب هوش مصنوعی، لینک منبع ──
+   منبع و برچسب AI دادهٔ ساختاریافته‌اند (msg.source / msg.ai) و همیشه
+   دیده می‌شوند تا کاربر بداند متن ماشینی و از کجا آمده است. */
+.msg-prov{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;padding-inline:4px;font-size:10.5px;line-height:1.6;}
+.msg-prov .prov-bot{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:6px;background:rgba(var(--primary-rgb),.16);color:var(--primary);font-weight:700;}
+.msg-prov .prov-bot .icon{width:11px;height:11px;}
+.msg-prov .prov-ai{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:6px;background:rgba(var(--warning-rgb,250,204,21),.16);color:var(--warning,#facc15);font-weight:700;}
+.msg-prov .prov-ai .icon{width:11px;height:11px;}
+.msg-prov .prov-src{display:inline-flex;align-items:center;gap:3px;color:var(--outline);text-decoration:none;border-bottom:1px dashed currentColor;max-width:100%;overflow:hidden;}
+.msg-prov .prov-src:hover{color:var(--primary);}
+.msg-prov .prov-src .icon{width:11px;height:11px;flex:0 0 auto;}
+.msg-prov .prov-src span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.msg-meta .msg-views{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;opacity:.8;}
+.msg-meta .msg-views .icon{width:11px;height:11px;}
 .reactions{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;padding-inline:2px;}
 .reac{background:var(--surface-container-high);border:1px solid var(--border);border-radius:14px;padding:1px 9px 1px 7px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;line-height:1.7;font-size:11.5px;color:var(--on-surface-variant);outline:none;-webkit-user-select:none;user-select:none;transition:transform .14s var(--ease),background .14s,border-color .14s,box-shadow .14s;-webkit-tap-highlight-color:transparent;}
 .reac .reac-em{font-size:14px;line-height:1;pointer-events:none;}

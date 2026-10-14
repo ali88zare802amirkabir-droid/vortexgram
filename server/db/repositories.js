@@ -9,6 +9,9 @@
 // (key set included), so server.js never changes regardless of backend.
 
 const MODELED_KEYS = new Set(['users', 'groups', 'messages', 'pinned', 'scheduled', 'readState', 'chatState', 'renameRequests', 'sessions', 'messageDeletions']);
+// Bot keys / structured provenance are modeled as their own tables (migration 0004)
+// so they are queryable and so a DB dump does not hand over key material unindexed.
+const BOT_MODELED_KEYS = new Set(['botApiKeys']);
 const INTERNAL_KV = new Set(['__group_ids__', '__stub_users__', '__chat_empty__']);
 const MEDIA_KINDS = new Set(['image', 'gif', 'video', 'audio', 'voice', 'file']);
 
@@ -43,6 +46,9 @@ function buildAll(data) {
   const reactRows = new Map();
   const roomEarliest = new Map();
   const deletionRows = [];
+  const botKeyRows = [];
+  const sourceRows = [];
+  const postMetaRows = [];
 
   // --- users --------------------------------------------------------------
   for (const u of data.users) {
@@ -54,7 +60,7 @@ function buildAll(data) {
       text(u.activeSkin), text(u.profileEffect), text(u.profileEffectColor), text(u.profileBg),
       Array.isArray(u.blocked) ? u.blocked : [], num(u.createdAt), num(u.lastSeen), num(u.updatedAt),
       Array.isArray(u.devices) && u.devices.length ? JSON.stringify(u.devices) : JSON.stringify([]),
-      num(u.lastLogin),
+      num(u.lastLogin), bool(u.isBot),
     ]);
   }
   const knownUsers = new Set(data.users.map((u) => u && u.username));
@@ -217,6 +223,33 @@ function buildAll(data) {
     deletionRows.push([d.id, text(d.roomId), jstr(d.msg || d.message || d.snapshot), text(d.deletedBy), num(d.at) || 0]);
   }
 
+  // --- bot_api_keys (only the peppered hash is ever written) ----------------
+  for (const k of (Array.isArray(data.botApiKeys) ? data.botApiKeys : [])) {
+    if (!k || !k.keyId || !k.botUsername) continue;
+    botKeyRows.push([
+      text(k.keyId), text(k.botUsername), text(k.keyHash), text(k.keyPrefix),
+      text(k.status) || 'active', num(k.createdAt) || 0, num(k.rotatedAt), num(k.revokedAt),
+      num(k.lastUsedAt), text(k.label),
+    ]);
+  }
+
+  // --- message_source / message_post_meta (structured provenance + counts) ---
+  for (const arr of Object.values(data.messages)) {
+    if (!Array.isArray(arr)) continue;
+    for (const m of arr) {
+      if (!m || !m.id) continue;
+      if (m.source && typeof m.source === 'object' && m.source.url) {
+        sourceRows.push([m.id, text(m.source.url), text(m.source.site), text(m.source.title), text(m.source.provider)]);
+      }
+      const ai = !!(m.ai && m.ai.generated);
+      const views = Number.isFinite(m.views) ? Math.max(0, Math.trunc(m.views)) : 0;
+      const reactCount = Object.values(m.reactions || {}).reduce((a, arr2) => a + (Array.isArray(arr2) ? arr2.length : 0), 0);
+      if (ai || views || reactCount) {
+        postMetaRows.push([m.id, ai, (m.ai && text(m.ai.label)) || null, views, reactCount, num(m.time) || 0]);
+      }
+    }
+  }
+
   // --- stub users (legacy handles referenced in state but w/o a profile row) -
   const referenced = new Set();
   for (const r of convRows) if (r[4]) referenced.add(r[4]);
@@ -232,13 +265,13 @@ function buildAll(data) {
   for (const uname of referenced) {
     if (!uname || knownUsers.has(uname) || users.some((u) => u[0] === uname)) continue;
     stubs.push(uname);
-    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null, JSON.stringify([]), null]);
+    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null, JSON.stringify([]), null, false]);
   }
 
   // --- kv (non-modeled top-level keys + internal bookkeeping) ---------------
   const kvRows = [];
   for (const [k, v] of Object.entries(data)) {
-    if (MODELED_KEYS.has(k)) continue;
+    if (MODELED_KEYS.has(k) || BOT_MODELED_KEYS.has(k)) continue;
     let sval;
     try { sval = JSON.stringify(v); } catch { sval = String(v); }
     kvRows.push([k, sval]);
@@ -253,6 +286,7 @@ function buildAll(data) {
     readState: readStateRows, chatState: chatStateRows, pinned: pinRows,
     scheduled: scheduledRows, renameRequests: renameRows, sessions: sessionRows, kv: kvRows,
     deletions: deletionRows,
+    botApiKeys: botKeyRows, messageSource: sourceRows, messagePostMeta: postMetaRows,
   };
 }
 
@@ -276,7 +310,7 @@ async function _insertRows(exec, table, cols, rows) {
   }
 }
 
-const TRUNCATE = 'TRUNCATE users, conversations, conversation_members, messages, attachments, message_reactions, message_reads, notifications, read_state, chat_state, pinned, scheduled, rename_requests, sessions, message_deletions, kv';
+const TRUNCATE = 'TRUNCATE users, conversations, conversation_members, messages, attachments, message_reactions, message_reads, notifications, read_state, chat_state, pinned, scheduled, rename_requests, sessions, message_deletions, kv, bot_api_keys, message_source, message_post_meta';
 
 async function truncateAll(exec) {
   await exec.query(TRUNCATE);
@@ -284,7 +318,7 @@ async function truncateAll(exec) {
 
 async function insertAll(exec, b) {
   // FK-safe order
-  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login'], b.users);
+  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login', 'is_bot'], b.users);
   await _insertRows(exec, 'conversations', ['id', 'type', 'title', 'avatar', 'owner', 'invite_token', 'created_at', 'updated_at', 'category'], b.conversations);
   await _insertRows(exec, 'conversation_members', ['conversation_id', 'user_id', 'role', 'joined_at', 'last_read_message_id'], b.members);
   await _insertRows(exec, 'messages', ['id', 'conversation_id', 'from', 'from_name', 'from_avatar', 'from_premium', 'kind', 'content', 'silent', 'fwd_from', 'edited', 'reply_to_id', 'reply_to_message_id', 'reply_to_name', 'reply_to_snippet', 'poll', 'checklist', 'album', 'time', 'updated_at', 'deleted_at'], b.messages);
@@ -298,6 +332,10 @@ async function insertAll(exec, b) {
   await _insertRows(exec, 'sessions', ['token', 'username', 'expires_at', 'created_at'], b.sessions);
   await _insertRows(exec, 'message_deletions', ['id', 'room_id', 'msg_json', 'deleted_by', 'deleted_at'], b.deletions);
   await _insertRows(exec, 'kv', ['key', 'value'], b.kv);
+  // bot/provenance tables are FK-bound to users/messages, so they load last.
+  await _insertRows(exec, 'bot_api_keys', ['key_id', 'bot_username', 'key_hash', 'key_prefix', 'status', 'created_at', 'rotated_at', 'revoked_at', 'last_used_at', 'label'], b.botApiKeys);
+  await _insertRows(exec, 'message_source', ['message_id', 'url', 'site', 'title', 'provider'], b.messageSource);
+  await _insertRows(exec, 'message_post_meta', ['message_id', 'ai_generated', 'ai_label', 'view_count', 'reaction_count', 'updated_at'], b.messagePostMeta);
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +354,7 @@ async function loadAll(exec) {
   const emptyChatUsers = new Set(JSON.parse(kvMap.get('__chat_empty__') || '[]'));
 
   // --- users (stub handles excluded from the runtime list) -----------------
-  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at, devices, last_login FROM users')).rows;
+  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at, devices, last_login, is_bot FROM users')).rows;
   const usersById = new Map();
   for (const r of userRows) {
     if (stubUsers.has(r.username)) continue;
@@ -331,6 +369,7 @@ async function loadAll(exec) {
     setIf(u, 'updatedAt', lnum(r.updated_at));
     if (Array.isArray(r.devices) && r.devices.length) u.devices = r.devices;
     setIf(u, 'lastLogin', lnum(r.last_login));
+    if (r.is_bot) u.isBot = true;   // absent/false stays absent so snapshots round-trip cleanly
     usersById.set(r.username, r.username);
     db.users.push(u);
   }
@@ -359,6 +398,10 @@ async function loadAll(exec) {
   const msgRes = (await exec.query('SELECT id, conversation_id, "from", from_name, from_avatar, from_premium, kind, content, silent, fwd_from, edited, reply_to_id, reply_to_name, reply_to_snippet, poll, checklist, album, time, updated_at FROM messages ORDER BY time ASC, id ASC')).rows;
   const attachRes = (await exec.query('SELECT message_id, type, url, filename, size, mime_type, duration, wave FROM attachments ORDER BY sort ASC, id ASC')).rows;
   const reactRes = (await exec.query('SELECT message_id, user_id, reaction FROM message_reactions ORDER BY message_id')).rows;
+  // Structured provenance for machine-authored posts (migration 0004). Loaded in one
+  // pass and attached to the message object so the runtime shape matches the file backend.
+  const srcRes = (await exec.query('SELECT message_id, url, site, title, provider FROM message_source')).rows;
+  const metaRes = (await exec.query('SELECT message_id, ai_generated, ai_label, view_count, reaction_count FROM message_post_meta')).rows;
 
   const attachmentsByMsg = new Map();
   for (const a of attachRes) {
@@ -370,6 +413,15 @@ async function loadAll(exec) {
     if (!reactionsByMsg.has(r.message_id)) reactionsByMsg.set(r.message_id, []);
     reactionsByMsg.get(r.message_id).push(r);
   }
+  const sourceByMsg = new Map();
+  for (const r of srcRes) {
+    const src = setIf({ url: r.url }, 'site', r.site);
+    setIf(src, 'title', r.title);
+    setIf(src, 'provider', r.provider);
+    sourceByMsg.set(r.message_id, src);
+  }
+  const metaByMsg = new Map();
+  for (const r of metaRes) metaByMsg.set(r.message_id, r);
 
   for (const row of msgRes) {
     const m = {
@@ -410,6 +462,15 @@ async function loadAll(exec) {
     const map = {};
     for (const r of reacts) (map[r.reaction] = map[r.reaction] || []).push(r.user_id);
     m.reactions = map;
+
+    // provenance + aggregate counters (structured, never folded into `content`)
+    const src = sourceByMsg.get(row.id);
+    if (src) m.source = src;
+    const meta = metaByMsg.get(row.id);
+    if (meta) {
+      if (meta.ai_generated) m.ai = setIf({ generated: true }, 'label', meta.ai_label);
+      if (Number(meta.view_count || 0) > 0) m.views = Number(meta.view_count);
+    }
 
     if (!db.messages[m.roomId]) db.messages[m.roomId] = [];
     db.messages[m.roomId].push(m);
@@ -464,9 +525,24 @@ async function loadAll(exec) {
     db.messageDeletions.push(d);
   }
 
+  // --- bot_api_keys ---------------------------------------------------------
+  const botKeyRes = (await exec.query('SELECT key_id, bot_username, key_hash, key_prefix, status, created_at, rotated_at, revoked_at, last_used_at, label FROM bot_api_keys')).rows;
+  if (botKeyRes.length) {
+    db.botApiKeys = botKeyRes.map((r) => {
+      const k = setIf({ keyId: r.key_id, botUsername: r.bot_username, keyHash: r.key_hash }, 'keyPrefix', r.key_prefix);
+      k.status = r.status || 'active';
+      k.createdAt = lnum(r.created_at) || 0;
+      setIf(k, 'rotatedAt', lnum(r.rotated_at));
+      setIf(k, 'revokedAt', lnum(r.revoked_at));
+      setIf(k, 'lastUsedAt', lnum(r.last_used_at));
+      setIf(k, 'label', r.label);
+      return k;
+    });
+  }
+
   // --- kv extras (signupRequests, tmpAdminFlag, future keys) ----------------
   for (const [k, v] of kvMap) {
-    if (MODELED_KEYS.has(k) || INTERNAL_KV.has(k) || k in db) continue;
+    if (MODELED_KEYS.has(k) || BOT_MODELED_KEYS.has(k) || INTERNAL_KV.has(k) || k in db) continue;
     let parsed; try { parsed = JSON.parse(v); } catch { parsed = v; }
     db[k] = parsed;
   }
@@ -474,4 +550,4 @@ async function loadAll(exec) {
   return db;
 }
 
-module.exports = { buildAll, insertAll, truncateAll, loadAll, MODELED_KEYS, INTERNAL_KV, MEDIA_KINDS };
+module.exports = { buildAll, insertAll, truncateAll, loadAll, MODELED_KEYS, BOT_MODELED_KEYS, INTERNAL_KV, MEDIA_KINDS };
