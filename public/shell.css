@@ -1,0 +1,305 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VORTEX — Phase 4 shell layer
+   Loaded AFTER style.css so it layers on top of the existing theme system
+   without rewriting it. Three jobs:
+
+     A. design-token extensions  (depth, glass recipe, motion)
+     B. the glass system          (data-glass on/off)
+     C. the shell                 (floating bottom pill, desktop rail, layout)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────── A. TOKENS ───────────────────────── */
+:root {
+  /* Layered depth: three elevations used by cards, sheets and the pill. */
+  --vx-elev-1: 0 1px 2px rgba(0,0,0,.18);
+  --vx-elev-2: 0 4px 16px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.16);
+  --vx-elev-3: 0 12px 40px rgba(0,0,0,.32), 0 2px 8px rgba(0,0,0,.20);
+
+  /* Glass recipe — one definition, consumed everywhere. */
+  --vx-blur: var(--glass-blur, 28px);
+  --vx-sat: 1.5;
+  --vx-glass-bg: var(--glass-bg);
+  --vx-glass-brd: var(--glass-border);
+  --vx-glass-shine: var(--glass-shine);
+  --vx-glass-filter: blur(var(--vx-blur)) saturate(var(--vx-sat));
+  --vx-glass-filter-light: blur(calc(var(--vx-blur) * .5)) saturate(var(--vx-sat));
+
+  /* Press feedback / micro-interaction timing. */
+  --vx-press: 140ms;
+  --vx-spring: cubic-bezier(.34,1.56,.64,1);   /* slight overshoot for tabs */
+  --vx-ease: var(--ease);
+
+  /* Bottom-nav pill geometry. */
+  --vx-pill-h: 60px;
+  --vx-pill-inset: 14px;
+  --vx-rail-w: 76px;
+  --vx-rail-w-open: 232px;
+}
+
+/* ───────────────────────── B. GLASS SYSTEM ─────────────────────────
+   data-glass="off" replaces blur with opaque fills. It is a real cost saving
+   (backdrop-filter forces a readback + blur pass on every composite) and it
+   also helps users who find heavy transparency hard to read. */
+
+/* Per-surface blur is opt-in so we never blur the whole page by accident. */
+.vx-glass {
+  background: var(--vx-glass-bg);
+  border: 1px solid var(--vx-glass-brd);
+  -webkit-backdrop-filter: var(--vx-glass-filter);
+  backdrop-filter: var(--vx-glass-filter);
+}
+.vx-glass-light { -webkit-backdrop-filter: var(--vx-glass-filter-light); backdrop-filter: var(--vx-glass-filter-light); }
+.vx-glass-shine { position: relative; }
+.vx-glass-shine::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: var(--vx-glass-shine); pointer-events: none;
+}
+
+[data-glass="off"] {
+  --vx-blur: 0px;
+  --vx-glass-bg: var(--surface-container-high);
+  --vx-glass-brd: var(--border);
+  --vx-glass-shine: none;
+}
+[data-glass="off"] .vx-glass,
+[data-glass="off"] .vx-glass-light { -webkit-backdrop-filter: none; backdrop-filter: none; }
+[data-glass="off"] .vx-glass-shine::before { display: none; }
+
+/* ───────────────────────── POWER SAVING ─────────────────────────
+   Saver kills the expensive CSS only. Layout, colour and contrast are
+   untouched so the UI stays legible and looks the same. */
+[data-power="saver"] {
+  --vx-blur: 0px;
+  --vx-glass-bg: var(--surface-container-high);
+  --vx-glass-brd: var(--border);
+  --vx-glass-shine: none;
+}
+[data-power="saver"] .vx-glass,
+[data-power="saver"] .vx-glass-light { -webkit-backdrop-filter: none; backdrop-filter: none; }
+[data-power="saver"] .vx-glass-shine::before { display: none; }
+/* Long-running decorative animations stop; utility transitions stay. */
+[data-power="saver"] *,
+[data-power="saver"] *::before,
+[data-power="saver"] *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: var(--vx-press) !important;
+}
+/* Keep opacity/transform transitions (cheap, and they carry state meaning). */
+[data-power="saver"] #conversation::before,
+[data-power="saver"] #auth-screen { animation: none !important; }
+
+/* Motion preference is independent of the power switch and always wins. */
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: var(--vx-press) !important;
+  scroll-behavior: auto !important;
+}
+
+/* ───────────────────────── C. SHELL ───────────────────────── */
+
+/* Hide the legacy bottom dock: the floating pill replaces it. */
+#command-dock { display: none !important; }
+
+/* The pill. Positioned by the shell, not by a container, so it can float over
+   the chat list and over the conversation on mobile. */
+.vx-pill {
+  position: fixed;
+  z-index: 900;
+  inset-inline: var(--vx-pill-inset);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  height: var(--vx-pill-h);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: calc(var(--vx-pill-h) / 2);
+  background: var(--vx-glass-bg);
+  border: 1px solid var(--vx-glass-brd);
+  box-shadow: var(--vx-elev-3);
+  -webkit-backdrop-filter: var(--vx-glass-filter);
+  backdrop-filter: var(--vx-glass-filter);
+  pointer-events: auto;
+  transition: transform var(--vx-press) var(--vx-ease), opacity var(--vx-press) var(--vx-ease);
+}
+/* The sliding highlight is a single element that morphs between tabs.
+   `left:0` is *physical*, so it anchors the same way in RTL and LTR; the
+   slide is then a pure transform computed from real element rects. */
+.vx-pill-ind {
+  position: absolute;
+  top: 6px; bottom: 6px;
+  left: 0; right: auto;
+  border-radius: calc(var(--vx-pill-h) / 2 - 6px);
+  background: rgba(var(--primary-rgb), .16);
+  border: 1px solid rgba(var(--primary-rgb), .22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+  transform: translateX(0);
+  will-change: transform, width;
+  transition: transform 320ms var(--vx-spring), width 320ms var(--vx-spring);
+  pointer-events: none;
+}
+[data-motion="reduced"] .vx-pill-ind { transition: none; }
+[data-power="saver"] .vx-pill-ind { transition: transform 1ms linear, width 1ms linear; }
+
+.vx-pill-btn {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+  border: 0; background: transparent;
+  color: var(--on-surface-variant);
+  border-radius: calc(var(--vx-pill-h) / 2 - 6px);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--vx-press) var(--vx-ease), transform var(--vx-press) var(--vx-spring);
+}
+.vx-pill-btn .icon { width: 21px; height: 21px; }
+.vx-pill-btn .lb {
+  font-size: 10px; font-weight: 600; line-height: 1;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vx-pill-btn[aria-selected="true"] { color: var(--on-surface); }
+.vx-pill-btn[aria-selected="true"] .icon { color: var(--primary); }
+/* Filled look for the active tab (icon + label tint), not just a colour swap. */
+.vx-pill-btn[aria-selected="true"] .icon { stroke-width: 2.4; }
+.vx-pill-btn:active { transform: scale(.94); }
+[data-motion="reduced"] .vx-pill-btn:active { transform: none; }
+
+/* Unread / alert dot */
+.vx-pill-badge {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: calc(50% - 20px);
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger); color: #fff;
+  font-size: 9.5px; font-weight: 800; line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface-container-high);
+}
+.vx-pill-badge[hidden] { display: none; }
+
+/* Profile tab shows the user's own avatar instead of an icon. */
+.vx-pill-av {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center;
+  overflow: hidden;
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  font-size: 10px; font-weight: 700;
+}
+.vx-pill-av img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Focus ring for keyboard users (desktop) — visible and consistent. */
+.vx-pill-btn:focus-visible,
+.vx-rail-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: calc(var(--vx-pill-h) / 2 - 8px);
+}
+
+/* ── sidebar footer: glass + power-saving switches ──
+   Two real, persisted controls. They sit at the bottom of the rail/drawer so
+   they are reachable on both layouts without depending on the Settings page. */
+.nav-foot {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(var(--primary-rgb), .05);
+  border: 1px solid var(--border);
+}
+.nav-foot-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 40px;
+  padding: 8px 10px;
+  border: 0; border-radius: 10px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--vx-press) var(--vx-ease), color var(--vx-press) var(--vx-ease);
+}
+.nav-foot-btn .icon { width: 17px; height: 17px; flex: 0 0 auto; color: var(--outline); }
+.nav-foot-btn:hover { background: var(--surface-container-high); color: var(--on-surface); }
+.nav-foot-btn:hover .icon { color: var(--primary); }
+.nav-foot-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* off / active states — colour is not the only cue: the label text changes too */
+.nav-foot-btn.is-off .icon { color: var(--outline); opacity: .6; }
+.nav-foot-btn.is-on .icon { color: var(--success); }
+.nav-foot-btn.is-on { color: var(--on-surface); background: rgba(16,185,129,.10); }
+
+@media (min-width: 900px) {
+  #nav-sidebar:not(.expanded) .nav-foot-btn { justify-content: center; padding: 8px 0; gap: 0; }
+  #nav-sidebar:not(.expanded) .nav-foot-btn .label { display: none; }
+  #nav-sidebar:not(.expanded) .nav-foot { background: transparent; border-color: transparent; padding: 6px 0; }
+}
+/* Contrast mode: glass on transparency is the least reliable surface. */
+@media (prefers-contrast: more) {
+  .nav-foot { background: var(--surface-container-high); }
+}
+
+/* ── desktop rail (>=900px) ──
+   The pill disappears and the sidebar becomes a real vertical rail. Width is
+   driven by a CSS var so the resize handle can animate it. */
+@media (min-width: 900px) {
+  .vx-pill { display: none !important; }
+  #nav-sidebar {
+    width: var(--vx-rail-w);
+    min-width: var(--vx-rail-w);
+    background: var(--vx-glass-bg);
+    border-inline-end: 1px solid var(--vx-glass-brd);
+    -webkit-backdrop-filter: var(--vx-glass-filter-light);
+    backdrop-filter: var(--vx-glass-filter-light);
+    transition: width 220ms var(--vx-ease), min-width 220ms var(--vx-ease);
+  }
+  #nav-sidebar.expanded { width: var(--vx-rail-w-open); min-width: var(--vx-rail-w-open); }
+  [data-power="saver"] #nav-sidebar { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--surface-container-low); }
+  /* Rail items: icon over label, centred, roomy touch target. */
+  #nav-sidebar .nav-item {
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; padding: 9px 6px; border-radius: 14px;
+    min-height: 52px;
+  }
+  #nav-sidebar .nav-item .icon { width: 21px; height: 21px; }
+  #nav-sidebar .nav-item .label { font-size: 10px; line-height: 1.1; text-align: center; }
+  #nav-sidebar .nav-item.active {
+    background: rgba(var(--primary-rgb), .14);
+    box-shadow: inset 0 0 0 1px rgba(var(--primary-rgb), .20);
+  }
+  /* Collapsed rail hides text, keeps icons — the classic desktop pattern. */
+  #nav-sidebar:not(.expanded) .nav-item .label,
+  #nav-sidebar:not(.expanded) .nav-logo b,
+  #nav-sidebar:not(.expanded) .nav-logo small,
+  #nav-sidebar:not(.expanded) .nav-profile .meta { display: none; }
+  #nav-sidebar:not(.expanded) .nav-profile { justify-content: center; padding-inline: 0; }
+}
+
+/* ── mobile chrome spacing ──
+   The list needs bottom padding so the last row is never hidden behind the pill. */
+@media (max-width: 899px) {
+  #chat-list-column { padding-bottom: calc(var(--vx-pill-h) + env(safe-area-inset-bottom, 0px) + 22px); }
+  /* The composer must clear the pill when the list is behind it. */
+  #conversation { padding-bottom: 0; }
+}
+
+/* ── power-saving: chat background gradient is a large paint ── */
+[data-power="saver"] #conversation { background: var(--chat-bg, var(--surface)); }
+[data-power="saver"] #conversation::before { display: none !important; }
+
+/* ── contrast boost: strengthen borders when the OS asks for more contrast ──
+   Glass relies on low-contrast borders, so prefers-contrast needs an override
+   or the UI becomes hard to parse for those users. */
+@media (prefers-contrast: more) {
+  :root { --vx-glass-brd: var(--outline); --border: var(--outline); }
+  .vx-pill, .vx-glass { background: var(--surface-container-high); }
+  .vx-pill-btn[aria-selected="true"] { outline: 2px solid var(--primary); outline-offset: -2px; }
+}

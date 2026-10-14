@@ -705,6 +705,7 @@ function enterApp() {
   const deep = urlRoom();
   if (deep) state._deepRoom = deep;
   syncUrl(deep, { replace: true });
+  wireDesignControls(); renderDesignControls();
   renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); connectWS(); applyVX();
   showImpersonateBanner();
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
@@ -883,6 +884,9 @@ function switchNav(id) {
   /* نشانی صفحه با زبانهٔ فعال هماهنگ شود (برای دکمهٔ برگشت مرورگر) */
   syncUrl(id === 'chats' ? state.room : null, { view: id === 'chats' ? null : id });
   document.querySelectorAll('.nav-item').forEach((e) => e.classList.toggle('active', e.dataset.nav === id));
+  /* Phase 4: morph the floating pill highlight to the matching tab */
+  if (pillEl) requestAnimationFrame(() => syncPillIndicator(true));
+  if (pillBtns.chats) syncPillBadge(totalUnread());
 }
 let viewHost = null;
 function setMode(mode) {
@@ -896,19 +900,199 @@ function setMode(mode) {
   else { $('chat-list-column').classList.add('hidden'); }
 }
 
-/* DOCK */
-const DOCK = [
-  { id: 'ai', label: 'هوشمند', sub: 'دستیار', icon: 'sparkles' },
-  { id: 'cloud', label: 'ابری', sub: 'فایل‌ها', icon: 'cloud' },
-  { id: 'tasks', label: 'وظایف', sub: 'مدیریت', icon: 'check-square' },
-  { id: 'calendar', label: 'تقویم', sub: 'رویدادها', icon: 'calendar' },
+/* ── Phase 4: floating glass pill (replaces the old bottom dock) ──
+   Four primary destinations: Chats / Contacts / Settings / Profile. Everything
+   else (communities, channels, discover, AI, tasks, calendar, bookmarks) stays
+   reachable from the sidebar drawer, so nothing is lost by promoting these four.
+
+   The active highlight is a single element that translates between tabs rather
+   than four separately-animated backgrounds: one composited transform instead of
+   four, which is what keeps this smooth on a weak phone. */
+const PILL_TABS = [
+  { id: 'chats', label: 'چت‌ها', icon: 'message-square' },
+  { id: 'contacts', label: 'مخاطبان', icon: 'contact' },
+  { id: 'settings', label: 'تنظیمات', icon: 'settings' },
+  { id: 'profile', label: 'پروفایل', icon: 'user' },
 ];
+let pillEl = null, pillIndEl = null, pillBtns = {};
+
+function buildPill() {
+  if (pillEl) return pillEl;
+  pillEl = document.createElement('nav');
+  pillEl.className = 'vx-pill';
+  pillEl.setAttribute('role', 'tablist');
+  pillEl.setAttribute('aria-label', 'ناوبری اصلی');
+
+  pillIndEl = document.createElement('div');
+  pillIndEl.className = 'vx-pill-ind';
+  pillEl.appendChild(pillIndEl);
+
+  for (const t of PILL_TABS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'vx-pill-btn';
+    b.dataset.pill = t.id;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', 'false');
+    b.setAttribute('aria-label', t.label);
+    if (t.id === 'profile') {
+      b.innerHTML = '<span class="vx-pill-av" aria-hidden="true">؟</span><span class="lb">' + esc(t.label) + '</span>';
+    } else {
+      b.innerHTML = ic(t.icon) + '<span class="lb">' + esc(t.label) + '</span>';
+    }
+    b.onclick = () => {
+      if (t.id === 'profile') { try { openProfile(state.me.username); } catch (e) { switchNav('settings'); } return; }
+      switchNav(t.id);
+    };
+    // Keyboard: Left/Right (RTL-aware) to move between tabs, Home/End to jump.
+    b.onkeydown = (e) => movePillFocus(e, b);
+    pillBtns[t.id] = b;
+    const badge = document.createElement('span');
+    badge.className = 'vx-pill-badge';
+    badge.hidden = true;
+    b.appendChild(badge);
+    pillEl.appendChild(b);
+  }
+  document.body.appendChild(pillEl);
+  requestAnimationFrame(() => syncPillIndicator(false));
+  return pillEl;
+}
+
+function movePillFocus(e, from) {
+  const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+  if (keys.indexOf(e.key) < 0) return;
+  e.preventDefault();
+  const list = PILL_TABS.map((t) => pillBtns[t.id]).filter(Boolean);
+  const i = list.indexOf(from);
+  let n = i;
+  // ARIA: "next tab" is ArrowRight in ltr and ArrowLeft in rtl.
+  const rtl = (pillEl && getComputedStyle(pillEl).direction === 'rtl');
+  const next = rtl ? 'ArrowLeft' : 'ArrowRight';
+  if (e.key === 'Home') n = 0;
+  else if (e.key === 'End') n = list.length - 1;
+  else n = (i + (e.key === next ? 1 : -1) + list.length) % list.length;
+  const target = list[n];
+  if (target) { target.focus(); }
+}
+
+/** Position the morphing highlight under the active tab. */
+function syncPillIndicator(animate = true) {
+  if (!pillEl || !pillIndEl) return;
+  if (!animate) pillIndEl.style.transition = 'none';
+  for (const t of PILL_TABS) {
+    const b = pillBtns[t.id];
+    if (!b) continue;
+    const active = pillActiveId() === t.id;
+    b.setAttribute('aria-selected', active ? 'true' : 'false');
+    b.tabIndex = active ? 0 : -1;
+  }
+  const activeBtn = pillBtns[pillActiveId()] || pillBtns[PILL_TABS[0].id];
+  if (activeBtn) {
+    // Measure with rects (not offsetLeft): offsetLeft is direction-dependent and
+    // the pill lays out right-to-left under fa, so rects are the only value that
+    // is correct in both writing modes.
+    const pr = pillEl.getBoundingClientRect();
+    const br = activeBtn.getBoundingClientRect();
+    if (pr.width > 0 && br.width > 0) {
+      const border = parseFloat(getComputedStyle(pillEl).borderLeftWidth) || 0;
+      pillIndEl.style.width = br.width + 'px';
+      pillIndEl.style.transform = 'translateX(' + Math.round(br.left - pr.left - border) + 'px)';
+    }
+  }
+  if (!animate) {
+    // force a reflow so the transition we just disabled does not linger
+    void pillIndEl.offsetWidth;
+    pillIndEl.style.transition = '';
+  }
+}
+function pillActiveId() {
+  // Profile is a page/modal, not a nav section. Any secondary nav
+  // (discover, ai, tasks…) keeps Chats lit because that is the home family.
+  return PILL_TABS.some((t) => t.id === state.nav) ? state.nav : 'chats';
+}
+
+/** Total unread across every room, for the pill's Chats badge. */
+function totalUnread() {
+  let n = 0;
+  try {
+    for (const rid in state.rooms) {
+      const r = state.rooms[rid];
+      if (!r || r.archived) continue;
+      n += computeUnread(rid, r) || 0;
+    }
+  } catch (e) { return 0; }
+  return n;
+}
+
+/** Unread badge on the Chats tab. */
+function syncPillBadge(total) {
+  const b = pillBtns.chats;
+  if (!b) return;
+  const badge = b.querySelector('.vx-pill-badge');
+  if (!badge) return;
+  const n = Math.max(0, Number(total) || 0);
+  badge.hidden = n <= 0;
+  badge.textContent = n > 99 ? '۹۹+' : String(n);
+}
+
 function renderDock() {
-  const d = $('command-dock'); d.innerHTML = '';
-  DOCK.forEach((it) => { const el = document.createElement('div'); el.className = 'dock-item'; el.innerHTML = ic(it.icon) + '<span class="dt">' + it.label + '</span><span class="ds">' + it.sub + '</span>'; el.onclick = () => switchNav(it.id); d.appendChild(el); });
-  const sep = document.createElement('div'); sep.className = 'dock-sep'; d.appendChild(sep);
-  const plus = document.createElement('div'); plus.className = 'dock-plus'; plus.innerHTML = ic('plus'); plus.title = 'جدید'; plus.onclick = (e) => { e.stopPropagation(); openNewMenu(e.currentTarget); }; d.appendChild(plus);
-  luc();
+  buildPill();
+  // Profile avatar in the pill
+  const av = pillBtns.profile && pillBtns.profile.querySelector('.vx-pill-av');
+  if (av) {
+    const u = state.me || {};
+    av.textContent = '';
+    if (u.avatar) { const img = document.createElement('img'); img.src = u.avatar; img.alt = ''; av.appendChild(img); }
+    else av.textContent = initial(u.displayName || u.username || '?');
+  }
+  syncPillIndicator(false);
+  syncPillBadge(totalUnread());
+}
+
+/* ── Phase 4: design controls (glass + power saving) ──
+   The sidebar footer exposes the two switches that belong to the shell itself.
+   They read/write VXDesign, which owns detection and persistence. Later slices
+   surface the same state on the Power-saving page; these stay as the quick path. */
+const POWER_MODES = [
+  { id: 'auto', label: 'خودکار', hint: 'بر اساس توان دستگاه تعیین می‌شود' },
+  { id: 'saver', label: 'ذخیره باتری', hint: 'بلور و جلوه‌های سنگین خاموش می‌شوند' },
+  { id: 'full', label: 'کامل', hint: 'همه جلوه‌ها و بلور فعال' },
+];
+function renderDesignControls() {
+  const g = $('nav-glass'), p = $('nav-power');
+  if (!g || !p) return;
+  const D = window.VXDesign;
+  if (!D) { g.disabled = true; p.disabled = true; return; }
+  const glass = !!D.glass;
+  g.setAttribute('aria-pressed', glass ? 'true' : 'false');
+  g.classList.toggle('is-off', !glass);
+  g.setAttribute('aria-label', 'بلور شیشه‌ای ' + (glass ? 'روشن است؛ برای خاموش کردن' : 'خاموش است؛ برای روشن کردن') + ' کلیک کنید');
+
+  const mode = D.power;
+  const cur = POWER_MODES.find((m) => m.id === mode) || POWER_MODES[0];
+  const lbl = p.querySelector('.label');
+  if (lbl) lbl.textContent = cur.label;
+  p.dataset.mode = mode;
+  p.classList.toggle('is-on', mode === 'saver');
+  p.setAttribute('aria-label', 'حالت مصرف انرژی: ' + cur.label + ' — ' + cur.hint + '؛ برای تغییر کلیک کنید');
+}
+let _designWired = false;
+function wireDesignControls() {
+  if (_designWired) return;
+  _designWired = true;
+  const g = $('nav-glass'), p = $('nav-power');
+  if (g) g.onclick = () => { const D = window.VXDesign; if (D) { D.toggleGlass(); renderDesignControls(); toast(D.glass ? 'بلور روشن شد' : 'بلور خاموش شد'); } };
+  if (p) p.onclick = () => {
+    const D = window.VXDesign; if (!D) return;
+    // auto → saver → full → auto : the common choice (saver) comes first
+    const order = POWER_MODES.map((m) => m.id);
+    const next = order[(order.indexOf(D.power) + 1) % order.length];
+    D.setPower(next);
+    renderDesignControls();
+    const cur = POWER_MODES.find((m) => m.id === next) || POWER_MODES[0];
+    toast('حالت انرژی: ' + cur.label);
+  };
+  window.addEventListener('vx-design', renderDesignControls);
 }
 
 /* WEBSOCKET */
@@ -1102,6 +1286,7 @@ function buildChatList() {
   }
   active.forEach((r) => wrap.appendChild(chatItemEl(r)));
   applyIcons(wrap);
+  syncPillBadge(totalUnread());
 }
 const GROUP_CAT_LABELS = { tech: 'تکنولوژی', finance: 'مالی و ارز', sports: 'ورزشی', culture: 'فرهنگ و ادب', fun: 'سرگرمی', learn: 'آموزش', media: 'فیلم و رسانه', games: 'بازی', study: 'تحصیلی', other: 'سایر' };
 function exploreCardEl(g) {
