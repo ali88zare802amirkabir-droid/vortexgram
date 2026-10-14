@@ -706,6 +706,8 @@ function enterApp() {
   if (deep) state._deepRoom = deep;
   syncUrl(deep, { replace: true });
   wireDesignControls(); renderDesignControls();
+  state.userFolders = null; // reload per-account folders now that state.me is known
+  renderFolderBar();
   renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); connectWS(); applyVX();
   showImpersonateBanner();
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
@@ -1257,12 +1259,8 @@ function buildChatList() {
     const lastMsg = last ? (last.from === state.me.username ? 'شما: ' : '') + previewText(last) : 'چت را شروع کنید';
     return { rid, title, sub, lastMsg, lastTime: last ? last.time : 0, unread, online, pinned: !!flags.pinned, archived: !!flags.archived, muted: !!flags.muted, isBot, isGroup };
   });
-  const f = state.chatFilter;
-  if (f === 'unread') rooms = rooms.filter((r) => r.unread > 0);
-  else if (f === 'private') rooms = rooms.filter((r) => !r.isGroup && !r.isBot);
-  else if (f === 'groups') rooms = rooms.filter((r) => r.isGroup);
-  else if (f === 'channels') rooms = rooms.filter((r) => r.isGroup && (state.groups.find((g) => 'group:' + g.id === r.rid) || {}).type === 'channel');
-  else if (f === 'bots') rooms = rooms.filter((r) => r.isBot);
+  const f = state.chatFilter || 'all';
+  rooms = rooms.filter((r) => roomMatchesFolder(r.rid, r, f));
   const blocked = (state.me && Array.isArray(state.me.blocked)) ? state.me.blocked : [];
   rooms = rooms.filter((r) => { if (r.isGroup || r.isBot) return true; const other = r.rid.slice(3).split('|').find((p) => p !== state.me.username); return !blocked.includes(other); });
   if (state.search) { const q = state.search.toLowerCase(); rooms = rooms.filter((r) => r.title.toLowerCase().includes(q)); }
@@ -1275,8 +1273,26 @@ function buildChatList() {
     state.groupSearch.forEach((g) => wrap.appendChild(groupSearchItemEl(g)));
   }
   if (!active.length && !archived.length && !(state.search && state.groupSearch.length)) {
+    if (state.search || (state.chatFilter && state.chatFilter !== 'all')) {
+      const isCustom = String(state.chatFilter).indexOf('f:') === 0;
+      const inCustom = isCustom && (userFolders().find((x) => 'f:' + x.id === state.chatFilter) || {});
+      wrap.innerHTML = '<div class="empty-state"><div class="es-ic">🔍</div><div class="es-title">چتی یافت نشد</div><div class="es-sub">'
+        + (state.search
+          ? 'برای «' + esc(state.search) + '» چیزی پیدا نشد'
+          : (inCustom && inCustom.name
+            ? 'هنوز چتی در پوشهٔ «' + esc(inCustom.name) + '» نیست'
+            : 'در این دسته چتی وجود ندارد'))
+        + '</div></div>';
+      applyIcons(wrap);
+      syncPillBadge(totalUnread());
+      updateFolderCounts();
+      return;
+    }
     wrap.innerHTML = '<div class="empty-state"><div class="es-ic">💬</div><div class="es-title">چتی یافت نشد</div><div class="es-sub">یک گفتگو را شروع کنید یا از کانال‌های عمومی زیر بپیوندید</div></div><div class="explore-row" id="explore-row"><div class="skeleton" style="flex:0 0 148px;height:120px"></div><div class="skeleton" style="flex:0 0 148px;height:120px"></div><div class="skeleton" style="flex:0 0 148px;height:120px"></div></div>';
     loadExploreRow(wrap.querySelector('#explore-row'));
+    applyIcons(wrap);
+    syncPillBadge(totalUnread());
+    updateFolderCounts();
     return;
   }
   if (archived.length) {
@@ -1287,6 +1303,7 @@ function buildChatList() {
   active.forEach((r) => wrap.appendChild(chatItemEl(r)));
   applyIcons(wrap);
   syncPillBadge(totalUnread());
+  updateFolderCounts();
 }
 const GROUP_CAT_LABELS = { tech: 'تکنولوژی', finance: 'مالی و ارز', sports: 'ورزشی', culture: 'فرهنگ و ادب', fun: 'سرگرمی', learn: 'آموزش', media: 'فیلم و رسانه', games: 'بازی', study: 'تحصیلی', other: 'سایر' };
 function exploreCardEl(g) {
@@ -1321,13 +1338,176 @@ async function loadExploreRow(row) {
   } catch (e) { if (row.isConnected) row.remove(); }
 }
 function chatItemEl(r) {
-  const it = document.createElement('div'); it.className = 'chat-item' + (state.room === r.rid ? ' active' : ''); it.dataset.roomId = r.rid;
-  let avSrc = null;
-  if (r.isGroup) { const g = state.groups.find((x) => 'group:' + x.id === r.rid); if (g && g.avatar) avSrc = g.avatar; }
+  const it = document.createElement('div');
+  const unread = (r.unread || 0) > 0;
+  it.className = 'chat-item swipe' + (state.room === r.rid ? ' active' : '') + (unread ? ' unread' : '');
+  it.dataset.roomId = r.rid;
+
+  let avSrc = null, kindIcon = null;
+  if (r.isGroup) {
+    const g = state.groups.find((x) => 'group:' + x.id === r.rid);
+    if (g && g.avatar) avSrc = g.avatar;
+    kindIcon = (g && g.type === 'channel') ? 'megaphone' : 'users';
+  } else if (r.isBot) {
+    kindIcon = 'bot';
+  }
   const av = avatarEl(avSrc ? { avatar: avSrc, displayName: r.title } : (r.isBot ? { displayName: BOT_NAME } : { displayName: r.title }), 'md');
-  it.innerHTML = '<div class="ci-av">' + av.outerHTML + (r.online ? '<span class="online-dot"></span>' : '') + '</div><div class="ci-body"><div class="ci-row1"><div class="ci-name">' + esc(r.title) + (r.isBot ? ' <span style="font-size:9px;background:var(--accent);color:var(--on-primary);padding:1px 5px;border-radius:6px">AI</span>' : '') + '</div><div class="ci-time">' + (r.lastTime ? fmt(r.lastTime) : '') + '</div></div><div class="ci-row2">' + (r.pinned ? ic('pin') : '') + (r.muted ? ic('volume-x') : '') + '<div class="ci-last">' + esc(r.lastMsg) + '</div>' + (r.unread ? '<div class="ci-badge">' + r.unread + '</div>' : '') + '</div></div>';
-  it.onclick = () => openRoom(r.rid); it.oncontextmenu = (e) => { e.preventDefault(); openChatMenu(e, r.rid); };
+
+  const tag = r.isBot ? ' <span class="ci-tag bot">BOT</span>' : '';
+  const time = r.lastTime ? fmt(r.lastTime) : '';
+  const flags = (r.pinned ? '<span class="ci-flag pin" title="سنجاق‌شده">' + ic('pin') + '</span>' : '')
+    + (r.muted ? '<span class="ci-flag mute" title="بی‌صدا">' + ic('volume-x') + '</span>' : '');
+
+  const surf = document.createElement('div');
+  surf.className = 'ci-surface';
+  // role lives on the sliding surface, not the row: the swipe action buttons are
+  // siblings of it, so no interactive control ever nests inside a button.
+  surf.setAttribute('role', 'button');
+  surf.tabIndex = 0;
+  surf.setAttribute('aria-label', r.title + (unread ? '، ' + r.unread + ' پیام خوانده‌نشده' : ''));
+  surf.innerHTML =
+    '<div class="ci-av">' + av.outerHTML
+    + (r.online ? '<span class="online-dot"></span>' : '')
+    + (kindIcon ? '<span class="ci-type" aria-hidden="true">' + ic(kindIcon) + '</span>' : '')
+    + '</div>'
+    + '<div class="ci-body">'
+    + '<div class="ci-row1"><div class="ci-name">' + esc(r.title) + tag + '</div><div class="ci-time">' + esc(time) + '</div></div>'
+    + '<div class="ci-row2">' + flags
+    + '<div class="ci-last">' + esc(r.lastMsg) + '</div>'
+    + (unread ? '<div class="ci-badge' + (r.muted ? ' muted' : '') + '">' + (r.unread > 99 ? '۹۹+' : r.unread) + '</div>' : '')
+    + '</div></div>';
+
+  // swipe layers: drag toward the writing-mode start to expose the end actions
+  const start = document.createElement('div');
+  start.className = 'ci-actions start';
+  start.innerHTML = '<button class="ci-act read" type="button">' + ic('check-check') + '<span>خوانده شد</span></button>';
+  const end = document.createElement('div');
+  end.className = 'ci-actions end';
+  end.innerHTML = '<button class="ci-act mute" type="button">' + ic(r.muted ? 'volume-2' : 'volume-x') + '<span>' + (r.muted ? 'صدا' : 'بی‌صدا') + '</span></button>'
+    + '<button class="ci-act archive" type="button">' + ic(r.archived ? 'archive-restore' : 'archive') + '<span>' + (r.archived ? 'خروج از آرشیو' : 'آرشیو') + '</span></button>';
+
+  it.appendChild(start);
+  it.appendChild(end);
+  it.appendChild(surf);
+
+  start.querySelector('.ci-act').onclick = (e) => {
+    e.stopPropagation(); closeChatSwipe();
+    try { markRead(r.rid); buildChatList(); toast('علامت‌گذاری به‌عنوان خوانده‌شده'); } catch (e2) {}
+  };
+  end.querySelector('.ci-act.mute').onclick = (e) => {
+    e.stopPropagation(); const was = r.muted; closeChatSwipe();
+    setFlag(r.rid, 'muted', !was); toast(was ? 'صدای چت روشن شد' : 'چت بی‌صدا شد');
+  };
+  end.querySelector('.ci-act.archive').onclick = (e) => {
+    e.stopPropagation(); const was = r.archived; closeChatSwipe();
+    setFlag(r.rid, 'archived', !was); toast(was ? 'از آرشیو خارج شد' : 'به آرشیو رفت');
+  };
+
+  let suppressClick = false;
+  const activate = () => {
+    if (suppressClick) return;
+    if (openChatSwipeRow === it) { closeChatSwipe(); return; }
+    openRoom(r.rid);
+  };
+  surf.onclick = activate;
+  surf.onkeydown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); activate(); }
+    else if (e.key === 'Escape' && openChatSwipeRow === it) closeChatSwipe();
+  };
+  it.oncontextmenu = (e) => { e.preventDefault(); closeChatSwipe(); openChatMenu(e, r.rid); };
+
+  bindChatSwipe(it, surf, () => { suppressClick = true; setTimeout(() => { suppressClick = false; }, 60); });
   return it;
+}
+
+/* ── swipe behaviour ──
+   One rule works in both writing modes: dragging toward the mode's *start*
+   exposes the actions parked at the *end* (mute/archive), the reverse exposes
+   the start actions (mark read). Past 80px the layer opens so its buttons can
+   be tapped; a shorter drag snaps back. */
+var openChatSwipeRow = null;
+function closeChatSwipe() {
+  if (!openChatSwipeRow) return;
+  const surf = openChatSwipeRow.querySelector('.ci-surface');
+  if (surf) surf.style.transform = '';
+  openChatSwipeRow.classList.remove('open');
+  openChatSwipeRow = null;
+}
+function chatSwipeOutside(e) {
+  if (!openChatSwipeRow) return;
+  if (openChatSwipeRow.contains(e.target)) {
+    document.addEventListener('pointerdown', chatSwipeOutside, { once: true, capture: true });
+    return;
+  }
+  closeChatSwipe();
+}
+function bindChatSwipe(row, surf, onDragged) {
+  const startEl = row.querySelector('.ci-actions.start');
+  const endEl = row.querySelector('.ci-actions.end');
+  let sx = 0, sy = 0, mx = 0, rtl = false, active = false, decided = false;
+  const THRESH = 80, MAX = 210;
+
+  surf.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (openChatSwipeRow && openChatSwipeRow !== row) closeChatSwipe();
+    sx = e.clientX; sy = e.clientY; mx = 0;
+    active = true; decided = false;
+    rtl = (getComputedStyle(row).direction === 'rtl');
+  });
+
+  surf.addEventListener('pointermove', (e) => {
+    if (!active) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(dx) < 7 && Math.abs(dy) < 7) return;
+      if (Math.abs(dy) > Math.abs(dx)) { active = false; return; } // vertical scroll wins
+      decided = true;
+      row.classList.add('swiping');
+      surf.style.transition = 'none';
+      try { surf.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+    const towardStart = rtl ? dx : -dx;
+    const endW = endEl.offsetWidth, startW = startEl.offsetWidth;
+    let x = dx;
+    if (towardStart > 0) {
+      // revealing the END layer — never pull past its own width
+      x = rtl ? Math.min(x, endW) : Math.max(x, -endW);
+    } else {
+      x = rtl ? Math.max(x, -startW) : Math.min(x, startW);
+    }
+    mx = Math.max(-MAX, Math.min(MAX, x));
+    surf.style.transform = 'translateX(' + mx + 'px)';
+    endEl.style.visibility = towardStart > 0 ? 'visible' : 'hidden';
+    startEl.style.visibility = towardStart < 0 ? 'visible' : 'hidden';
+  });
+
+  const finish = () => {
+    if (!active) return;
+    active = false;
+    if (!decided) { return; }
+    surf.style.transition = '';
+    row.classList.remove('swiping');
+    endEl.style.visibility = '';
+    startEl.style.visibility = '';
+    const towardStart = rtl ? mx : -mx;
+    const endW = endEl.offsetWidth, startW = startEl.offsetWidth;
+    if (Math.abs(towardStart) >= THRESH) {
+      surf.style.transform = towardStart > 0
+        ? 'translateX(' + (rtl ? endW : -endW) + 'px)'
+        : 'translateX(' + (rtl ? -startW : startW) + 'px)';
+      row.classList.add('open');
+      openChatSwipeRow = row;
+      setTimeout(() => document.addEventListener('pointerdown', chatSwipeOutside, { once: true, capture: true }), 0);
+    } else {
+      surf.style.transform = '';
+      if (openChatSwipeRow === row) openChatSwipeRow = null;
+    }
+    onDragged();
+    mx = 0;
+  };
+  surf.addEventListener('pointerup', finish);
+  surf.addEventListener('pointercancel', finish);
+  surf.addEventListener('lostpointercapture', finish);
 }
 function groupSearchItemEl(g) {
   const isJoined = state.groups.some((x) => x.id === g.id);
@@ -1335,8 +1515,16 @@ function groupSearchItemEl(g) {
   const av = avatarEl(g.avatar ? { avatar: g.avatar, displayName: g.name } : { displayName: g.name }, 'md');
   const kind = (g.type === 'channel' ? 'کانال' : 'گروه');
   const sub = kind + ' • ' + (g.members || 0) + ' عضو' + (g.description ? ' • ' + esc(String(g.description).slice(0, 40)) : '');
-  it.innerHTML = '<div class="ci-av">' + av.outerHTML + '</div><div class="ci-body"><div class="ci-row1"><div class="ci-name">' + esc(g.name) + (g.username ? ' <span style="font-size:10px;opacity:.7" dir="ltr">@' + esc(g.username) + '</span>' : '') + '</div></div><div class="ci-row2"><div class="ci-last">' + sub + '</div></div></div><button class="btn sm" style="margin-inline:8px;flex:0 0 auto">' + (isJoined ? 'ورود' : 'عضویت') + '</button>';
-  it.onclick = () => {
+  const surf = document.createElement('div');
+  surf.className = 'ci-surface';
+  surf.innerHTML = '<div class="ci-av">' + av.outerHTML + '<span class="ci-type" aria-hidden="true">' + ic(g.type === 'channel' ? 'megaphone' : 'users') + '</span></div><div class="ci-body"><div class="ci-row1"><div class="ci-name">' + esc(g.name) + (g.username ? ' <span style="font-size:10px;opacity:.7" dir="ltr">@' + esc(g.username) + '</span>' : '') + '</div></div><div class="ci-row2"><div class="ci-last">' + sub + '</div></div></div>';
+  const join = document.createElement('button');
+  join.className = 'btn sm';
+  join.style.cssText = 'margin-inline:8px;flex:0 0 auto';
+  join.textContent = isJoined ? 'ورود' : 'عضویت';
+  join.setAttribute('aria-label', (isJoined ? 'ورود به ' : 'عضویت در ') + g.name);
+  const openIt = (e) => {
+    if (e) e.stopPropagation();
     if (isJoined) { openRoom('group:' + g.id); return; }
     api('/api/groups/' + g.id + '/join', { method: 'POST' }).then((r) => r.json().catch(() => ({}))).then((d) => {
       if (!d.ok) { toast((d && d.error) || 'خطا در عضویت'); return; }
@@ -1344,6 +1532,14 @@ function groupSearchItemEl(g) {
       setTimeout(() => openRoom('group:' + g.id), 300);
     }).catch(() => toast('خطا در عضویت'));
   };
+  join.onclick = openIt;
+  surf.setAttribute('role', 'button');
+  surf.tabIndex = 0;
+  surf.setAttribute('aria-label', g.name + '، ' + kind + '، ' + (g.members || 0) + ' عضو');
+  surf.onclick = () => openIt();
+  surf.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); openIt(); } };
+  it.appendChild(surf);
+  it.appendChild(join);
   return it;
 }
 function computeUnread(rid, r) {
@@ -1375,7 +1571,223 @@ function msgSenderName(m) {
   const u = state.users.find((x) => x.username === uid);
   return m.fromName || (u && u.displayName) || uid || '';
 }
-$('cl-tabs').addEventListener('click', (e) => { const t = e.target.closest('.cl-tab'); if (!t) return; document.querySelectorAll('.cl-tab').forEach((x) => x.classList.remove('active')); t.classList.add('active'); state.chatFilter = t.dataset.tab; buildChatList(); });
+/* ── Phase 4 slice B: folders ──
+   Six built-in smart folders plus user folders. User folders are stored
+   per-account in localStorage for now; slice D moves them to the server so they
+   follow the account across devices. */
+const SMART_FOLDERS = [
+  { id: 'all', label: 'همه' },
+  { id: 'unread', label: 'خوانده‌نشده' },
+  { id: 'private', label: 'خصوصی' },
+  { id: 'groups', label: 'گروه‌ها' },
+  { id: 'channels', label: 'کانال‌ها' },
+  { id: 'bots', label: 'ربات‌ها' },
+];
+function folderLSKey() { return 'vxFolders:' + ((state.me && state.me.username) || 'anon'); }
+function userFolders() {
+  if (!state.userFolders) {
+    let v = [];
+    try { const raw = localStorage.getItem(folderLSKey()); v = raw ? JSON.parse(raw) : []; } catch (e) { v = []; }
+    state.userFolders = Array.isArray(v) ? v.filter((f) => f && f.id && f.name) : [];
+  }
+  return state.userFolders;
+}
+function saveUserFolders(list) {
+  state.userFolders = list;
+  try { localStorage.setItem(folderLSKey(), JSON.stringify(list)); } catch (e) {}
+}
+function groupTypeOf(rid) {
+  const g = state.groups.find((x) => 'group:' + x.id === rid);
+  return g ? (g.type || 'group') : 'group';
+}
+function roomDisplayTitle(rid) {
+  if (rid.startsWith('group:')) {
+    const g = state.groups.find((x) => 'group:' + x.id === rid);
+    return g ? g.name : rid;
+  }
+  const other = rid.slice(3).split('|').find((p) => p !== (state.me && state.me.username));
+  if (!other) return rid;
+  if (other === BOT_USERNAME) return BOT_NAME;
+  const u = (state.users || []).find((x) => x.username === other);
+  if (u && u.displayName) return u.displayName;
+  const c = getContacts();
+  if (c[other]) return c[other];
+  if (state.me && state.me.username === other) return state.me.displayName || other;
+  return other;
+}
+/** Does this room belong to the given folder? Shared by the list and the counters. */
+function roomMatchesFolder(rid, r, fid) {
+  if (!fid || fid === 'all') return true;
+  if (fid === 'unread') return computeUnread(rid, r) > 0;
+  const isGroup = rid.startsWith('group:');
+  let other = null, isBot = false;
+  if (!isGroup) {
+    other = rid.slice(3).split('|').find((p) => p !== (state.me && state.me.username));
+    isBot = other === BOT_USERNAME;
+  }
+  if (fid === 'private') return !isGroup && !isBot;
+  if (fid === 'groups') return isGroup && groupTypeOf(rid) !== 'channel';
+  if (fid === 'channels') return isGroup && groupTypeOf(rid) === 'channel';
+  if (fid === 'bots') return isBot;
+  if (fid.indexOf('f:') === 0) {
+    const f = userFolders().find((x) => 'f:' + x.id === fid);
+    return !!(f && Array.isArray(f.chats) && f.chats.indexOf(rid) >= 0);
+  }
+  return true;
+}
+function folderUnread(fid) {
+  let n = 0;
+  try {
+    for (const rid in state.rooms) {
+      const r = state.rooms[rid];
+      if (!r || r.archived) continue;
+      if (!roomMatchesFolder(rid, r, fid)) continue;
+      n += (fid === 'unread' ? (computeUnread(rid, r) > 0 ? 1 : 0) : (computeUnread(rid, r) || 0));
+    }
+  } catch (e) { return 0; }
+  return n;
+}
+function selectFolder(fid) {
+  state.chatFilter = fid;
+  renderFolderBar();
+  buildChatList();
+}
+/** Refresh only the unread counts — avoids re-rendering (and stealing focus). */
+function updateFolderCounts() {
+  const bar = $('cl-tabs');
+  if (!bar) return;
+  bar.querySelectorAll('.vx-folder').forEach((b) => {
+    const n = folderUnread(b.dataset.folder);
+    const cnt = b.querySelector('.cnt');
+    if (!cnt) return;
+    cnt.hidden = !n;
+    cnt.textContent = n > 99 ? '۹۹+' : String(n || '');
+    const label = b.firstChild ? (b.firstChild.textContent || '').trim() : '';
+    b.setAttribute('aria-label', label + (n ? '، ' + n + ' خوانده‌نشده' : ''));
+  });
+}
+function renderFolderBar() {
+  const bar = $('cl-tabs');
+  if (!bar) return;
+  // selection rebuilds every node — remember which folder had focus so keyboard
+  // navigation doesn't drop the user back onto <body> after each arrow press
+  const prev = document.activeElement;
+  const keepFocus = (prev && prev.classList && prev.classList.contains('vx-folder') && prev.dataset)
+    ? prev.dataset.folder : null;
+  const cur = state.chatFilter || 'all';
+  const all = SMART_FOLDERS.concat(userFolders().map((f) => ({ id: 'f:' + f.id, label: f.name, custom: true })));
+  bar.innerHTML = '';
+  for (const f of all) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'vx-folder' + (f.custom ? ' custom' : '');
+    b.dataset.folder = f.id;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', cur === f.id ? 'true' : 'false');
+    b.tabIndex = cur === f.id ? 0 : -1;
+    const n = folderUnread(f.id);
+    b.innerHTML = esc(f.label) + '<span class="cnt"' + (n ? '' : ' hidden') + '>' + (n > 99 ? '۹۹+' : (n || '')) + '</span>';
+    b.setAttribute('aria-label', f.label + (n ? '، ' + n + ' خوانده‌نشده' : ''));
+    let suppressClick = false;
+    if (f.custom) {
+      b.oncontextmenu = (e) => { e.preventDefault(); suppressClick = true; setTimeout(() => { suppressClick = false; }, 400); openFolderManager(f.id); };
+      let lp = null;
+      b.addEventListener('pointerdown', () => {
+        lp = setTimeout(() => { lp = null; suppressClick = true; openFolderManager(f.id); }, 550);
+      });
+      const cancelLp = () => { if (lp) { clearTimeout(lp); lp = null; } };
+      b.addEventListener('pointerup', cancelLp);
+      b.addEventListener('pointerleave', cancelLp);
+      b.addEventListener('pointercancel', cancelLp);
+    }
+    b.onclick = () => { if (suppressClick) return; selectFolder(f.id); };
+    b.onkeydown = (e) => {
+      const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+      if (keys.indexOf(e.key) < 0) return;
+      e.preventDefault();
+      const list = Array.prototype.slice.call(bar.querySelectorAll('.vx-folder'));
+      const i = list.indexOf(b);
+      const rtl = getComputedStyle(bar).direction === 'rtl';
+      const nextKey = rtl ? 'ArrowLeft' : 'ArrowRight';
+      let n2 = i;
+      if (e.key === 'Home') n2 = 0;
+      else if (e.key === 'End') n2 = list.length - 1;
+      else n2 = (i + (e.key === nextKey ? 1 : -1) + list.length) % list.length;
+      const t = list[n2];
+      if (t) { t.focus(); t.click(); }
+    };
+    bar.appendChild(b);
+  }
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'vx-folder-add';
+  add.setAttribute('aria-label', 'ساخت پوشه تازه');
+  add.setAttribute('title', 'پوشه تازه');
+  add.innerHTML = ic('plus');
+  add.onclick = () => openFolderManager(null);
+  bar.appendChild(add);
+  applyIcons(bar);
+  if (keepFocus) {
+    const again = bar.querySelector('.vx-folder[data-folder="' + keepFocus + '"]');
+    if (again) { try { again.focus({ preventScroll: true }); } catch (e) { again.focus(); } }
+  }
+}
+
+/** Create or edit a user folder: name + the chats it contains. */
+function openFolderManager(folderId) {
+  closeChatSwipe();
+  const existing = folderId ? userFolders().find((f) => 'f:' + f.id === folderId) : null;
+  const rooms = allRoomIds().slice().sort((a, b) => (roomDisplayTitle(a) || '').localeCompare(roomDisplayTitle(b) || ''));
+  const chosen = new Set(existing && Array.isArray(existing.chats) ? existing.chats : []);
+  const rows = rooms.map((rid) => {
+    const checked = chosen.has(rid) ? ' checked' : '';
+    return '<label class="u-pop-check"><input type="checkbox" data-rid="' + escAttr(rid) + '"' + checked + '><span>' + esc(roomDisplayTitle(rid)) + '</span></label>';
+  }).join('');
+  const others = userFolders().filter((f) => f.id !== (existing && existing.id));
+  const pop = document.createElement('div');
+  pop.className = 'u-pop';
+  pop.innerHTML = '<div class="u-pop-box vx-folder-box">'
+    + '<div class="u-pop-title">' + (existing ? 'ویرایش پوشه' : 'پوشه تازه') + '</div>'
+    + (others.length ? '<div class="vx-folder-strip">' + others.map((f) => '<button type="button" class="chip" data-edit="' + escAttr(f.id) + '">' + esc(f.name) + '</button>').join('') + '</div>' : '')
+    + '<input class="inp" data-k="name" placeholder="نام پوشه" value="' + escAttr(existing ? existing.name : '') + '" maxlength="24">'
+    + '<div class="u-pop-checks" data-k="chats" tabindex="-1">' + rows + '</div>'
+    + '<div class="u-pop-actions">'
+    + (existing ? '<button class="btn sm danger" data-k="del">حذف</button>' : '')
+    + '<button class="btn sm ghost" data-k="0">انصراف</button>'
+    + '<button class="btn sm" data-k="1">ذخیره</button>'
+    + '</div></div>';
+  const close = () => pop.remove();
+  pop.addEventListener('click', (e) => { if (e.target === pop) close(); });
+  pop.querySelector('[data-k="0"]').onclick = close;
+  const del = pop.querySelector('[data-k="del"]');
+  if (del) del.onclick = () => {
+    saveUserFolders(userFolders().filter((f) => f.id !== existing.id));
+    if (state.chatFilter === 'f:' + existing.id) state.chatFilter = 'all';
+    close(); renderFolderBar(); buildChatList(); toast('پوشه حذف شد');
+  };
+  pop.querySelectorAll('[data-edit]').forEach((btn) => btn.onclick = () => { close(); openFolderManager('f:' + btn.dataset.edit); });
+  const inp = pop.querySelector('[data-k="name"]');
+  const save = () => {
+    const name = (inp.value || '').trim();
+    if (!name) { toast('نام پوشه را بنویس'); inp.focus(); return; }
+    const picked = Array.prototype.slice.call(pop.querySelectorAll('[data-k="chats"] input:checked')).map((c) => c.dataset.rid);
+    const list = userFolders().slice();
+    if (existing) {
+      const i = list.findIndex((f) => f.id === existing.id);
+      if (i >= 0) list[i] = { id: existing.id, name: name, chats: picked };
+      else list.push({ id: existing.id, name: name, chats: picked });
+    } else {
+      list.push({ id: 'u' + Date.now().toString(36), name: name, chats: picked });
+    }
+    saveUserFolders(list);
+    close(); renderFolderBar(); buildChatList(); toast('پوشه ذخیره شد');
+  };
+  pop.querySelector('[data-k="1"]').onclick = save;
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  pop.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.body.appendChild(pop);
+  setTimeout(() => { inp.focus(); inp.select(); }, 60);
+}
 $('cl-search-input').addEventListener('input', (e) => { state.search = e.target.value; scheduleGroupSearch(state.search); buildChatList(); });
 let _gsTimer = null;
 function scheduleGroupSearch(q) {
@@ -5453,20 +5865,50 @@ function renderContacts(wrap) {
   wrap.querySelector('#ct-invite').onclick = showInviteLink;
   const draw = (list) => {
     list = (list || []).filter((u) => u.username !== state.me.username);
-    if (!list.length) { listEl.innerHTML = '<div class="contact-empty">هنوز مخاطبی ثبت نشده است. از دکمه + یک چت جدید شروع کن یا بالا جستجو کن.</div>'; return; }
-    let h = '<div class="contact-list">';
-    list.forEach((u) => {
-      const online = state.me.isAdmin ? !!u.online : false;
-      h += '<div class="contact-item" data-u="' + esc(u.username) + '">' + avatarEl(u, 'md').outerHTML + '<div class="ci-body"><div class="ci-name">' + esc(u.displayName || u.username) + (online ? ' <span style="font-size:10px;color:var(--success)">●</span>' : '') + '</div><div class="ci-sub">@' + esc(u.username) + '</div></div><button class="btn sm" data-act="chat">چت</button><button class="btn sm ghost" data-act="profile">پروفایل</button>' + (state.me.isAdmin ? '<button class="btn sm danger" data-act="ban">' + ((u.banned) ? 'رفع مسدودی' : 'مسدود') + '</button>' : '') + '</div>';
-    });
+    if (!list.length) {
+      listEl.innerHTML = '<div class="vx-empty">' + ic('contact') + '<div class="t">هنوز مخاطبی ثبت نشده</div><div class="s">از دکمهٔ «چت جدید» گفتگو بسازید یا از جستجوی بالا آیدی کاربر را پیدا کنید.</div></div>';
+      applyIcons(listEl);
+      return;
+    }
+    const canSeeOnline = !!state.me.isAdmin;
+    const isOn = (u) => canSeeOnline && !!u.online && !u.banned;
+    const on = list.filter(isOn);
+    const rest = list.filter((u) => !isOn(u));
+    const rowHTML = (u) => {
+      const online = isOn(u);
+      const av = avatarEl(u, 'md').outerHTML;
+      return '<div class="contact-item" data-u="' + esc(u.username) + '"' + (online ? ' data-online="1"' : '')
+        + ' role="listitem" tabindex="0">'
+        + '<span class="ci-av">' + av + (online ? '<span class="ci-on" aria-label="آنلاین" title="آنلاین"></span>' : '') + '</span>'
+        + '<div class="ci-body"><div class="ci-name">' + esc(u.displayName || u.username) + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '') + '</div>'
+        + '<div class="ci-sub" dir="ltr">@' + esc(u.username) + '</div></div>'
+        + '<button class="btn sm" data-act="chat" aria-label="چت با ' + escAttr(u.displayName || u.username) + '">چت</button>'
+        + '<button class="btn sm ghost" data-act="profile" aria-label="پروفایل ' + escAttr(u.displayName || u.username) + '">پروفایل</button>'
+        + (state.me.isAdmin ? '<button class="btn sm danger" data-act="ban">' + ((u.banned) ? 'رفع مسدودی' : 'مسدود') + '</button>' : '')
+        + '</div>';
+    };
+    let h = '<div class="contact-list" role="list">';
+    if (on.length) {
+      h += '<div class="vx-sec-title">' + ic('user-check') + '<span>آنلاین</span><span class="n">' + on.length + '</span></div>';
+      h += on.map(rowHTML).join('');
+      h += '<div class="vx-sec-title">' + ic('contact') + '<span>سایر مخاطبین</span><span class="n">' + rest.length + '</span></div>';
+      h += rest.map(rowHTML).join('');
+    } else {
+      h += '<div class="vx-sec-title">' + ic('contact') + '<span>مخاطبین</span><span class="n">' + list.length + '</span></div>';
+      h += list.map(rowHTML).join('');
+    }
     h += '</div>';
     listEl.innerHTML = h;
     listEl.querySelectorAll('.contact-item').forEach((it) => {
       const u = it.dataset.u; const cur = (state.users || []).find((x) => x.username === u) || { banned: false };
-      it.querySelector('[data-act="chat"]').onclick = () => openDM(u);
-      it.querySelector('[data-act="profile"]').onclick = () => openProfile(u);
-      const ban = it.querySelector('[data-act="ban"]'); if (ban) ban.onclick = async () => { await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u, banned: !cur.banned }) }); toast('انجام شد'); renderView('contacts'); };
+      it.querySelector('[data-act="chat"]').onclick = (e) => { e.stopPropagation(); openDM(u); };
+      it.querySelector('[data-act="profile"]').onclick = (e) => { e.stopPropagation(); openProfile(u); };
+      const ban = it.querySelector('[data-act="ban"]');
+      if (ban) ban.onclick = async (e) => { e.stopPropagation(); await api('/api/admin/ban', { method: 'POST', body: JSON.stringify({ username: u, banned: !cur.banned }) }); toast('انجام شد'); renderView('contacts'); };
+      it.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); openDM(u); } };
+      it.onclick = (e) => { if (e.target.closest('button')) return; openDM(u); };
     });
+    applyIcons(listEl);
     luc();
   };
   let timer;

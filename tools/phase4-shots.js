@@ -174,6 +174,61 @@ async function probe(page) {
     const dock = document.getElementById('command-dock');
     out.legacyDockHidden = !dock || getComputedStyle(dock).display === 'none';
 
+    // — slice B: folder strip + chat rows —
+    const bar = document.getElementById('cl-tabs');
+    if (bar) {
+      const tabs = Array.prototype.slice.call(bar.querySelectorAll('.vx-folder'));
+      const act = bar.querySelector('.vx-folder[aria-selected="true"]');
+      out.folders = {
+        present: true,
+        count: tabs.length,
+        labels: tabs.map((t) => ((t.firstChild && t.firstChild.textContent) || '').trim()),
+        active: act ? act.dataset.folder : null,
+        addBtn: !!bar.querySelector('.vx-folder-add'),
+        roving: tabs.filter((t) => t.tabIndex === 0).length,
+        allTabs: tabs.every((t) => t.getAttribute('role') === 'tab'),
+        allNamed: tabs.every((t) => !!((t.getAttribute('aria-label') || '').trim() || (t.textContent || '').trim())),
+        overflowX: bar.scrollWidth > bar.clientWidth + 1,
+        overflowXStyle: getComputedStyle(bar).overflowX,
+        boxInViewport: (() => {
+          const r = bar.getBoundingClientRect();
+          return r.left >= -1 && r.right <= window.innerWidth + 1;
+        })(),
+        wrapped: bar.scrollHeight > bar.clientHeight + 2,
+        height: Math.round(bar.getBoundingClientRect().height),
+        // the list must not render underneath the strip
+        listStartsBelow: (() => {
+          const li = document.getElementById('cl-items');
+          if (!li) return null;
+          return li.getBoundingClientRect().top >= bar.getBoundingClientRect().bottom - 2;
+        })(),
+      };
+    } else {
+      out.folders = { present: false };
+    }
+
+    const rows = document.querySelectorAll('#cl-items .chat-item');
+    if (rows.length) {
+      const r0 = rows[0];
+      const surf = r0.querySelector('.ci-surface');
+      const endAct = r0.querySelector('.ci-actions.end');
+      const startAct = r0.querySelector('.ci-actions.start');
+      out.chatRows = {
+        count: rows.length,
+        hasSurface: !!surf,
+        surfaceIsTop: surf ? getComputedStyle(surf).zIndex !== 'auto' && parseFloat(getComputedStyle(surf).zIndex) > 0 : null,
+        surfaceBg: surf ? getComputedStyle(surf).backgroundColor : null,
+        rowBg: getComputedStyle(r0).backgroundColor,
+        restActionsVisibility: endAct ? getComputedStyle(endAct).visibility : null,
+        startActionsVisibility: startAct ? getComputedStyle(startAct).visibility : null,
+        rowHeight: Math.round(r0.getBoundingClientRect().height),
+        swipeClass: r0.classList.contains('swipe'),
+        touchAction: surf ? getComputedStyle(surf).touchAction : null,
+        surfaces: document.querySelectorAll('#cl-items .chat-item .ci-surface').length,
+        actionCount: document.querySelectorAll('#cl-items .ci-act').length,
+      };
+    }
+
     // — a11y: interactive controls must have an accessible name —
     const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
     const hasName = (el) => {
@@ -223,6 +278,29 @@ function evaluate(m) {
   if (m.viewportW >= 900 && m.rail && m.rail.itemDirs !== 'column') f.push('desktop rail not column');
   if (m.viewportW >= 900 && m.rail && m.rail.labelsShown !== 'none' && !m.rail.expanded) f.push('collapsed rail still shows labels');
   if (m.a11yUnnamedControls && m.a11yUnnamedControls.length) f.push('unnamed controls: ' + m.a11yUnnamedControls.join(','));
+  // — slice B —
+  if (m.folders && m.folders.present) {
+    if (m.folders.count < 6) f.push('folder count < 6 (' + m.folders.count + ')');
+    if (!m.folders.active) f.push('no active folder');
+    if (m.folders.roving > 1) f.push('more than one folder tabbable');
+    if (m.folders.allTabs === false) f.push('folders missing role=tab');
+    if (m.folders.allNamed === false) f.push('folder without accessible name');
+    if (!m.folders.addBtn) f.push('folder add button missing');
+    // the strip may scroll (it is a scroll-snap row), but it must never wrap,
+    // never leave the viewport, and never push page-level horizontal overflow
+    if (m.folders.boxInViewport === false) f.push('folder strip out of viewport');
+    if (m.folders.wrapped) f.push('folder strip wrapped to more than one row');
+    if (m.folders.overflowX && ['auto', 'scroll'].indexOf(m.folders.overflowXStyle) < 0) f.push('overflowing folder strip is not scrollable');
+    if (m.folders.listStartsBelow === false) f.push('chat list overlaps folder strip');
+  }
+  if (m.chatRows && m.chatRows.count) {
+    if (!m.chatRows.hasSurface) f.push('chat row missing .ci-surface');
+    if (m.chatRows.surfaceIsTop !== true) f.push('chat surface not layered above actions');
+    if (m.chatRows.restActionsVisibility !== 'hidden') f.push('swipe actions visible at rest');
+    if (m.chatRows.swipeClass === false) f.push('chat row not swipeable');
+    if (m.chatRows.rowHeight < 60) f.push('chat row too short (' + m.chatRows.rowHeight + 'px)');
+    if (m.chatRows.surfaces !== m.chatRows.count) f.push('rows without a surface');
+  }
   return f;
 }
 
@@ -244,25 +322,20 @@ async function main() {
     // — accounts (register rate-limit: 8 per 60s per IP) —
     const ali = (await req('POST', '/api/register', { username: 'ali', password: 'Test12345!', displayName: 'علیرضا' })).json;
     const bob = (await req('POST', '/api/register', { username: 'bob', password: 'Test12345!', displayName: 'بابک' })).json;
-    if (!ali || !ali.token || !bob || !bob.token) throw new Error('register failed: ' + JSON.stringify([ali && ali.error, bob && bob.error]));
-    log('registered ali, bob');
+    const sara = (await req('POST', '/api/register', { username: 'sara', password: 'Test12345!', displayName: 'سارا' })).json;
+    if (!ali || !ali.token || !bob || !bob.token || !sara || !sara.token) throw new Error('register failed: ' + JSON.stringify([ali && ali.error, bob && bob.error, sara && sara.error]));
+    log('registered ali, bob, sara');
 
-    // — seed a DM so the chat list has a real row —
-    await new Promise((resolve) => {
+    // — seed DMs so the chat list has real rows —
+    const seedDM = (token, rid, lines) => new Promise((resolve) => {
       const ws = new WebSocket('ws://127.0.0.1:' + PORT);
-      const rid = 'dm:ali|bob';
-      const lines = [
-        'سلام علیرضا! پنل موبایل چطور پیش میره؟',
-        'کنتراست متن هم مهمه، یادت نره',
-        'لیست چت‌ها الان شلوغ‌تره، خوبه',
-      ];
       let i = 0;
       const send = () => {
         if (i >= lines.length) { setTimeout(() => { try { ws.close(); } catch (e) {} resolve(); }, 400); return; }
         ws.send(JSON.stringify({ type: 'message', roomId: rid, kind: 'text', content: lines[i++] }));
         setTimeout(send, 150);
       };
-      ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', token: bob.token })));
+      ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', token: token })));
       ws.on('message', (raw) => {
         let m; try { m = JSON.parse(raw); } catch (e) { return; }
         if (m.type === 'ready') send();
@@ -270,7 +343,16 @@ async function main() {
       ws.on('error', () => resolve());
       setTimeout(resolve, 6000);
     });
-    log('seeded DM');
+    await seedDM(bob.token, 'dm:ali|bob', [
+      'سلام علیرضا! پنل موبایل چطور پیش میره؟',
+      'کنتراست متن هم مهمه، یادت نره',
+      'لیست چت‌ها الان شلوغ‌تره، خوبه',
+    ]);
+    await seedDM(sara.token, 'dm:ali|sara', [
+      'امتحانام تموم شد بالاخره 😄',
+      'یه لیست برای پروژه برات میفرستم',
+    ]);
+    log('seeded DMs');
 
     const browser = await puppeteer.launch({
       executablePath: CHROME, headless: 'new',
@@ -288,6 +370,7 @@ async function main() {
           localStorage.setItem('ft_me', JSON.stringify(me));
           localStorage.setItem('ft_me_ts', String(Date.now()));
           localStorage.removeItem('vx_pwa_dismissed');
+          localStorage.setItem('vx_contacts_ali', JSON.stringify({ bob: 'بابک', sara: 'سارا' }));
         } catch (e) {}
       }, ali.token, ali.me);
       page.on('pageerror', (e) => { browserErrors.push(vp.w + 'x' + vp.h + ' ' + e.message); log('PAGEERROR', e.message); });
@@ -345,6 +428,7 @@ async function main() {
         localStorage.setItem('vx_theme', 'cyber');
         localStorage.setItem('vx_glass', '1');
         localStorage.setItem('vx_power', 'auto');
+        localStorage.setItem('vx_contacts_ali', JSON.stringify({ bob: 'بابک', sara: 'سارا' }));
       } catch (e) {}
     }, ali.token, ali.me);
     inter.on('pageerror', (e) => { browserErrors.push('interactions ' + e.message); log('PAGEERROR(interactions)', e.message); });
@@ -475,6 +559,165 @@ async function main() {
       };
     });
     if (!interactions.designApi.ok) failures.push('design API toggles broken: ' + JSON.stringify(interactions.designApi));
+
+    /* ── slice B: folder switching, custom folders, swipe, contacts ── */
+    await inter.evaluate(() => { try { switchNav('chats'); } catch (e) {} });
+    await sleep(400);
+
+    interactions.folders = await inter.evaluate(async () => {
+      const bar = document.getElementById('cl-tabs');
+      if (!bar) return { ok: false, reason: 'no folder bar' };
+      // NOTE: renderFolderBar() rebuilds every node, so always re-query — a held
+      // reference goes stale the moment a folder is selected.
+      const q = (id) => bar.querySelector('.vx-folder[data-folder="' + id + '"]');
+      const tabs = () => Array.prototype.slice.call(bar.querySelectorAll('.vx-folder'));
+      if (tabs().length < 6) return { ok: false, reason: 'tabs=' + tabs().length };
+      const rowsNow = () => document.querySelectorAll('#cl-items .chat-item').length;
+      const emptyNow = () => !!document.querySelector('#cl-items .empty-state');
+      const act = () => { const a = bar.querySelector('.vx-folder[aria-selected="true"]'); return a ? a.dataset.folder : null; };
+      const steps = [];
+      for (const id of ['unread', 'private', 'groups', 'all']) {
+        const t = q(id);
+        if (!t) return { ok: false, reason: 'missing folder ' + id };
+        t.click();
+        await new Promise((r) => setTimeout(r, 220));
+        const fresh = q(id);
+        steps.push({
+          id: id, active: act(), rows: rowsNow(), empty: emptyNow(),
+          tabbable: tabs().filter((x) => x.tabIndex === 0).length,
+          selected: fresh ? fresh.getAttribute('aria-selected') : null,
+        });
+      }
+      // RTL keyboard: ArrowLeft moves forward
+      const all = q('all');
+      if (!all) return { ok: false, reason: 'all folder gone' };
+      all.focus();
+      all.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 220));
+      const ae = document.activeElement;
+      const kb = { focused: (ae && ae.dataset && ae.dataset.folder) ? ae.dataset.folder : null };
+      const unreadRows = (steps.filter((s) => s.id === 'unread')[0] || {}).rows;
+      const allRows = (steps.filter((s) => s.id === 'all')[0] || {}).rows;
+      const ok = steps.every((s) => s.active === s.id && s.tabbable === 1 && s.selected === 'true')
+        && kb.focused && kb.focused !== 'all'
+        && unreadRows !== undefined && allRows !== undefined && unreadRows <= allRows;
+      return { ok: ok, steps: steps, kb: kb, unreadRows: unreadRows, allRows: allRows };
+    });
+    if (!interactions.folders.ok) failures.push('folder switching broken: ' + JSON.stringify(interactions.folders));
+
+    interactions.folderManager = await inter.evaluate(async () => {
+      const bar = document.getElementById('cl-tabs');
+      if (!bar) return { ok: false, reason: 'no folder bar' };
+      const before = bar.querySelectorAll('.vx-folder.custom').length;
+      const add = bar.querySelector('.vx-folder-add');
+      if (!add) return { ok: false, reason: 'no add button' };
+      add.click();
+      await new Promise((r) => setTimeout(r, 300));
+      const pop = document.querySelector('.u-pop-box.vx-folder-box');
+      if (!pop) return { ok: false, reason: 'manager did not open' };
+      const nameInp = pop.querySelector('[data-k="name"]');
+      const checks = pop.querySelectorAll('[data-k="chats"] input');
+      if (!nameInp || !checks.length) return { ok: false, reason: 'manager incomplete' };
+      nameInp.value = 'کاری';
+      checks[0].click();
+      await new Promise((r) => setTimeout(r, 60));
+      pop.querySelector('[data-k="1"]').click();
+      await new Promise((r) => setTimeout(r, 350));
+      const custom = Array.prototype.slice.call(bar.querySelectorAll('.vx-folder.custom'));
+      const created = custom.length === before + 1;
+      const chip = custom[custom.length - 1];
+      const label = chip ? ((chip.firstChild && chip.firstChild.textContent) || '').trim() : null;
+      if (chip) chip.click();
+      await new Promise((r) => setTimeout(r, 300));
+      const a = bar.querySelector('.vx-folder[aria-selected="true"]');
+      const activeFolder = a ? a.dataset.folder : null;
+      let persisted = null;
+      try { persisted = JSON.parse(localStorage.getItem('vxFolders:ali')) || null; } catch (e) { persisted = null; }
+      const rows = document.querySelectorAll('#cl-items .chat-item').length;
+      const empty = !!document.querySelector('#cl-items .empty-state');
+      // delete it again
+      if (activeFolder) { openFolderManager(activeFolder); await new Promise((r) => setTimeout(r, 280)); }
+      const pop2 = document.querySelector('.u-pop-box.vx-folder-box');
+      const hasDel = !!(pop2 && pop2.querySelector('[data-k="del"]'));
+      if (hasDel) { pop2.querySelector('[data-k="del"]').click(); await new Promise((r) => setTimeout(r, 300)); }
+      const afterDelete = bar.querySelectorAll('.vx-folder.custom').length;
+      return {
+        ok: created && !!(activeFolder && activeFolder.indexOf('f:') === 0) && !!persisted && hasDel && afterDelete === before,
+        before: before, created: created, label: label,
+        activeFolder: activeFolder, persisted: !!persisted, persistedCount: persisted ? persisted.length : 0,
+        rows: rows, empty: empty, hasDel: hasDel, afterDelete: afterDelete,
+      };
+    });
+    if (!interactions.folderManager.ok) failures.push('folder manager broken: ' + JSON.stringify(interactions.folderManager));
+
+    interactions.swipe = await inter.evaluate(async () => {
+      const row = document.querySelector('#cl-items .chat-item.swipe');
+      if (!row) return { ok: false, reason: 'no chat row' };
+      const surf = row.querySelector('.ci-surface');
+      const end = row.querySelector('.ci-actions.end');
+      const start = row.querySelector('.ci-actions.start');
+      if (!surf || !end || !start) return { ok: false, reason: 'row incomplete' };
+      const restVis = getComputedStyle(end).visibility;
+      const rtl = getComputedStyle(row).direction === 'rtl';
+      const box = surf.getBoundingClientRect();
+      const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+      const dir = rtl ? 1 : -1; // toward the writing-mode start
+      const pd = (type, x, y) => surf.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch',
+        clientX: x, clientY: y, isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+      }));
+      pd('pointerdown', cx, cy);
+      let x = cx;
+      for (let i = 1; i <= 15; i++) { x = cx + dir * (i * 9); pd('pointermove', x, cy); await new Promise((r) => setTimeout(r, 8)); }
+      pd('pointerup', x, cy);
+      await new Promise((r) => setTimeout(r, 350));
+      const opened = row.classList.contains('open');
+      const openVis = getComputedStyle(end).visibility;
+      const tr = getComputedStyle(surf).transform;
+      const buttonsFocusable = Array.prototype.every.call(end.querySelectorAll('.ci-act'), (b) => b.tabIndex === 0 && b.tagName === 'BUTTON');
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2, pointerType: 'touch', clientX: 4, clientY: 4 }));
+      await new Promise((r) => setTimeout(r, 420));
+      const closed = !row.classList.contains('open');
+      const restTr = getComputedStyle(surf).transform;
+      const restVisAfter = getComputedStyle(end).visibility;
+      const restTrClean = restTr === 'none' || restTr === 'matrix(1, 0, 0, 1, 0, 0)';
+      return {
+        ok: restVis === 'hidden' && opened && openVis === 'visible' && closed && restVisAfter === 'hidden' && buttonsFocusable && restTrClean,
+        restVis: restVis, opened: opened, openVis: openVis, transform: tr,
+        closed: closed, restTr: restTr, restTrClean: restTrClean, restVisAfter: restVisAfter, rtl: rtl, buttonsFocusable: buttonsFocusable,
+      };
+    });
+    if (!interactions.swipe.ok) failures.push('swipe actions broken: ' + JSON.stringify(interactions.swipe));
+
+    // contacts view: sections, naming, and a dedicated screenshot
+    interactions.contacts = await inter.evaluate(async () => {
+      switchNav('contacts');
+      await new Promise((r) => setTimeout(r, 700));
+      const view = document.querySelector('[data-view="contacts"]');
+      if (!view) return { ok: false, reason: 'contacts view not rendered' };
+      const secTitles = Array.prototype.slice.call(view.querySelectorAll('.vx-sec-title')).map((s) => (s.textContent || '').trim());
+      const items = Array.prototype.slice.call(view.querySelectorAll('.contact-item'));
+      const namesOk = items.every((it) => !!((it.getAttribute('aria-label') || '').trim() || (it.textContent || '').trim()));
+      const btnsOk = Array.prototype.every.call(view.querySelectorAll('.contact-item .btn'), (b) => !!((b.getAttribute('aria-label') || '').trim() || (b.textContent || '').trim()));
+      const empty = !!view.querySelector('.vx-empty');
+      const emptyOk = !!view.querySelector('.vx-empty .t') || items.length > 0;
+      const toolbar = !!view.querySelector('#ct-sync') && !!view.querySelector('#ct-invite');
+      const search = !!view.querySelector('#ct-search');
+      // every item must be reachable by keyboard
+      const focusable = items.every((it) => it.tabIndex === 0);
+      const sectioned = secTitles.length >= 1 || empty;
+      return {
+        ok: sectioned && namesOk && btnsOk && emptyOk && toolbar && search && focusable,
+        sections: secTitles, items: items.length, namesOk: namesOk, btnsOk: btnsOk,
+        empty: empty, toolbar: toolbar, search: search, focusable: focusable, sectioned: sectioned,
+      };
+    });
+    if (!interactions.contacts.ok) failures.push('contacts view broken: ' + JSON.stringify(interactions.contacts));
+    await inter.screenshot({ path: path.join(OUT, 'interactions-contacts.png') });
+    await inter.evaluate(() => { try { switchNav('chats'); } catch (e) {} });
+    await sleep(300);
+    await inter.screenshot({ path: path.join(OUT, 'interactions-chats.png') });
+
     await inter.close();
 
     await browser.close();

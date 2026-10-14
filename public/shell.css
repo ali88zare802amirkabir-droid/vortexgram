@@ -303,3 +303,276 @@
   .vx-pill, .vx-glass { background: var(--surface-container-high); }
   .vx-pill-btn[aria-selected="true"] { outline: 2px solid var(--primary); outline-offset: -2px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SLICE B — chat list, folders, contacts
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Folder bar ──
+   Tabs (not filled chips) with an underline for the active one: a strip of six
+   chips reads as a filter toolbar, a tab strip reads as folders. Unread counts
+   ride on the tab so the bar doubles as a triage surface. */
+#cl-tabs {
+  padding: 2px 8px 0;
+  gap: 2px;
+  background: linear-gradient(180deg, var(--surface-container-low) 78%, transparent);
+  scrollbar-width: none;
+}
+#cl-tabs::-webkit-scrollbar { display: none; }
+.vx-folder {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 9px;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  background: transparent;
+  color: var(--on-surface-variant);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--vx-press) var(--vx-ease), background var(--vx-press) var(--vx-ease);
+}
+.vx-folder::after {
+  content: "";
+  position: absolute;
+  inset-inline: 8px;
+  bottom: 0;
+  height: 2.5px;
+  border-radius: 3px 3px 0 0;
+  background: var(--primary);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 240ms var(--vx-spring);
+}
+.vx-folder[aria-selected="true"] { color: var(--primary); }
+.vx-folder[aria-selected="true"]::after { transform: scaleX(1); }
+.vx-folder:hover { color: var(--on-surface); background: rgba(var(--primary-rgb), .07); }
+.vx-folder:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+[data-motion="reduced"] .vx-folder::after { transition: none; }
+.vx-folder .cnt {
+  min-width: 17px; height: 17px; padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px; font-weight: 800; line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.vx-folder .cnt[hidden] { display: none; }
+.vx-folder.muted .cnt { background: var(--outline); color: var(--surface-container-lowest); }
+/* add-a-folder control sits at the end of the strip */
+.vx-folder-add {
+  flex: none;
+  width: 30px; height: 30px;
+  margin: 3px 6px;
+  display: grid; place-items: center;
+  border: 1px dashed var(--border-hover);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--outline);
+  cursor: pointer;
+  transition: color var(--vx-press) var(--vx-ease), border-color var(--vx-press) var(--vx-ease);
+}
+.vx-folder-add:hover { color: var(--primary); border-color: var(--primary); }
+.vx-folder-add:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 2. Chat rows ──
+   The row is split into a sliding .ci-surface and two static action layers so
+   a swipe can reveal actions underneath without moving them. `.chat-item`
+   owns the background so hover/active still paint behind the surface. */
+.chat-item {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  touch-action: pan-y;
+  background-color: var(--surface-container-low);
+  background-image: none;
+}
+.chat-item:hover { background-color: var(--surface-container-high); }
+/* the legacy rules paint a gradient image and nudge the whole row on hover;
+   the row is now the swipe container, so neither is wanted here */
+.chat-item.active { background-color: rgba(var(--primary-rgb), .10); background-image: none; }
+.chat-item:hover { transform: none; }
+.chat-item.active::before { z-index: 3; }
+
+.ci-surface {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 64px;
+  padding: 9px 11px;
+  background: inherit;
+  border-radius: inherit;
+  cursor: pointer;
+  transition: transform 260ms var(--vx-spring);
+  will-change: transform;
+}
+.chat-item.swiping .ci-surface { transition: none; }
+.chat-item.open .ci-surface { z-index: 2; }
+.ci-surface:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.chat-item .av.md { width: 46px; height: 46px; font-size: 16px; }
+.ci-body { gap: 2px; }
+.ci-row1 { gap: 8px; }
+.ci-row2 { gap: 6px; min-width: 0; }
+.ci-name { font-size: 14.5px; font-weight: 650; letter-spacing: -.005em; }
+.ci-time { font-size: 10.5px; font-variant-numeric: tabular-nums; opacity: .85; }
+.ci-last { font-size: 12.5px; line-height: 1.35; }
+.chat-item.unread .ci-last { color: var(--on-surface); font-weight: 550; }
+.chat-item.unread .ci-name { font-weight: 750; }
+
+/* kind tags — colour is paired with text so it is never colour-only */
+.ci-tag {
+  display: inline-flex; align-items: center;
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-size: 9px; font-weight: 800; line-height: 1.3;
+  letter-spacing: .04em;
+  vertical-align: 1px;
+}
+.ci-tag.bot { background: rgba(var(--primary-rgb), .16); color: var(--primary); }
+.ci-tag.verified { background: rgba(68,226,205,.16); color: var(--secondary); }
+
+/* type marker docked on the avatar corner */
+.ci-type {
+  position: absolute;
+  inset-inline-start: -3px; bottom: -3px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-container-highest);
+  border: 1.5px solid var(--surface-container-low);
+  z-index: 2;
+}
+.ci-type .icon { width: 10px; height: 10px; color: var(--secondary); }
+
+/* badges */
+.ci-badge {
+  min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 10px;
+  font-size: 11px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.ci-badge.muted { background: var(--outline); color: var(--surface-container-lowest); box-shadow: none; }
+.ci-flag { color: var(--outline); flex: none; display: inline-flex; }
+.ci-flag .icon { width: 14px; height: 14px; }
+.ci-flag.pin { color: var(--primary); }
+.ci-flag.mute { color: var(--warning); }
+
+/* ── 3. Swipe action layers ──
+   Drag toward the writing-mode start (left in ltr, right in rtl) to reveal the
+   end actions, and vice versa — one rule works in both directions. */
+.ci-actions {
+  position: absolute;
+  top: 0; bottom: 0;
+  display: flex;
+  align-items: stretch;
+  z-index: 0;
+  /* hidden until a swipe reveals it: keeps the buttons out of the tab order */
+  visibility: hidden;
+}
+.chat-item.swiping .ci-actions,
+.chat-item.open .ci-actions { visibility: visible; }
+.ci-actions.end { inset-inline-end: 0; }
+.ci-actions.start { inset-inline-start: 0; }
+.ci-act {
+  width: 74px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 4px;
+  border: 0;
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 10.5px; font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ci-act .icon { width: 19px; height: 19px; }
+.ci-act:active { filter: brightness(1.15); }
+.ci-act.read { background: rgba(16,185,129,.92); color: #fff; }
+.ci-act.archive { background: rgba(var(--primary-rgb), .95); color: var(--on-primary); }
+.ci-act.mute { background: rgba(251,191,36,.92); color: #3a2600; }
+.ci-act:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+/* rows without swipe keep a plain surface */
+.chat-item:not(.swipe) .ci-actions { display: none; }
+
+/* ── 4. Contacts ── */
+.vx-sec-title {
+  display: flex; align-items: center; gap: 8px;
+  margin: 18px 2px 8px;
+  font-size: 12px; font-weight: 800;
+  letter-spacing: .01em;
+  color: var(--outline);
+}
+.vx-sec-title .icon { width: 15px; height: 15px; }
+.vx-sec-title:first-child { margin-top: 6px; }
+.vx-sec-title .n {
+  min-width: 18px; padding: 0 5px;
+  border-radius: 8px;
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  font-size: 10px; line-height: 17px; text-align: center;
+  letter-spacing: 0;
+}
+.contact-item {
+  min-height: 62px;
+  padding: 9px 11px;
+  gap: 13px;
+  background: var(--surface-container);
+  transition: background var(--vx-press) var(--vx-ease), border-color var(--vx-press) var(--vx-ease);
+}
+.contact-item:hover { background: var(--surface-container-high); border-color: var(--border-hover); }
+.contact-item .av.md { width: 44px; height: 44px; font-size: 15px; }
+.contact-item .ci-name { font-size: 14px; font-weight: 650; }
+.contact-item .ci-sub { font-size: 12px; color: var(--outline); font-variant-numeric: tabular-nums; }
+.contact-item .btn { min-height: 32px; padding: 0 12px; font-size: 12px; }
+/* avatar column keeps its own stacking context so the online dot wins */
+.contact-item .ci-av { position: relative; flex: none; }
+.contact-item .ci-on {
+  position: absolute;
+  inset-block-end: 1px;
+  inset-inline-end: 1px;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--success);
+  border: 2px solid var(--surface-container);
+  box-sizing: border-box;
+}
+.contact-item:hover .ci-on { border-color: var(--surface-container-high); }
+
+/* ── 4b. Folder manager ── */
+.vx-folder-box { width: min(94vw, 440px); }
+.vx-folder-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.vx-folder-strip .chip { font-size: 11.5px; padding: 4px 10px; }
+.vx-folder-box .u-pop-checks {
+  max-height: min(44vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* empty states shared by list views */
+.vx-empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 6px;
+  padding: 44px 24px;
+  text-align: center;
+}
+.vx-empty .icon { width: 34px; height: 34px; color: var(--outline); opacity: .7; }
+.vx-empty .t { font-size: 14.5px; font-weight: 700; color: var(--on-surface); }
+.vx-empty .s { font-size: 12.5px; color: var(--outline); max-width: 34ch; line-height: 1.6; }
+
+/* swipe surfaces must not animate transforms under saver/reduced-motion */
+[data-power="saver"] .ci-surface { transition: none; }

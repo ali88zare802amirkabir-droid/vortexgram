@@ -395,9 +395,6 @@ a{color:var(--primary);text-decoration:none;}
 .cl-search .icon{position:absolute;inset-inline-start:11px;top:50%;transform:translateY(-50%);color:var(--outline);}
 .cl-tabs{display:flex;gap:6px;padding:2px 12px 10px;overflow-x:auto;scrollbar-width:none;}
 .cl-tabs::-webkit-scrollbar{display:none;}
-.cl-tab{flex:none;padding:6px 12px;border-radius:9px;font-size:12.5px;font-weight:600;color:var(--on-surface-variant);background:var(--surface-container);transition:all .15s var(--ease);white-space:nowrap;cursor:pointer;}
-.cl-tab:hover{color:var(--on-surface);background:var(--surface-container-high);}
-.cl-tab.active{color:var(--on-primary-container);background:var(--primary-container);}
 .now-playing{margin:6px 12px 8px;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:linear-gradient(135deg,var(--primary-container),var(--primary));color:var(--on-primary-container);position:relative;overflow:hidden;box-shadow:0 4px 14px rgba(var(--primary-rgb),.25);}
 .now-playing.hidden{display:none !important;}
 .now-playing .np-art{width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.22);display:grid;place-items:center;flex:none;}
@@ -1662,7 +1659,6 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 /* ── Chat list ── */
 .cl-title{background:linear-gradient(120deg,var(--gradient-start),var(--gradient-end));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;}
 .cl-search input:focus{background:var(--surface-bright);box-shadow:0 0 0 2px rgba(var(--primary-rgb),.28);}
-.cl-tab.active{background:rgba(var(--primary-rgb),.16);color:var(--primary);box-shadow:inset 0 0 0 1px rgba(var(--primary-rgb),.38);}
 .chat-item{transition:background .14s var(--ease),transform .14s var(--ease);}
 .chat-item.active{background:linear-gradient(90deg,rgba(var(--primary-rgb),.15),rgba(var(--primary-rgb),.02));}
 .chat-item.active::before{background:linear-gradient(180deg,var(--gradient-start),var(--gradient-end));box-shadow:0 0 10px rgba(var(--primary-rgb),.5);}
