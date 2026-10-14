@@ -541,7 +541,7 @@ function closeDrawers() { $('nav-sidebar').classList.remove('m-open'); showScrim
 const state = {
   token: localStorage.getItem('ft_token') || null, me: null, ws: null,
   groups: [], users: [], chatState: {}, readState: {}, pinned: {},
-  room: null, replyTo: null, rooms: {}, chatFilter: 'all', search: '', nav: 'chats', notifications: [], groupSearch: [],
+  room: null, replyTo: null, rooms: {}, chatFilter: 'all', search: '', nav: 'chats', notifications: [], groupSearch: [], userSearch: [],
   deletedIds: new Set(), renderedRooms: new Set(), uidCache: {},
   fontScale: parseInt(localStorage.getItem('vx_fontsize') || '14', 10),
   profileReturnRoom: null,
@@ -880,6 +880,8 @@ const pmMenu = $('pencil-menu'); if (pmMenu) pmMenu.addEventListener('click', (e
 });
 function switchNav(id) {
   state.nav = id;
+  /* leaving settings always re-opens it at the category list, never a stale sub-page */
+  if (id !== 'settings') state.settingsCat = 'main';
   if (isMobile()) $('nav-sidebar').classList.remove('m-open');
   if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('conversation').classList.remove('chat-open'); } }
   else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) { $('conversation').classList.add('chat-open'); } }
@@ -899,7 +901,15 @@ function setMode(mode) {
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
   if (chat) { $('chat-list-column').classList.remove('hidden'); }
-  else { $('chat-list-column').classList.add('hidden'); }
+  else {
+    $('chat-list-column').classList.add('hidden');
+    /* on phones #conversation is translated off-screen until .chat-open — any
+       view screen (settings, profile, contacts…) must reveal it too */
+    if (isMobile()) $('conversation').classList.add('chat-open');
+  }
+  /* desktop/tablet grid: collapse the 320px chat-list track while a full view
+     is on screen so it never reserves an empty band next to settings/profile */
+  $('app').classList.toggle('app-view', !chat);
 }
 
 /* ── Phase 4: floating glass pill (replaces the old bottom dock) ──
@@ -1267,12 +1277,18 @@ function buildChatList() {
   rooms.sort((a, b) => (b.pinned - a.pinned) || (b.lastTime - a.lastTime));
   const active = rooms.filter((r) => !r.archived);
   const archived = rooms.filter((r) => r.archived);
+  const searchHits = !!(state.search && (state.userSearch.length || state.groupSearch.length));
+  if (state.search && state.userSearch.length) {
+    const head = document.createElement('div'); head.className = 'arch-head static'; head.innerHTML = ic('contact') + '<span>مخاطبین یافت‌شده (' + state.userSearch.length + ')</span>';
+    wrap.appendChild(head);
+    state.userSearch.forEach((u) => wrap.appendChild(searchUserItemEl(u)));
+  }
   if (state.search && state.groupSearch.length) {
-    const head = document.createElement('div'); head.className = 'arch-head'; head.innerHTML = ic('search') + '<span>گروه‌ها و کانال‌های یافت‌شده</span>';
+    const head = document.createElement('div'); head.className = 'arch-head'; head.innerHTML = ic('search') + '<span>گروه‌ها و کانال‌های یافت‌شده (' + state.groupSearch.length + ')</span>';
     wrap.appendChild(head);
     state.groupSearch.forEach((g) => wrap.appendChild(groupSearchItemEl(g)));
   }
-  if (!active.length && !archived.length && !(state.search && state.groupSearch.length)) {
+  if (!active.length && !archived.length && !searchHits) {
     if (state.search || (state.chatFilter && state.chatFilter !== 'all')) {
       const isCustom = String(state.chatFilter).indexOf('f:') === 0;
       const inCustom = isCustom && (userFolders().find((x) => 'f:' + x.id === state.chatFilter) || {});
@@ -1508,6 +1524,20 @@ function bindChatSwipe(row, surf, onDragged) {
   surf.addEventListener('pointerup', finish);
   surf.addEventListener('pointercancel', finish);
   surf.addEventListener('lostpointercapture', finish);
+}
+function searchUserItemEl(u) {
+  const it = document.createElement('div'); it.className = 'chat-item'; it.dataset.uname = u.username;
+  const surf = document.createElement('div');
+  surf.className = 'ci-surface';
+  surf.setAttribute('role', 'button');
+  surf.tabIndex = 0;
+  surf.setAttribute('aria-label', (u.displayName || u.username) + '، نام کاربری @' + u.username);
+  surf.innerHTML = '<div class="ci-av">' + avatarEl(u, 'md').outerHTML + '</div><div class="ci-body"><div class="ci-row1"><div class="ci-name">' + esc(u.displayName || u.username) + '</div></div><div class="ci-row2"><div class="ci-last" dir="ltr">@' + esc(u.username) + '</div></div></div>';
+  const go = () => openDM(u.username);
+  surf.onclick = go;
+  surf.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); go(); } };
+  it.appendChild(surf);
+  return it;
 }
 function groupSearchItemEl(g) {
   const isJoined = state.groups.some((x) => x.id === g.id);
@@ -1788,14 +1818,28 @@ function openFolderManager(folderId) {
   document.body.appendChild(pop);
   setTimeout(() => { inp.focus(); inp.select(); }, 60);
 }
-$('cl-search-input').addEventListener('input', (e) => { state.search = e.target.value; scheduleGroupSearch(state.search); buildChatList(); });
+$('cl-search-input').addEventListener('input', (e) => { state.search = e.target.value; syncSearchClear(); scheduleGroupSearch(state.search); buildChatList(); });
+function syncSearchClear() {
+  const x = $('cl-search-x'); if (x) x.hidden = !$('cl-search-input').value;
+}
+function clearChatSearch() {
+  const i = $('cl-search-input'); i.value = ''; state.search = ''; state.groupSearch = []; state.userSearch = [];
+  syncSearchClear(); scheduleGroupSearch(''); buildChatList(); i.focus();
+}
+if ($('cl-search-x')) $('cl-search-x').onclick = clearChatSearch;
 let _gsTimer = null;
 function scheduleGroupSearch(q) {
   clearTimeout(_gsTimer);
   const s = String(q || '').trim();
-  if (s.length < 1) { state.groupSearch = []; return; }
+  if (s.length < 1) { state.groupSearch = []; state.userSearch = []; return; }
   _gsTimer = setTimeout(() => {
     api('/api/groups/search?q=' + encodeURIComponent(s)).then((r) => r.json()).then((d) => { if ((d || {}).groups) { state.groupSearch = d.groups; buildChatList(); } }).catch(() => { if (state.groupSearch.length) { state.groupSearch = []; buildChatList(); } });
+    /* people too: the chat-list search should find contacts, not only chats */
+    api('/api/users/search?q=' + encodeURIComponent(s)).then((r) => r.json()).then((d) => {
+      const list = ((d || {}).users || []).filter((u) => u && u.username && u.username !== (state.me && state.me.username));
+      state.userSearch = list;
+      buildChatList();
+    }).catch(() => {});
   }, 280);
 }
 $('cl-new').onclick = (e) => { e.stopPropagation(); openNewMenu(e.currentTarget); };
@@ -2020,7 +2064,7 @@ function provenanceEl(m) {
     const href = VXSanitize.sanitizeLinkHref(src.url);
     if (href) {
       const site = src.site || (() => { try { return new URL(href).hostname.replace(/^www\./, ''); } catch (e) { return ''; } })();
-      html += '<a class="prov-src" href="' + escAttr(href) + '" target="_blank" rel="noopener noreferrer nofollow ugc">'
+      html += '<a class="prov-src" href="' + escAttr(href) + '" target="_blank" rel="noopener noreferrer" rel="noopener noreferrer nofollow ugc">'
         + ic('link') + '<span>' + esc(src.title ? src.title + ' — ' + site : ('منبع: ' + site)) + '</span></a>';
     }
   }
@@ -6187,16 +6231,16 @@ function renderProfile(username) {
   const isCanvasEffect = false;
   const sa = ' data-uid="' + esc(username) + '"';
   const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
-  let h = '<div class="profile-view"' + sa + '>';
-  h += '<button class="btn sm ghost" data-act="back">← بازگشت</button>';
-  if (u.profileBg) h += '<div class="profile-bg" style="background-image:url(\'' + esc(u.profileBg) + '\')"></div>';
+  let h = '<div class="profile-view"' + sa + ' role="region" aria-labelledby="profile-title">';
+  if (u.profileBg) h += '<div class="profile-bg" style="background-image:url(\'' + esc(u.profileBg) + '\')" aria-hidden="true"></div>';
+  h += '<div class="profile-top"><button class="btn sm ghost" data-act="back" aria-label="بازگشت">' + ic('chevron-right') + ' بازگشت</button></div>';
   h += '<div class="profile-hero">';
   h += '<div class="profile-av">' + avatarEl(u, 'xl').outerHTML + '</div>';
-  h += '<div class="profile-name">' + esc(u.displayName || u.username) + badge + '</div>';
+  h += '<h2 class="profile-name" id="profile-title">' + esc(u.displayName || u.username) + badge + '</h2>';
   h += '<div class="profile-uname">@' + esc(u.username) + (online ? ' <span class="onl">● آنلاین</span>' : '') + '</div></div>';
   if (u.bio) h += '<div class="profile-bio">' + esc(u.bio) + '</div>';
   if (u.phone && (state.me.isAdmin || u.username === state.me.username)) h += '<div class="profile-row">📱 ' + esc(u.phone) + '</div>';
-  h += '</div><div class="profile-actions">';
+  h += '<div class="profile-actions">';
   h += '<button class="btn primary" data-act="chat">شروع چت</button>';
   if (state.me.isAdmin) {
     h += '<button class="btn" data-act="rename">تغییر نام</button>';
@@ -6206,7 +6250,7 @@ function renderProfile(username) {
       if (u.isAdmin) h += '<button class="btn danger" data-act="demote">حذف ادمین</button>';
       else h += '<button class="btn" data-act="promote">ارتقا به ادمین</button>';
       h += '<button class="btn danger" data-act="ban">' + (u.banned ? 'رفع مسدودی' : 'مسدودسازی') + '</button>';
-      h += '<button class="btn" data-act="reset-pass">تغییر رمز کاربر</button>';
+      h += '<button class="btn danger" data-act="reset-pass">تغییر رمز کاربر</button>';
     }
   }
   if (u.username === state.me.username) {
@@ -6220,6 +6264,9 @@ function renderProfile(username) {
   }
   h += '</div></div>';
   viewHost.innerHTML = h;
+  /* hand focus to the screen we just mounted so keyboard/SR users are not dropped */
+  const pv = viewHost.querySelector('.profile-view');
+  if (pv) { pv.tabIndex = -1; try { pv.focus({ preventScroll: true }); } catch (e) {} }
   viewHost.querySelector('[data-act="back"]').onclick = () => profileGoBack();
   viewHost.querySelector('[data-act="chat"]').onclick = () => openDM(username);
   const rn = viewHost.querySelector('[data-act="rename"]'); if (rn) rn.onclick = () => renameUser(username, u.displayName, () => renderProfile(username));
@@ -6245,12 +6292,16 @@ function renderProfile(username) {
       const total = imgs.length + auds.length + vids.length + fils.length + links.length;
       if (!total) { sec.querySelector('.pf-body').innerHTML = '<div class="placeholder">فایلی ارسال نشده است.</div>'; return; }
       let h = '';
-      if (imgs.length) { h += '<div class="pf-group"><b>تصاویر (' + imgs.length + ')</b><div class="pf-grid">' + imgs.map((m) => '<a class="pf-thumb" href="' + esc(m.src || '') + '" target="_blank"><img src="' + esc(m.src || '') + '" loading="lazy"></a>').join('') + '</div></div>'; }
-      if (vids.length) { h += '<div class="pf-group"><b>ویدیو (' + vids.length + ')</b><div class="pf-grid">' + vids.map((m) => '<a class="pf-thumb" href="' + esc(m.src || '') + '" target="_blank">' + ic('video') + '</a>').join('') + '</div></div>'; }
-      if (auds.length) { h += '<div class="pf-group"><b>صدا (' + auds.length + ')</b>' + auds.map((m) => '<div class="pf-audio"><button onclick="this.nextElementSibling.play()">' + ic('play') + '</button><audio src="' + esc(m.src || '') + '" preload="none"></audio><span>' + esc(m.name || 'ویس') + '</span></div>').join('') + '</div>'; }
+      if (imgs.length) { h += '<div class="pf-group"><b>تصاویر (' + imgs.length + ')</b><div class="pf-grid">' + imgs.map((m) => '<a class="pf-thumb" href="' + esc(m.src || '') + '" target="_blank" rel="noopener noreferrer"><img src="' + esc(m.src || '') + '" loading="lazy"></a>').join('') + '</div></div>'; }
+      if (vids.length) { h += '<div class="pf-group"><b>ویدیو (' + vids.length + ')</b><div class="pf-grid">' + vids.map((m) => '<a class="pf-thumb" href="' + esc(m.src || '') + '" target="_blank" rel="noopener noreferrer">' + ic('video') + '</a>').join('') + '</div></div>'; }
+      if (auds.length) { h += '<div class="pf-group"><b>صدا (' + auds.length + ')</b>' + auds.map((m) => '<div class="pf-audio"><button type="button" aria-label="پخش ' + escAttr(m.name || 'پیام صوتی') + '">' + ic('play') + '</button><audio src="' + esc(m.src || '') + '" preload="none"></audio><span>' + esc(m.name || 'ویس') + '</span></div>').join('') + '</div>'; }
       if (fils.length) { h += '<div class="pf-group"><b>فایل‌ها (' + fils.length + ')</b>' + fils.map((m) => '<div class="pf-file"><a href="' + esc(m.src || '') + '" download>' + ic('file') + esc(m.name || 'فایل') + '</a></div>').join('') + '</div>'; }
-      if (links.length) { h += '<div class="pf-group"><b>لینک‌ها (' + links.length + ')</b>' + links.map((m) => '<div class="pf-link"><a href="' + esc(m.url || '') + '" target="_blank">' + ic('link') + esc(String(m.url || '').slice(0, 60)) + '</a></div>').join('') + '</div>'; }
+      if (links.length) { h += '<div class="pf-group"><b>لینک‌ها (' + links.length + ')</b>' + links.map((m) => '<div class="pf-link"><a href="' + esc(m.url || '') + '" target="_blank" rel="noopener noreferrer">' + ic('link') + esc(String(m.url || '').slice(0, 60)) + '</a></div>').join('') + '</div>'; }
       sec.querySelector('.pf-body').innerHTML = h;
+      /* inline onclick is blocked by script-src 'self' — wire playback in JS */
+      sec.querySelectorAll('.pf-audio button').forEach((b) => {
+        b.onclick = () => { const a = b.nextElementSibling; if (!a || typeof a.play !== 'function') return; if (a.paused) { const p = a.play(); if (p && p.catch) p.catch(() => {}); } else a.pause(); };
+      });
     }).catch(() => { sec.querySelector('.pf-body').innerHTML = '<div class="placeholder">خطا در بارگذاری.</div>'; });
   }
   const pf = viewHost.querySelector('#prof-file');
@@ -6444,10 +6495,15 @@ function appendAIMsg(role, text) { const box = $('ai-conv'); const el = document
 /* VIEW ROUTER */
 function renderView(id) {
   setMode('view'); viewHost.classList.remove('hidden'); viewHost.innerHTML = ''; viewHost.dataset.view = id;
-  const title = NAV.find((n) => n.id === id); const h = document.createElement('div'); h.className = 'view-head';
-  h.innerHTML = '<button class="icon-btn view-back" id="view-back" aria-label="بازگشت"><i data-lucide="chevron-right" class="icon"></i></button>' + ic((title && title.icon) || 'layout') + '<h2>' + (title ? title.label : id) + '</h2>';
+  const title = NAV.find((n) => n.id === id);
+  let icon = (title && title.icon) || 'layout';
+  let label = title ? title.label : id;
+  const subCat = (id === 'settings' && state.settingsCat && state.settingsCat !== 'main') ? state.settingsCat : null;
+  if (subCat && SETCATS[subCat]) { icon = SETCATS[subCat].icon; label = '<span class="crumb">تنظیمات</span>' + SETCATS[subCat].title; }
+  const h = document.createElement('div'); h.className = 'view-head';
+  h.innerHTML = '<button class="icon-btn view-back" id="view-back" aria-label="' + (subCat ? 'بازگشت به تنظیمات' : 'بازگشت') + '"><i data-lucide="chevron-right" class="icon"></i></button>' + ic(icon) + '<h2>' + label + '</h2>';
   viewHost.appendChild(h);
-  const back = h.querySelector('#view-back'); if (back) back.onclick = () => { if (id === 'settings' && state.settingsCat && state.settingsCat !== 'main') { state.settingsCat = 'main'; renderView('settings'); } else switchNav('chats'); };
+  const back = h.querySelector('#view-back'); if (back) back.onclick = () => { if (subCat) { state.settingsCat = 'main'; renderView('settings'); } else switchNav('chats'); };
   const wrap = document.createElement('div'); wrap.className = 'view-body'; viewHost.appendChild(wrap);
   if (id === 'ai') {
     wrap.innerHTML = '<div class="ai-card"><div class="ai-conv" id="ai-conv"></div><div class="ai-input-row"><input id="ai-input" placeholder="از دستیار بپرس…" /><button id="ai-send">' + ic('send') + '</button></div><div class="ai-actions"><button data-a="summarize">' + ic('file-text') + ' خلاصه چت</button><button data-a="reply">' + ic('corner-down-left') + ' پیشنهاد پاسخ</button><button data-a="translate">' + ic('languages') + ' ترجمه</button><button data-a="rewrite">' + ic('edit-3') + ' بازنویسی</button></div></div>';
@@ -6630,26 +6686,57 @@ function persistActiveSkin() {
   api('/api/skin', { method: 'POST', body: JSON.stringify({ skin: id }) }).catch(() => {});
 }
 const SETCATS = {
-  appearance: { title: 'نمایش و تم', icon: 'palette' },
-  background: { title: 'پس‌زمینه', icon: 'image' },
-  account: { title: 'حساب کاربری', icon: 'user' },
-  notifications: { title: 'اعلان‌ها', icon: 'bell' },
-  privacy: { title: 'حریم خصوصی', icon: 'lock' },
-  storage: { title: 'ذخیره‌سازی', icon: 'hard-drive' },
-  skins: { title: 'اسکین‌ها و تم‌ها', icon: 'paintbrush' },
-  logout: { title: 'خروج', icon: 'log-out' }
+  account:       { title: 'حساب کاربری',     icon: 'user',        desc: 'نام، بیو، شناسه و دستگاه‌ها',     grp: 'حساب' },
+  appearance:    { title: 'نمایش و تم',       icon: 'palette',     desc: 'تم، رنگ، فونت و گردی گوشه‌ها',      grp: 'ظاهر' },
+  background:    { title: 'پس‌زمینه',         icon: 'image',       desc: 'رنگ یا تصویر پس‌زمینه گفتگو',        grp: 'ظاهر' },
+  skins:         { title: 'اسکین‌ها و تم‌ها', icon: 'paintbrush',  desc: 'پوسته‌های آماده پیام‌رسان',          grp: 'ظاهر' },
+  notifications: { title: 'اعلان‌ها',         icon: 'bell',        desc: 'اعلان دسکتاپ و هشدار صوتی',          grp: 'پیام‌رسانی' },
+  privacy:       { title: 'حریم خصوصی',       icon: 'lock',        desc: 'دید آنلاین، شماره و رمز عبور',       grp: 'پیام‌رسانی' },
+  storage:       { title: 'ذخیره‌سازی',       icon: 'hard-drive',  desc: 'حافظه رسانه‌ها و پاک‌سازی',           grp: 'پیام‌رسانی' },
+  logout:        { title: 'خروج از حساب',     icon: 'log-out',     desc: 'خروج از این دستگاه',                 grp: 'نشست', action: 'logout' }
 };
+const SETGRP_ORDER = ['حساب', 'ظاهر', 'پیام‌رسانی', 'نشست'];
+
+function setCatRow(k) {
+  const v = SETCATS[k]; if (!v) return '';
+  const danger = v.action === 'logout';
+  return '<button type="button" class="set-cat' + (danger ? ' danger' : '') + '" data-cat="' + k + '"'
+    + (v.action ? ' data-action="' + v.action + '"' : '')
+    + ' aria-label="' + escAttr(v.title) + (v.desc ? '، ' + escAttr(v.desc) : '') + '">'
+    + '<span class="set-cat-ic" aria-hidden="true">' + ic(v.icon) + '</span>'
+    + '<span class="set-cat-txt"><b>' + v.title + '</b><small>' + v.desc + '</small></span>'
+    + (danger ? '' : '<i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i>')
+    + '</button>';
+}
 function renderSettingsMain(wrap) {
-  const body = document.createElement('div'); body.className = 'view-body settings-main';
-  body.innerHTML = Object.entries(SETCATS).map(([k,v]) => '<div class="set-cat" data-cat="'+k+'">'+ic(v.icon)+'<span>'+v.title+'</span></div>').join('');
-  wrap.appendChild(body);
-  body.querySelectorAll('.set-cat').forEach((c) => {
-    c.onclick = () => { state.settingsCat = c.dataset.cat; renderView('settings'); };
+  const me = state.me || {};
+  const body = document.createElement('div');
+  body.className = 'settings-main';
+  let h = '<button type="button" class="set-account" data-act="my-profile" aria-label="پروفایل من">'
+    + '<span class="set-account-av" aria-hidden="true">' + avatarEl(me, 'md').outerHTML + '</span>'
+    + '<span class="set-cat-txt"><b>' + esc(me.displayName || me.username || '') + '</b><small dir="ltr">@' + esc(me.username || '') + '</small></span>'
+    + '<i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i></button>';
+  SETGRP_ORDER.forEach((g) => {
+    const keys = Object.keys(SETCATS).filter((k) => SETCATS[k].grp === g);
+    if (!keys.length) return;
+    h += '<div class="set-grp"><span>' + g + '</span></div><div class="set-rows">' + keys.map(setCatRow).join('') + '</div>';
   });
+  body.innerHTML = h;
+  wrap.appendChild(body);
+  const mine = body.querySelector('[data-act="my-profile"]');
+  if (mine) mine.onclick = () => openProfile(state.me.username);
+  body.querySelectorAll('.set-cat').forEach((c) => {
+    c.onclick = () => {
+      if (c.dataset.action === 'logout') { logout(); return; }
+      state.settingsCat = c.dataset.cat;
+      renderView('settings');
+    };
+  });
+  applyIcons(body);
 }
 function renderSettingsSub(cat, wrap) {
-  Array.from(wrap.querySelectorAll('.view-body.settings-sub')).forEach((b) => b.remove());
-  const body = document.createElement('div'); body.className = 'view-body settings-sub';
+  Array.from(wrap.querySelectorAll('.settings-sub')).forEach((b) => b.remove());
+  const body = document.createElement('div'); body.className = 'settings-sub';
   if (cat === 'appearance') renderAppSub(body);
   else if (cat === 'background') renderBgSub(body);
   else if (cat === 'account') renderAccSub(body);
@@ -6665,7 +6752,7 @@ function renderAppSub(body) {
   const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios'];
   const accents = ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red', 'ios'];
   let t = '<div class="settings-sec"><h3>' + ic('palette') + ' تم</h3><div class="chip-row">' + themes.map((x) => '<button class="chip" data-theme-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ آکセント</h3><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ اکسنت</h3><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
   t += '<div class="settings-sec"><h3>' + ic('type') + ' اندازه فونت</h3><div class="stepper"><button id="set-font-dec">−</button><span id="fs-val">' + (state.fontScale) + '</span><button id="set-font-inc">+</button></div></div>';
   const fonts = [['default', 'پیش‌فرض'], ['messenger', 'پیام‌رسان'], ['classic', 'کلاسیک'], ['modern', 'مدرن']];
   const curFont = localStorage.getItem('vx_font') || 'default';
@@ -6690,14 +6777,17 @@ function renderBgSub(body) {
 }
 function renderAccSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('user') + ' اطلاعات حساب</h3>';
-  t += '<div class="settings-row"><span>نام نمایشی</span><b>' + esc(state.me.displayName) + '</b><button class="btn sm" onclick="promptRename()">تغییر</button></div>';
+  t += '<div class="settings-row"><span>نام نمایشی</span><b>' + esc(state.me.displayName) + '</b><button class="btn sm" data-act="rename-display">تغییر</button></div>';
   t += '<div class="settings-row"><span>نام کاربری</span><b>@' + esc(state.me.username) + '</b></div>';
   t += '<div class="settings-row"><span>شناسه کاربری (UID)</span><b data-uid="' + esc(state.me.username) + '">' + (state.me.uid ? esc(state.me.uid) : '…') + '</b></div>';
   t += '<div class="settings-row"><span>شماره</span><b>' + esc(state.me.phone || '—') + '</b></div>';
-  t += '<div class="settings-row"><span>بیو</span><input class="inp" id="acc-bio" maxlength="' + (state.me.isPremium ? 200 : 80) + '" placeholder="درباره خودت…" value="' + esc(state.me.bio || '') + '" style="max-width:220px"></div>';
+  t += '<div class="settings-row"><span>بیو</span><input class="inp" id="acc-bio" aria-label="بیوی شما" maxlength="' + (state.me.isPremium ? 200 : 80) + '" placeholder="درباره خودت…" value="' + esc(state.me.bio || '') + '" style="max-width:220px"></div>';
   t += '<div class="settings-row"><span>وضعیت</span><b>' + (state.me.isPremium ? 'پریمیوم' : 'رایگان') + (state.me.isAdmin ? ' • ادمین' : '') + '</b></div></div>';
   t += '<div class="settings-sec"><h3>' + ic('smartphone') + ' دستگاه‌های متصل</h3><div id="acc-devices" class="acc-devices">در حال بارگذاری…</div></div>';
   body.innerHTML = t;
+  /* CSP is script-src 'self' — inline onclick never fires, so wire it here */
+  const rnBtn = body.querySelector('[data-act="rename-display"]');
+  if (rnBtn) rnBtn.onclick = () => promptRename();
   const bioSave = () => {
     const v = body.querySelector('#acc-bio').value.trim();
     api('/api/profile/bio', { method: 'POST', body: JSON.stringify({ bio: v }) }).then((r) => r.json()).then((d) => { if (!d.ok) { toast(d.error || 'خطا'); return; } if (d.me) state.me = d.me; toast('بیو ذخیره شد'); }).catch(() => toast('خطا'));

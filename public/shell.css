@@ -576,3 +576,110 @@
 
 /* swipe surfaces must not animate transforms under saver/reduced-motion */
 [data-power="saver"] .ci-surface { transition: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SLICE C — settings framework, profile screen, search results
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── view shell: a full-screen view must not leave the 320px chat-list track
+   reserved next to it on wide layouts (it renders nothing there). ── */
+@media (min-width: 720px) {
+  #app.app-view { grid-template-columns: 72px 0 minmax(0, 1fr); }
+}
+@media (min-width: 1025px) {
+  #app.app-view { grid-template-columns: auto 0 minmax(0, 1fr); }
+}
+
+/* ── view header breadcrumb (settings sub-page) ── */
+.view-head h2 { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.view-head .crumb { font-size: 12px; font-weight: 700; color: var(--outline); }
+.view-head .crumb::after { content: "/"; margin-inline-start: 6px; opacity: .55; }
+
+/* ── settings: grouped category list ── */
+.settings-main { gap: 12px; }
+.set-grp {
+  font-size: 12px; font-weight: 800; letter-spacing: .02em;
+  color: var(--outline); padding: 4px 6px 0;
+}
+.set-rows { display: flex; flex-direction: column; gap: 8px; }
+
+button.set-cat {
+  width: 100%; box-sizing: border-box;
+  text-align: start; font: inherit; color: inherit;
+  gap: 14px;
+}
+.set-cat:focus-visible { outline: 2px solid rgba(var(--primary-rgb), .75); outline-offset: 2px; }
+.set-cat-ic {
+  display: grid; place-items: center;
+  width: 38px; height: 38px; border-radius: 12px;
+  flex: 0 0 auto; background: var(--primary-muted);
+}
+.set-cat-ic .icon { width: 19px; height: 19px; color: var(--primary); }
+.set-cat-txt { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.set-cat-txt b { font-size: 15px; font-weight: 700; line-height: 1.35; color: var(--on-surface); }
+.set-cat-txt small { font-size: 12px; font-weight: 500; line-height: 1.45; color: var(--outline); }
+.set-cat-go { flex: 0 0 auto; width: 18px; height: 18px; color: var(--outline); opacity: .7; }
+.set-cat:hover .set-cat-go { opacity: 1; }
+
+button.set-cat.danger {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: var(--danger-muted);
+}
+.set-cat.danger .set-cat-ic { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+.set-cat.danger .set-cat-ic .icon { color: var(--danger); }
+
+/* account summary card that opens your own profile */
+.set-account {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; box-sizing: border-box;
+  text-align: start; font: inherit; color: inherit;
+  padding: 16px; border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 16%, transparent), transparent 62%),
+    var(--surface-container);
+  cursor: pointer;
+  transition: border-color .16s var(--vx-ease), background-color .16s var(--vx-ease);
+}
+.set-account:hover { border-color: var(--primary); }
+.set-account:focus-visible { outline: 2px solid rgba(var(--primary-rgb), .75); outline-offset: 2px; }
+.set-account-av { flex: 0 0 auto; display: block; line-height: 0; }
+.set-account-av .av { flex: 0 0 auto; }
+
+/* ── profile screen ── */
+.profile-view { display: flex; flex-direction: column; gap: 14px; outline: none; }
+.profile-top { display: flex; justify-content: flex-start; }
+.profile-view .profile-top .btn.sm.ghost { margin-bottom: 0; }
+.profile-view .profile-name {
+  margin: 0; font-size: 22px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; flex-wrap: wrap; text-align: center;
+}
+.profile-view .profile-actions { margin-top: 4px; }
+.profile-view .profile-actions .btn { justify-content: center; }
+
+/* ── chat-list search: clear control + section heads ── */
+.cl-search input { padding-inline-end: 40px; }
+.cl-search .cl-search-x {
+  position: absolute; inset-inline-end: 6px; top: 50%;
+  transform: translateY(-50%);
+  width: 28px; height: 28px; padding: 0;
+  display: grid; place-items: center;
+  border: none; border-radius: 50%;
+  background: var(--surface-container-high); color: var(--outline);
+  cursor: pointer;
+}
+.cl-search .cl-search-x .icon {
+  position: static; transform: none; width: 14px; height: 14px;
+  color: inherit; inset: auto;
+}
+.cl-search .cl-search-x:hover { color: var(--on-surface); background: var(--surface-container-highest); }
+.cl-search .cl-search-x:focus-visible { outline: 2px solid rgba(var(--primary-rgb), .75); outline-offset: 2px; }
+.cl-search .cl-search-x[hidden] { display: none; }
+
+.arch-head.static { cursor: default; }
+.arch-head.static:hover { color: var(--on-surface-variant); }
+
+/* saver mode: kill the settings/profile hover motion too */
+[data-power="saver"] .set-cat,
+[data-power="saver"] .set-account { transition: none; }

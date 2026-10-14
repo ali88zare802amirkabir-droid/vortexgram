@@ -229,6 +229,20 @@ async function probe(page) {
       };
     }
 
+    // — slice C: search controls, no CSP-dead inline handlers, no stale view mode —
+    const sInp = document.getElementById('cl-search-input');
+    const sX = document.getElementById('cl-search-x');
+    out.searchCtl = {
+      present: !!(sInp && sX),
+      inputNamed: !!(sInp && (sInp.getAttribute('aria-label') || '').trim()),
+      clearPresent: !!sX,
+      clearHidden: sX ? (sX.hidden === true) : null,
+      clearNamed: !!(sX && (sX.getAttribute('aria-label') || '').trim()),
+    };
+    out.inlineHandlers = document.querySelectorAll('[onclick], [onchange], [oninput], [onkeydown]').length;
+    out.appView = document.getElementById('app').classList.contains('app-view');
+    out.nestedViewBody = document.querySelectorAll('.view-body .view-body').length;
+
     // — a11y: interactive controls must have an accessible name —
     const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
     const hasName = (el) => {
@@ -293,7 +307,7 @@ function evaluate(m) {
     if (m.folders.overflowX && ['auto', 'scroll'].indexOf(m.folders.overflowXStyle) < 0) f.push('overflowing folder strip is not scrollable');
     if (m.folders.listStartsBelow === false) f.push('chat list overlaps folder strip');
   }
-  if (m.chatRows && m.chatRows.count) {
+    if (m.chatRows && m.chatRows.count) {
     if (!m.chatRows.hasSurface) f.push('chat row missing .ci-surface');
     if (m.chatRows.surfaceIsTop !== true) f.push('chat surface not layered above actions');
     if (m.chatRows.restActionsVisibility !== 'hidden') f.push('swipe actions visible at rest');
@@ -301,6 +315,16 @@ function evaluate(m) {
     if (m.chatRows.rowHeight < 60) f.push('chat row too short (' + m.chatRows.rowHeight + 'px)');
     if (m.chatRows.surfaces !== m.chatRows.count) f.push('rows without a surface');
   }
+  // — slice C —
+  if (!m.searchCtl || !m.searchCtl.present) f.push('search clear control missing');
+  else {
+    if (!m.searchCtl.inputNamed) f.push('chat search input has no accessible name');
+    if (!m.searchCtl.clearNamed) f.push('search clear button has no accessible name');
+    if (m.searchCtl.clearHidden !== true) f.push('search clear button visible with an empty query');
+  }
+  if (m.inlineHandlers) f.push('CSP-dead inline handlers present: ' + m.inlineHandlers);
+  if (m.appView) f.push('app-view stuck while the chat list is shown');
+  if (m.nestedViewBody) f.push('nested .view-body (double padding): ' + m.nestedViewBody);
   return f;
 }
 
@@ -717,6 +741,234 @@ async function main() {
     await inter.evaluate(() => { try { switchNav('chats'); } catch (e) {} });
     await sleep(300);
     await inter.screenshot({ path: path.join(OUT, 'interactions-chats.png') });
+
+    /* ── slice C: settings framework, profile screen, search ── */
+    interactions.settings = await inter.evaluate(async () => {
+      switchNav('settings');
+      await new Promise((r) => setTimeout(r, 600));
+      const view = document.querySelector('[data-view="settings"]');
+      if (!view) return { ok: false, reason: 'settings view missing' };
+      const main = view.querySelector('.settings-main');
+      const cats = main ? Array.prototype.slice.call(main.querySelectorAll('.set-cat')) : [];
+      const named = cats.length > 0 && cats.every((c) => !!((c.getAttribute('aria-label') || '').trim() || (c.textContent || '').trim()));
+      const allButtons = cats.length > 0 && cats.every((c) => c.tagName === 'BUTTON');
+      const grps = main ? main.querySelectorAll('.set-grp').length : 0;
+      const rowGroups = main ? main.querySelectorAll('.set-rows').length : 0;
+      const acct = main ? main.querySelector('.set-account') : null;
+      const logoutRow = main ? main.querySelector('.set-cat[data-action="logout"]') : null;
+      const nested = view.querySelectorAll('.view-body .view-body').length;
+      const inline = view.querySelectorAll('[onclick]').length;
+      const appView = document.getElementById('app').classList.contains('app-view');
+      const headH2 = ((view.querySelector('.view-head h2') || {}).textContent || '').trim();
+      return {
+        ok: !!main && cats.length >= 8 && named && allButtons && grps >= 3 && rowGroups >= 3 &&
+          !!acct && !!logoutRow && nested === 0 && inline === 0 && appView && headH2 === 'تنظیمات',
+        cats: cats.length, named: named, allButtons: allButtons, grps: grps, rowGroups: rowGroups,
+        hasAccount: !!acct, hasLogout: !!logoutRow, nested: nested, inline: inline,
+        appView: appView, headH2: headH2,
+        labels: cats.map((c) => (c.getAttribute('aria-label') || '').split('،')[0]),
+      };
+    });
+    if (!interactions.settings.ok) failures.push('settings main list broken: ' + JSON.stringify(interactions.settings));
+    await inter.screenshot({ path: path.join(OUT, 'interactions-settings.png') });
+
+    interactions.settingsSub = await inter.evaluate(async () => {
+      const view = document.querySelector('[data-view="settings"]');
+      const acc = view ? view.querySelector('.set-cat[data-cat="appearance"]') : null;
+      if (!acc) return { ok: false, reason: 'appearance row missing' };
+      acc.click();
+      await new Promise((r) => setTimeout(r, 450));
+      const sub = document.querySelector('[data-view="settings"] .settings-sub');
+      const crumb = document.querySelector('[data-view="settings"] .view-head .crumb');
+      const back = document.getElementById('view-back');
+      const backLabel = back ? (back.getAttribute('aria-label') || '') : '';
+      const secs = sub ? sub.querySelectorAll('.settings-sec').length : 0;
+      const chips = sub ? sub.querySelectorAll('.chip').length : 0;
+      const nested = document.querySelectorAll('[data-view="settings"] .view-body .view-body').length;
+      const inAppView = document.getElementById('app').classList.contains('app-view');
+      const stateCat = state.settingsCat;
+      if (back) back.click();
+      await new Promise((r) => setTimeout(r, 450));
+      const backToMain = !!document.querySelector('[data-view="settings"] .settings-main');
+      const catAfterBack = state.settingsCat;
+      // leaving settings entirely must not strand the user on a sub-page
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 350));
+      const appViewGone = !document.getElementById('app').classList.contains('app-view');
+      switchNav('settings');
+      await new Promise((r) => setTimeout(r, 450));
+      const relandedMain = !!document.querySelector('[data-view="settings"] .settings-main');
+      const appViewAgain = document.getElementById('app').classList.contains('app-view');
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 250));
+      return {
+        ok: !!sub && !!crumb && backLabel.indexOf('تنظیمات') >= 0 && secs >= 4 && chips >= 10 &&
+          nested === 0 && inAppView && stateCat === 'appearance' && backToMain && catAfterBack === 'main' &&
+          appViewGone && relandedMain && appViewAgain,
+        sub: !!sub, crumb: crumb ? crumb.textContent.trim() : null, backLabel: backLabel,
+        secs: secs, chips: chips, nested: nested, inAppView: inAppView, stateCat: stateCat,
+        backToMain: backToMain, catAfterBack: catAfterBack, appViewGone: appViewGone,
+        relandedMain: relandedMain, appViewAgain: appViewAgain,
+      };
+    });
+    if (!interactions.settingsSub.ok) failures.push('settings sub-page navigation broken: ' + JSON.stringify(interactions.settingsSub));
+
+    // the logout row must be an ACTION on the list, never a dead-end sub-page
+    interactions.logoutRow = await inter.evaluate(async () => {
+      switchNav('settings');
+      await new Promise((r) => setTimeout(r, 450));
+      const row = document.querySelector('[data-view="settings"] .set-cat[data-action="logout"]');
+      if (!row) return { ok: false, reason: 'logout row missing' };
+      const listBefore = !!document.querySelector('[data-view="settings"] .settings-main');
+      row.click();
+      await new Promise((r) => setTimeout(r, 300));
+      const confirmShown = !!document.querySelector('body > .u-pop');
+      const cancel = confirmShown ? document.querySelector('body > .u-pop [data-k="0"]') : null;
+      if (cancel) cancel.click();
+      await new Promise((r) => setTimeout(r, 350));
+      const stillLoggedIn = typeof state !== 'undefined' && !!state.token;
+      const listStillThere = !!document.querySelector('[data-view="settings"] .settings-main');
+      const cat = state.settingsCat;
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 250));
+      return {
+        ok: listBefore && confirmShown && stillLoggedIn && listStillThere && cat === 'main',
+        listBefore: listBefore, confirmShown: confirmShown, stillLoggedIn: stillLoggedIn,
+        listStillThere: listStillThere, cat: cat,
+      };
+    });
+    if (!interactions.logoutRow.ok) failures.push('logout row dead-end: ' + JSON.stringify(interactions.logoutRow));
+
+    interactions.accountCard = await inter.evaluate(async () => {
+      switchNav('settings');
+      await new Promise((r) => setTimeout(r, 450));
+      const acct = document.querySelector('[data-view="settings"] .set-account');
+      if (!acct) return { ok: false, reason: 'account card missing' };
+      acct.click();
+      await new Promise((r) => setTimeout(r, 750));
+      const opened = !!document.querySelector('.profile-view');
+      const back = opened ? document.querySelector('.profile-view [data-act="back"]') : null;
+      if (back) back.click();
+      await new Promise((r) => setTimeout(r, 550));
+      const backToSettings = !!document.querySelector('[data-view="settings"] .settings-main');
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 250));
+      return { ok: opened && backToSettings, opened: opened, backToSettings: backToSettings };
+    });
+    if (!interactions.accountCard.ok) failures.push('settings account card broken: ' + JSON.stringify(interactions.accountCard));
+
+    interactions.profile = await inter.evaluate(async () => {
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 350));
+      const chatOpenBefore = document.getElementById('conversation').classList.contains('chat-open');
+      openProfile('ali');
+      await new Promise((r) => setTimeout(r, 750));
+      const pv = document.querySelector('.profile-view');
+      if (!pv) return { ok: false, reason: 'profile not rendered' };
+      const title = document.getElementById('profile-title');
+      const actions = pv.querySelector('.profile-actions');
+      const actionsInside = !!(actions && pv.contains(actions));
+      const heroInside = !!pv.querySelector('.profile-hero');
+      const top = !!pv.querySelector('.profile-top');
+      const back = pv.querySelector('[data-act="back"]');
+      const backNamed = !!(back && ((back.getAttribute('aria-label') || '').trim() || (back.textContent || '').trim()));
+      const backIcon = !!(back && back.querySelector('svg'));
+      const role = pv.getAttribute('role');
+      const labelled = pv.getAttribute('aria-labelledby');
+      const labelledOk = !!(labelled && document.getElementById(labelled));
+      const focusOnView = document.activeElement === pv;
+      const inline = pv.querySelectorAll('[onclick]').length;
+      const chatOpenNow = document.getElementById('conversation').classList.contains('chat-open');
+      const appViewNow = document.getElementById('app').classList.contains('app-view');
+      return {
+        ok: !!title && title.tagName === 'H2' && actionsInside && heroInside && top && backNamed && backIcon &&
+          role === 'region' && labelledOk && focusOnView && inline === 0 && chatOpenNow && appViewNow,
+        title: title ? title.textContent.trim() : null, titleTag: title ? title.tagName : null,
+        actionsInside: actionsInside, heroInside: heroInside, top: top,
+        backNamed: backNamed, backIcon: backIcon, role: role, labelled: labelled,
+        labelledOk: labelledOk, focusOnView: focusOnView, inline: inline,
+        chatOpenBefore: chatOpenBefore, chatOpenNow: chatOpenNow, appViewNow: appViewNow,
+      };
+    });
+    if (!interactions.profile.ok) failures.push('profile screen broken: ' + JSON.stringify(interactions.profile));
+    await inter.screenshot({ path: path.join(OUT, 'interactions-profile.png') });
+    await inter.evaluate(async () => {
+      const back = document.querySelector('.profile-view [data-act="back"]');
+      if (back) back.click();
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    interactions.search = await inter.evaluate(async () => {
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 400));
+      /* start from a known list state — earlier checks may have left a folder filter on */
+      try { state.chatFilter = 'all'; buildChatList(); } catch (e) {}
+      const inp = document.getElementById('cl-search-input');
+      const x = document.getElementById('cl-search-x');
+      if (!inp || !x) return { ok: false, reason: 'search controls missing' };
+      const inputNamed = !!((inp.getAttribute('aria-label') || '').trim());
+      const restHidden = x.hidden === true;
+      const type = (v) => { inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true })); };
+
+      // 1) a query that matches an existing contact
+      type('sara');
+      await new Promise((r) => setTimeout(r, 1100));
+      const heads = Array.prototype.slice.call(document.querySelectorAll('#cl-items .arch-head')).map((h) => (h.textContent || '').trim());
+      const staticHeads = document.querySelectorAll('#cl-items .arch-head.static').length;
+      const people = Array.prototype.slice.call(document.querySelectorAll('#cl-items .chat-item[data-uname]'));
+      const xShown = x.hidden === false;
+      const unnamedRows = people.filter((p) => {
+        const s = p.querySelector('.ci-surface');
+        return !(s && ((s.getAttribute('aria-label') || '').trim() || (s.textContent || '').trim()));
+      }).length;
+
+      // 2) clear control resets everything
+      x.click();
+      await new Promise((r) => setTimeout(r, 450));
+      const cleared = inp.value === '' && x.hidden === true &&
+        document.querySelectorAll('#cl-items .arch-head').length === 0;
+
+      // 3) picking a person opens the DM
+      type('sara');
+      await new Promise((r) => setTimeout(r, 1100));
+      const again = document.querySelectorAll('#cl-items .chat-item[data-uname]');
+      let room = null;
+      if (again.length) {
+        const t = again[0].querySelector('.ci-surface');
+        if (t) t.click();
+        await new Promise((r) => setTimeout(r, 800));
+        room = state.room;
+      }
+
+      // 4) a query that matches nothing shows an empty state, not a blank list
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 350));
+      type('zzzqvxy9');
+      await new Promise((r) => setTimeout(r, 1100));
+      const empty = !!document.querySelector('#cl-items .empty-state');
+      const emptyText = (document.querySelector('#cl-items .empty-state') || { textContent: '' }).textContent || '';
+      x.click();
+      await new Promise((r) => setTimeout(r, 400));
+      const backToFull = document.querySelectorAll('#cl-items .chat-item').length > 0;
+
+      const ok = inputNamed && restHidden && people.length >= 1 && staticHeads >= 1 &&
+        heads.some((h) => h.indexOf('مخاطبین') >= 0) && xShown && unnamedRows === 0 &&
+        cleared && room === 'dm:ali|sara' && empty && emptyText.indexOf('zzzqvxy9') >= 0 && backToFull;
+      return {
+        ok: ok, inputNamed: inputNamed, restHidden: restHidden, heads: heads, staticHeads: staticHeads,
+        people: people.length, xShown: xShown, unnamedRows: unnamedRows, cleared: cleared,
+        room: room, empty: empty, emptyHasQuery: emptyText.indexOf('zzzqvxy9') >= 0, backToFull: backToFull,
+      };
+    });
+    if (!interactions.search.ok) failures.push('chat search broken: ' + JSON.stringify(interactions.search));
+    await inter.evaluate(async () => {
+      const inp = document.getElementById('cl-search-input');
+      const x = document.getElementById('cl-search-x');
+      if (x && !x.hidden) x.click();
+      switchNav('chats');
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    await inter.screenshot({ path: path.join(OUT, 'interactions-search.png') });
 
     await inter.close();
 
