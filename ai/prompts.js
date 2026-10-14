@@ -9,34 +9,37 @@ module.exports = {
   SOFT_PROMPT: P.SOFT_PROMPT,
   HARD_PROMPT: P.HARD_PROMPT,
 
+  /**
+   * فقط «دستورالعمل سیستم» را برمی‌گرداند.
+   *
+   * تغییر مهم نسبت به نسخهٔ قبل: buildMessages اینجا داده‌های غیرقابل‌اعتماد
+   * (تاریخچهٔ گفتگو و متن کاربر) را درون همان آرایهٔ پیام‌ها می‌ساخت. حالا
+   * داده‌ها توسط ai.safeMessages در بلوک‌های قفسه‌بندی‌شده و جدا از پیام
+   * سیستم ساخته می‌شوند، تا محتوای چت هرگز نتواند نقش system را جعل کند یا
+   * دستورالعمل‌ها را افشا کند.
+   */
+  promptFor({ isRude, isAdmin, aggression = 1 } = {}) {
+    if (aggression <= 0) return this.SOFT_PROMPT;
+    if (isRude && isAdmin) return this.RUDE_ADMIN_PROMPT;
+    if (isRude) return this.RUDE_PROMPT;
+    if (isAdmin) return this.ADMIN_PROMPT;
+    if (aggression >= 2) return this.HARD_PROMPT;
+    return this.SYSTEM_PROMPT;
+  },
+
+  /**
+   * سازگاری با کد قدیمی: همان خروجی قبلی را می‌سازد، ولی داده‌های
+   * غیرقابل‌اعتماد در یک بلوک قفسه‌بندی‌شده قرار می‌گیرند.
+   * (سرور دیگر از این مسیر استفاده نمی‌کند؛ برای ابزارها/تست‌ها نگه داشته شده.)
+   */
   buildMessages(userText, contextMessages, username, isRude, isAdmin, aggression) {
-    let system;
-    if (aggression <= 0) system = this.SOFT_PROMPT;
-    else if (isRude && isAdmin) system = this.RUDE_ADMIN_PROMPT;
-    else if (isRude) system = this.RUDE_PROMPT;
-    else if (isAdmin) system = this.ADMIN_PROMPT;
-    else if (aggression >= 2) system = this.HARD_PROMPT;
-    else system = this.SYSTEM_PROMPT;
-
-    const msgs = [{ role: "system", content: system }];
-
+    const safety = require('./safety');
+    const system = this.promptFor({ isRude, isAdmin, aggression });
     if (contextMessages && contextMessages.length) {
-      const recent = contextMessages.slice(-10);
-      const ctxText = recent.map((m, i) => `${i + 1}. ${m}`).join("\n");
-      msgs.push({
-        role: "user",
-        content:
-          "این\u200cها پیام\u200cهای اخیر گروه هستند.\n" +
-          "از آن\u200cها فقط برای فهم فضای گفتگو، شوخی\u200cها و موضوع استفاده کن.\n" +
-          "لازم نیست به همه\u200cی آن\u200cها پاسخ بدهی.\n\n" + ctxText,
-      });
+      const recent = contextMessages.slice(-10).map((m, i) => `${i + 1}. ${m}`).join("\n");
+      return safety.safeMessages(system, recent, { label: 'chat' });
     }
-
-    const label = username ? "@" + username : "\u06a9\u0627\u0631\u0628\u0631";
-    msgs.push({
-      role: "user",
-      content: `پیام فعلی از ${label}:\n${userText}\n\nحالا یک جواب کوتاه و طبیعی بده.`,
-    });
-    return msgs;
+    const label = username ? "@" + username : "کاربر";
+    return safety.safeMessages(system, `پیام فعلی از ${label}:\n${userText}`, { label: 'chat' });
   },
 };

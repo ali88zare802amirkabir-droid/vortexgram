@@ -18,6 +18,445 @@ function loadReactionConfig() {
   }).catch(() => {});
 }
 const esc = (s) => VXSanitize.escText(s);
+
+/* ═══════════════════════════════════════════════════════════════════
+   توانایی‌های هوش مصنوعی (فاز ۳)
+   الگوی همان loadReactionConfig است: یک متغیر سطح ماژول که در جا
+   مقدار واقعی سرور را می‌گیرد و همهٔ مصرف‌کننده‌ها تنبلانه می‌خوانند.
+   بدون ارائه‌دهنده، enabled=false می‌شود و دکمه‌ها محترمانه غیرفعال
+   می‌مانند: نه پنهان می‌شوند و نه خطا می‌دهند.
+   ═══════════════════════════════════════════════════════════════════ */
+const AI_CAP = {
+  enabled: false, whisper: false, image: false,
+  consentGiven: false, consentText: null,
+  limits: {}, languages: {}, loaded: false,
+};
+function loadAiConfig() {
+  return fetch('/api/ai/config', { headers: { Authorization: 'Bearer ' + (state.token || '') }, credentials: 'same-origin' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (!d) return null;
+      AI_CAP.enabled = !!d.enabled;
+      AI_CAP.whisper = !!d.whisper;
+      AI_CAP.image = !!d.image;
+      AI_CAP.consentGiven = !!d.consentGiven;
+      AI_CAP.consentText = d.consentText || null;
+      AI_CAP.limits = d.limits || {};
+      AI_CAP.languages = d.languages || {};
+      AI_CAP.loaded = true;
+      applyAiAvailability();
+      return d;
+    })
+    .catch(() => { AI_CAP.loaded = true; applyAiAvailability(); return null; });
+}
+function applyAiAvailability() {
+  const navAi = document.querySelector('.nav-item[data-nav="ai"]');
+  if (navAi) navAi.classList.toggle('ai-disabled', !AI_CAP.enabled);
+  const convAi = $('conv-ai');
+  if (convAi) {
+    convAi.disabled = !AI_CAP.enabled;
+    convAi.title = AI_CAP.enabled ? 'خلاصهٔ امروز' : 'هوش مصنوعی تنظیم نشده است';
+    convAi.setAttribute('aria-label', AI_CAP.enabled ? 'خلاصهٔ امروز' : 'هوش مصنوعی تنظیم نشده است');
+  }
+}
+
+/* ── رضایت یک‌باره ────────────────────────────────────────────────
+   هر کنش AI که محتوای گفتگو را به ارائه‌دهندهٔ بیرونی می‌فرستد، اول
+   این بنر فارسی را یک‌بار نشان می‌دهد. متنش از سرور می‌آید تا با
+   صفحهٔ حریم خصوصی هم‌خوان بماند. */
+function aiConsentPrompt() {
+  const t = AI_CAP.consentText || {};
+  return new Promise((resolve) => {
+    const pop = document.createElement('div');
+    pop.className = 'u-pop ai-consent-pop';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-modal', 'true');
+    pop.setAttribute('aria-label', t.title || 'رضایت هوش مصنوعی');
+    pop.innerHTML =
+      '<div class="u-pop-box">' +
+      '<div class="u-pop-title">' + esc(t.title || 'ارسال محتوای گفتگو به هوش مصنوعی') + '</div>' +
+      '<div class="u-pop-text">' + esc(t.body || 'متن پیام برای پردازش به ارائه‌دهندهٔ مدل ارسال می‌شود.') + '</div>' +
+      '<div class="u-pop-actions">' +
+      '<button class="btn sm ghost" data-k="0">' + esc(t.decline || 'نمی‌پذیرم') + '</button>' +
+      '<button class="btn sm" data-k="1">' + esc(t.accept || 'می‌پذیرم') + '</button>' +
+      '</div></div>';
+    const done = (val) => { pop.remove(); resolve(val); };
+    pop.querySelector('[data-k="0"]').onclick = () => done(false);
+    pop.querySelector('[data-k="1"]').onclick = async () => {
+      try {
+        await api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ consent: true }) });
+        AI_CAP.consentGiven = true;
+      } catch (e) { /* سرور نپذیرفت — به‌عنوان نپذیرفته‌شده رفتار می‌کنیم */ }
+      done(true);
+    };
+    document.body.appendChild(pop);
+    const b = pop.querySelector('[data-k="1"]');
+    if (b) b.focus();
+  });
+}
+
+/**
+ * POST کمکی برای endpointهای AI فاز ۳.
+ * اگر سرور ۴۲۸ (نیاز به رضایت) برگرداند، یک‌بار رضایت می‌گیرد و درخواست را تکرار می‌کند.
+ * @returns {{ok:boolean, status:number, data:object}}
+ */
+async function aiPost(path, body, { retryConsent = true } = {}) {
+  let r = await api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+  let d = await r.json().catch(() => ({}));
+  if (r.status === 428 && d && d.consentRequired && retryConsent) {
+    const ok = await aiConsentPrompt();
+    if (!ok) return { ok: false, status: 428, data: { error: 'رضایت داده نشد', cancelled: true } };
+    r = await api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+    d = await r.json().catch(() => ({}));
+  }
+  return { ok: r.ok, status: r.status, data: d || {} };
+}
+
+/* ── ۱) خلاصهٔ امروز ─────────────────────────────────────────────── */
+const AI_DIGEST_CACHE = {};        // roomId -> {text, at}  (کش مرورگر: بدون خرج سهمیه)
+function aiDigestSheet() {
+  closeMsgCtx(); closeCtxMenus();
+  const roomId = state.room;
+  const rid = roomId || '';
+  const pop = document.createElement('div');
+  pop.className = 'ai-sheet';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-modal', 'false');
+  pop.setAttribute('aria-label', 'خلاصهٔ امروز');
+  pop.innerHTML =
+    '<div class="ai-sheet-box">' +
+    '<div class="ai-sheet-head"><span class="ai-sheet-title">' + esc(roomTitle(rid)) + '</span>' +
+    '<button class="icon-btn ai-sheet-x" aria-label="بستن">' + ic('x') + '</button></div>' +
+    '<div class="ai-sheet-body" id="ai-digest-body">' +
+    '<div class="skeleton ai-sk-line"></div><div class="skeleton ai-sk-line"></div><div class="skeleton ai-sk-line short"></div>' +
+    '</div>' +
+    '<div class="ai-sheet-foot">' +
+    '<span class="ai-prov-note">با ارائه‌دهندهٔ هوش مصنوعی تولید می‌شود</span>' +
+    '<button class="btn sm ghost" id="ai-digest-refresh">به‌روزرسانی</button>' +
+    '</div></div>';
+  document.body.appendChild(pop);
+  applyIcons(pop);
+  const close = () => { pop.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  pop.querySelector('.ai-sheet-x').onclick = close;
+  pop.querySelector('#ai-digest-refresh').onclick = () => { aiDigestSheetRun(rid, true, pop); };
+  pop.addEventListener('click', (e) => { if (e.target === pop) close(); });
+
+  const cached = AI_DIGEST_CACHE[rid];
+  if (cached && (Date.now() - cached.at) < 12 * 3600 * 1000) aiDigestRender(pop, cached.text, true);
+  else aiDigestSheetRun(rid, false, pop);
+  return pop;
+}
+function aiDigestRender(pop, text, cached) {
+  const body = pop.querySelector('#ai-digest-body');
+  if (!body) return;
+  if (!text) {
+    body.innerHTML = '';
+    const e = document.createElement('div');
+    e.className = 'ai-empty';
+    e.innerHTML = ic('file-text') + '<p>امروز پیام قابل‌خلاصه‌ای در این گفتگو نبود.</p>';
+    body.appendChild(e);
+    applyIcons(body);
+    return;
+  }
+  // خروجی مدل فقط با textContent رندر می‌شود، نه innerHTML: پس یک پاسخ
+  // مدلِ خصمانه نمی‌تواند تگ یا اسکریپت تزریق کند.
+  const wrap = document.createElement('div');
+  wrap.className = 'ai-digest-text';
+  String(text).split('\n').forEach((line) => {
+    if (!line.trim()) return;
+    const p = document.createElement('p');
+    p.textContent = line.replace(/^[-*•]\s*/, '');
+    wrap.appendChild(p);
+  });
+  const tag = document.createElement('div');
+  tag.className = 'ai-digest-tag';
+  tag.textContent = 'خلاصهٔ ماشینی' + (cached ? ' — از کش' : '');
+  wrap.appendChild(tag);
+  body.innerHTML = '';
+  body.appendChild(wrap);
+}
+async function aiDigestSheetRun(roomId, force, pop) {
+  const body = pop && pop.querySelector('#ai-digest-body');
+  if (!AI_CAP.enabled) { toast('هوش مصنوعی تنظیم نشده است.'); if (pop) pop.remove(); return; }
+  if (body) body.innerHTML = '<div class="skeleton ai-sk-line"></div><div class="skeleton ai-sk-line"></div><div class="skeleton ai-sk-line short"></div>';
+  const { ok, status, data } = await aiPost('/api/ai/digest', { roomId, force: !!force });
+  if (!pop || !pop.isConnected) return;
+  if (!ok) {
+    if (data.cancelled) { pop.remove(); return; }
+    if (body) {
+      body.innerHTML = '';
+      const e = document.createElement('div');
+      e.className = 'ai-error';
+      e.textContent = data.error || 'خطا در ساخت خلاصه';
+      body.appendChild(e);
+    }
+    if (status === 429) toast(data.error || 'سهمیه امروز تمام شد.');
+    return;
+  }
+  AI_DIGEST_CACHE[roomId] = { text: data.digest || '', at: Date.now() };
+  aiDigestRender(pop, data.digest || '', !!data.cached);
+}
+
+/* ── ۲) ترجمهٔ زندهٔ یک پیام (fa ↔ en) ────────────────────────────────
+   ترجمه همیشه «زیر» پیام اصلی نمایش داده می‌شود و هرگز جای متن اصلی را
+   نمی‌گیرد. نتیجه به‌ازای هر پیام کش می‌شود (سهمیه خرج نمی‌شود). */
+function translationsKey() { return 'vx_translations_' + (state.me ? state.me.username : 'anon'); }
+function loadTranslations() {
+  try { const raw = localStorage.getItem(translationsKey()); state.translations = raw ? JSON.parse(raw) : {}; }
+  catch (e) { state.translations = {}; }
+}
+function saveTranslations() {
+  try {
+    const keep = {}; const now = Date.now();
+    for (const [id, v] of Object.entries(state.translations || {})) {
+      if (v && v.at && (now - v.at) < 30 * 24 * 3600 * 1000) keep[id] = v;
+    }
+    state.translations = keep;
+    localStorage.setItem(translationsKey(), JSON.stringify(keep));
+  } catch (e) {}
+}
+function aiTranslationEl(msgId) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-translation';
+  wrap.dataset.for = msgId;
+  const cached = state.translations && state.translations[msgId];
+  if (cached) { aiTranslationFill(wrap, cached.text, cached.lang, true); return wrap; }
+  const head = document.createElement('div');
+  head.className = 'msg-translation-head';
+  head.innerHTML = ic('languages') + '<span>در حال ترجمه…</span>';
+  wrap.appendChild(head);
+  wrap.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton ai-sk-line' }));
+  applyIcons(wrap);
+  return wrap;
+}
+function aiTranslationFill(wrap, text, lang, cached) {
+  wrap.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'msg-translation-head';
+  const langName = (lang && AI_CAP.languages[lang]) ? ' — ' + AI_CAP.languages[lang] : '';
+  head.innerHTML = ic('languages') + '<span>' + esc('ترجمهٔ ماشینی' + langName) + '</span>'
+    + (cached ? '<span class="ai-cached">از کش</span>' : '');
+  wrap.appendChild(head);
+  const p = document.createElement('div');
+  p.className = 'msg-translation-text';
+  p.textContent = text;                    // textContent: نه innerHTML
+  wrap.appendChild(p);
+  applyIcons(head);
+}
+async function aiTranslateMessage(msg, bubble) {
+  if (!AI_CAP.enabled) { toast('هوش مصنوعی تنظیم نشده است.'); return; }
+  const { ok, status, data } = await aiPost('/api/ai/translate', { roomId: msg.roomId || state.room, msgId: msg.id });
+  if (data.cancelled) return;
+  if (!ok) { toast(data.error || 'ترجمه انجام نشد'); if (status === 429) haptic(20); return; }
+  state.translations = state.translations || {};
+  state.translations[msg.id] = { text: data.text, lang: data.lang, at: Date.now() };
+  saveTranslations();
+  if (bubble) {
+    let el = bubble.querySelector('.msg-translation');
+    if (!el) { el = aiTranslationEl(msg.id); bubble.appendChild(el); }
+    aiTranslationFill(el, data.text, data.lang, !!data.cached);
+  } else {
+    toast(String(data.text).slice(0, 140));
+  }
+}
+
+/* ── ۳) تبدیل پیام صوتی به متن ─────────────────────────────────────── */
+function transcriptsKey() { return 'vx_transcripts_' + (state.me ? state.me.username : 'anon'); }
+function loadTranscripts() {
+  try { const raw = localStorage.getItem(transcriptsKey()); state.transcripts = raw ? JSON.parse(raw) : {}; }
+  catch (e) { state.transcripts = {}; }
+}
+function saveTranscripts() {
+  try {
+    const keep = {}; const now = Date.now();
+    for (const [id, v] of Object.entries(state.transcripts || {})) {
+      if (v && v.at && (now - v.at) < 30 * 24 * 3600 * 1000) keep[id] = v;
+    }
+    state.transcripts = keep;
+    localStorage.setItem(transcriptsKey(), JSON.stringify(keep));
+  } catch (e) {}
+}
+function aiTranscriptEl(msgId) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-transcript';
+  wrap.dataset.for = msgId;
+  const cached = state.transcripts && state.transcripts[msgId];
+  if (cached) { aiTranscriptFill(wrap, cached.text, true); return wrap; }
+  const head = document.createElement('div');
+  head.className = 'msg-translation-head';
+  head.innerHTML = ic('mic') + '<span>در حال تبدیل صدا به متن…</span>';
+  wrap.appendChild(head);
+  wrap.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton ai-sk-line' }));
+  applyIcons(wrap);
+  return wrap;
+}
+function aiTranscriptFill(wrap, text, cached) {
+  wrap.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'msg-translation-head';
+  head.innerHTML = ic('mic') + '<span>' + esc('متن پیام صوتی' + (cached ? ' — از کش' : '')) + '</span>';
+  wrap.appendChild(head);
+  const p = document.createElement('div');
+  p.className = 'msg-translation-text';
+  p.textContent = text;
+  wrap.appendChild(p);
+  applyIcons(head);
+}
+async function aiTranscribeMessage(msg, bubble) {
+  if (!AI_CAP.enabled || !AI_CAP.whisper) { toast('تبدیل صدا به متن تنظیم نشده است.'); return; }
+  const { ok, status, data } = await aiPost('/api/ai/transcribe', { roomId: msg.roomId || state.room, msgId: msg.id });
+  if (data.cancelled) return;
+  if (!ok) { toast(data.error || 'تبدیل صدا به متن انجام نشد'); if (status === 429) haptic(20); return; }
+  state.transcripts = state.transcripts || {};
+  state.transcripts[msg.id] = { text: data.text, at: Date.now() };
+  saveTranscripts();
+  if (bubble) {
+    let el = bubble.querySelector('.msg-transcript');
+    if (!el) { el = aiTranscriptEl(msg.id); bubble.appendChild(el); }
+    aiTranscriptFill(el, data.text, !!data.cached);
+  } else {
+    toast(String(data.text).slice(0, 140));
+  }
+}
+
+/* ── ۴) پیام‌های ذخیره‌شده (نشانک) ───────────────────────────────────
+   کاملاً خصوصی: فقط کاربر خودش می‌بیند و هیچ متنی به AI ارسال نمی‌شود. */
+const BOOKMARK_IDLE = new Set();
+async function aiBookmarkToggle(msg) {
+  const rid = msg.roomId || state.room;
+  const key = rid + '|' + msg.id;
+  const has = BOOKMARK_IDLE.has(key);
+  haptic(12);
+  try {
+    if (has) {
+      const r = await api('/api/bookmarks/' + encodeURIComponent(key), { method: 'DELETE' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(d.error || 'حذف نشانک ناموفق بود'); return; }
+      BOOKMARK_IDLE.delete(key);
+      toast('از پیام‌های ذخیره‌شده حذف شد');
+    } else {
+      const r = await api('/api/bookmarks', { method: 'POST', body: JSON.stringify({ roomId: rid, msgId: msg.id }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(d.error || 'ذخیره ناموفق بود'); return; }
+      BOOKMARK_IDLE.add(key);
+      toast('در پیام‌های ذخیره‌شده ذخیره شد');
+    }
+    markMessageSaved(msg);
+  } catch (e) { toast('خطا در ارتباط با سرور'); }
+}
+function markMessageSaved(msg) {
+  const id = (window.CSS && CSS.escape) ? CSS.escape(msg.id) : msg.id;
+  const el = document.querySelector('.msg[data-id="' + id + '"]');
+  if (!el) return;
+  const b = el.querySelector('.bubble');
+  if (!b) return;
+  const badge = b.querySelector('.msg-saved');
+  const isSaved = BOOKMARK_IDLE.has((msg.roomId || state.room) + '|' + msg.id);
+  if (isSaved && !badge) {
+    const s = document.createElement('span');
+    s.className = 'msg-saved';
+    s.title = 'در پیام‌های ذخیره‌شده';
+    s.innerHTML = ic('bookmark');
+    b.appendChild(s);
+    applyIcons(s);
+  } else if (!isSaved && badge) {
+    badge.remove();
+  }
+}
+/** پرش به پیام ذخیره‌شده: اتاق باز می‌شود و پیام برجسته و اسکرول می‌خورد. */
+async function jumpToBookmark(b) {
+  closeMsgCtx(); closeAllOverlays();
+  const rid = String(b.roomId || '');
+  if (!rid) return;
+  try { openRoom(rid); } catch (e) { toast('این گفتگو دیگر در دسترس نیست'); return; }
+  const mid = String(b.msgId || '');
+  const escId = (window.CSS && CSS.escape) ? CSS.escape(mid) : mid;
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    const el = document.querySelector('.msg[data-id="' + escId + '"]');
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('msg-flash');
+      setTimeout(() => el.classList.remove('msg-flash'), 2200);
+      return;
+    }
+  }
+  toast('این پیام دیگر در تاریخچه نیست');
+}
+function renderBookmarksInto(wrap) {
+  wrap.innerHTML = '<div class="bm-list" id="bm-list"></div>';
+  loadBookmarksInto(wrap.querySelector('#bm-list'));
+}
+async function loadBookmarksInto(listEl) {
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  const sk = document.createDocumentFragment();
+  for (let i = 0; i < 3; i++) {
+    const d = document.createElement('div');
+    d.className = 'bm-row bm-skel';
+    d.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton ai-sk-line' }));
+    sk.appendChild(d);
+  }
+  listEl.appendChild(sk);
+  try {
+    const r = await api('/api/bookmarks');
+    const d = await r.json().catch(() => ({}));
+    const items = Array.isArray(d.bookmarks) ? d.bookmarks : [];
+    listEl.innerHTML = '';
+    if (!items.length) {
+      const e = document.createElement('div');
+      e.className = 'ai-empty';
+      e.innerHTML = ic('bookmark') + '<p>هنوز پیامی ذخیره نکرده‌اید.</p><small>روی هر پیام، گزینهٔ «ذخیرهٔ پیام» را بزنید.</small>';
+      listEl.appendChild(e);
+      applyIcons(listEl);
+      return;
+    }
+    for (const b of items) listEl.appendChild(bookmarkRow(b));
+    applyIcons(listEl);
+  } catch (e) {
+    listEl.innerHTML = '';
+    const err = document.createElement('div');
+    err.className = 'ai-error';
+    err.textContent = 'بارگذاری پیام‌های ذخیره‌شده ناموفق بود';
+    listEl.appendChild(err);
+  }
+}
+function bookmarkRow(b) {
+  const row = document.createElement('div');
+  row.className = 'bm-row';
+  row.tabIndex = 0;
+  row.setAttribute('role', 'button');
+  const when = b.at ? new Date(b.at).toLocaleString('fa-IR') : '';
+  const main = document.createElement('div');
+  main.className = 'bm-row-main';
+  const ex = document.createElement('div');
+  ex.className = 'bm-excerpt';
+  ex.textContent = b.excerpt || '…';
+  const sub = document.createElement('div');
+  sub.className = 'bm-sub';
+  sub.textContent = (b.note ? b.note + ' · ' : '') + when;
+  main.appendChild(ex); main.appendChild(sub);
+  const del = document.createElement('button');
+  del.className = 'icon-btn bm-del';
+  del.setAttribute('aria-label', 'حذف از پیام‌های ذخیره‌شده');
+  del.innerHTML = ic('trash-2');
+  row.appendChild(main); row.appendChild(del);
+  row.onclick = (e) => { if (e.target.closest('.bm-del')) return; jumpToBookmark(b); };
+  row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jumpToBookmark(b); } };
+  del.onclick = async (e) => {
+    e.stopPropagation();
+    try {
+      const r = await api('/api/bookmarks/' + encodeURIComponent(b.id), { method: 'DELETE' });
+      if (!r.ok) { toast('حذف ناموفق بود'); return; }
+      row.remove();
+      BOOKMARK_IDLE.delete(b.id);
+      toast('حذف شد');
+    } catch (err) { toast('خطا در ارتباط با سرور'); }
+  };
+  return row;
+}
 const escAttr = (s) => VXSanitize.escAttr(s);
 const initial = (n) => (n || '?').trim().charAt(0).toUpperCase();
 function ic(n) { return '<i data-lucide="' + VXSanitize.sanitizeIconName(n) + '" class="icon"></i>'; }
@@ -482,7 +921,7 @@ function connectWS() {
 }
 function handleWS(d) {
   switch (d.type) {
-    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); if (pr.messages.length && !pr.previewOnly) { if (pv && (!pr.last || pv.time > pr.last.time)) { const idx = pr.messages.findIndex((m) => m.id === pv.id); if (idx >= 0) pr.messages[idx] = pv; else { pr.messages.push(pv); pr.lastSync = Date.now(); } pr.last = pv; } pr.unread = pv && (pv.unread !== undefined) ? pv.unread : pr.unread; } else { pr.messages = pv ? [pv] : []; pr.last = pv || null; pr.unread = pv ? (pv.unread || 0) : 0; pr.previewOnly = true; } } loadReactionConfig(); renderNav(); renderDock(); buildChatList(); scheduleRoomsPersist(); handleInviteFollow(); handleGroupInvite();
+    case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); if (pr.messages.length && !pr.previewOnly) { if (pv && (!pr.last || pv.time > pr.last.time)) { const idx = pr.messages.findIndex((m) => m.id === pv.id); if (idx >= 0) pr.messages[idx] = pv; else { pr.messages.push(pv); pr.lastSync = Date.now(); } pr.last = pv; } pr.unread = pv && (pv.unread !== undefined) ? pv.unread : pr.unread; } else { pr.messages = pv ? [pv] : []; pr.last = pv || null; pr.unread = pv ? (pv.unread || 0) : 0; pr.previewOnly = true; } } loadReactionConfig(); loadAiConfig(); loadTranslations(); loadTranscripts(); renderNav(); renderDock(); buildChatList(); scheduleRoomsPersist(); handleInviteFollow(); handleGroupInvite();
       /* چتِ لینک مستقیم فقط وقتی باز می‌شود که WebSocket آماده و احرازهویت شده باشد */
       if (state._deepRoom) { const deep = state._deepRoom; state._deepRoom = null; try { openRoom(deep, { fromHistory: true }); } catch (e) {} }
       break;
@@ -854,6 +1293,12 @@ function renderRoomHeader() {
   $('conv-name').style.cursor = 'pointer';
 }
 $('conv-info').onclick = () => { if (!state.room) return; openRoomInfo(state.room); };
+/* فاز ۳: خلاصهٔ امروز — اگر ارائه‌دهنده‌ای نباشد، دکمه غیرفعال می‌ماند. */
+if ($('conv-ai')) $('conv-ai').onclick = () => {
+  if (!AI_CAP.enabled) { toast('هوش مصنوعی تنظیم نشده است.'); return; }
+  if (!state.room) { toast('اول یک گفتگو را باز کنید'); return; }
+  aiDigestSheet();
+};
 /* دکمهٔ برگشت داخل چت (گوشهٔ بالای صفحهٔ چت): همیشه برمی‌گردد به صفحهٔ اصلی
    لیست چت‌ها (/app) — نه به چت قبلی در history مرورگر. */
 $('conv-back').onclick = () => {
@@ -989,6 +1434,17 @@ function renderMessagesBatch(messages) {
       if (orig) bubble.appendChild(replyRef(orig));
     }
     bubble.appendChild(bodyEl(m));
+    // ── فاز ۳: ترجمه/رونویسی همیشه «زیر» پیام اصلی می‌نشیند ──
+    if (state.transcripts && state.transcripts[m.id]) bubble.appendChild(aiTranscriptEl(m.id));
+    if (state.translations && state.translations[m.id]) bubble.appendChild(aiTranslationEl(m.id));
+    if (BOOKMARK_IDLE.has((m.roomId || state.room) + '|' + m.id)) {
+      const savedBadge = document.createElement('span');
+      savedBadge.className = 'msg-saved';
+      savedBadge.title = 'در پیام‌های ذخیره‌شده';
+      savedBadge.innerHTML = ic('bookmark');
+      bubble.appendChild(savedBadge);
+      applyIcons(savedBadge);
+    }
     const meta = document.createElement('div'); meta.className = 'msg-meta';
     const timeHtml = '<span class="msg-time">' + (mine ? (isReadByOther(state.room, m) ? ic('check-check') : ic('check')) : '') + fmt(m.time) + '</span>';
     meta.innerHTML = (m.edited || m.editedAt) ? '<span class="msg-ed">ویرایش‌شده</span>' + timeHtml : timeHtml;
@@ -3785,6 +4241,19 @@ function openMsgCtx(m, anchor, pos) {
   });
   mk('رونوشت', 'clipboard', function() { copyText(m.content || ''); });
   mk('فوروارد', 'forward', function() { openForward(m.id); });
+  /* ── فاز ۳: ذخیره (نشانک) — همیشه در دسترس و خصوصیِ کاربر ── */
+  var bmKey = (m.roomId || state.room) + '|' + m.id;
+  mk(BOOKMARK_IDLE.has(bmKey) ? 'حذف از ذخیره‌شده‌ها' : 'ذخیرهٔ پیام', 'bookmark', function() { aiBookmarkToggle(m); });
+  /* ── فاز ۳: ترجمهٔ زنده و تبدیل صدا به متن ──
+     حباب باید همین‌جا گرفته شود، چون هنگام اجرای هندلر closeMsgCtx() اجرا
+     شده و _ctxMsgEl دیگر null است. */
+  var ctxBubble = _ctxMsgEl ? (_ctxMsgEl.querySelector('.bubble') || _ctxMsgEl) : null;
+  if (m.kind === 'text' && AI_CAP.enabled) {
+    mk('ترجمهٔ ماشینی', 'languages', function() { aiTranslateMessage(m, ctxBubble); });
+  }
+  if (m.kind === 'voice' && AI_CAP.whisper) {
+    mk('تبدیل به متن', 'mic', function() { aiTranscribeMessage(m, ctxBubble); });
+  }
   /* عکس‌ها: دانلود و نقاشی/ویرایش با همان ادیتور */
   if (m.kind === 'image' && (m.src || m.url)) {
     mk('دانلود عکس', 'download', function() { downloadMedia(m.src || m.url, (m.name || 'image.jpg')); });
@@ -5337,7 +5806,7 @@ function renderView(id) {
   else if (id === 'cloud') { wrap.innerHTML = '<div class="placeholder">☁️ حافظه ابری — فایل‌های شما اینجا نمایش داده می‌شوند. (نمونه)</div>'; }
   else if (id === 'tasks') { renderTasks(wrap); }
   else if (id === 'calendar') { renderCalendar(wrap); }
-  else if (id === 'bookmarks') { wrap.innerHTML = '<div class="placeholder">🔖 پیام‌های نشان‌شده اینجا نمایش داده می‌شوند. (نمونه)</div>'; }
+  else if (id === 'bookmarks') { renderBookmarksInto(wrap); }
   else if (id === 'users') { if (state.me.isAdmin) renderUsers(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else if (id === 'signups') { if (state.me.isAdmin) renderSignups(wrap); else wrap.innerHTML = '<div class="placeholder">این بخش فقط برای ادمین در دسترس است.</div>'; }
   else if (id === 'reports') { if (state.me.isAdmin) renderReports(wrap); else wrap.innerHTML = '<div class="placeholder">دسترسی ندارید.</div>'; }

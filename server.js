@@ -16,7 +16,8 @@ try {
   }
 } catch (e) { console.warn('.env not found, using environment variables only'); }
 
-const { chatCompletion } = require('./ai/groq');
+const ai = require('./ai');
+const aiFeatures = require('./server/ai-features');
 const prompts = require('./ai/prompts');
 
 process.on('uncaughtException', (e) => console.error('UNCAUGHT:', e));
@@ -118,6 +119,15 @@ function normalizeGroups() {
   if (!db.userFlags || typeof db.userFlags !== 'object') db.userFlags = {};
   if (!db.uploadFlags || typeof db.uploadFlags !== 'object') db.uploadFlags = {};
   if (!db.uploadCounters || typeof db.uploadCounters !== 'object') db.uploadCounters = {};
+  if (!db.aiUsage || typeof db.aiUsage !== 'object') db.aiUsage = {};
+  // فاز ۳: رضایت، کش ترجمه/رونویسی، نشانک‌ها و زمان‌بندی خلاصه
+  if (!db.aiConsent || typeof db.aiConsent !== 'object') db.aiConsent = {};
+  if (!db.aiTranslations || typeof db.aiTranslations !== 'object') db.aiTranslations = {};
+  if (!db.aiTranscripts || typeof db.aiTranscripts !== 'object') db.aiTranscripts = {};
+  if (!db.aiDigestText || typeof db.aiDigestText !== 'object') db.aiDigestText = {};
+  if (!db.aiDigests || typeof db.aiDigests !== 'object') db.aiDigests = {};
+  if (!Array.isArray(db.aiDigestSchedules)) db.aiDigestSchedules = [];
+  if (!db.savedMessages || typeof db.savedMessages !== 'object') db.savedMessages = {};
   for (const u of (db.users || [])) { if (u.danger !== true && u.danger !== false) u.danger = !!u.danger; }
   for (const g of db.groups) {
     if (!g.type) g.type = 'group';
@@ -182,6 +192,141 @@ function saveDB() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushDB, 250);
 }
+
+/* ---------- سهمیهٔ هوش مصنوعی (روزانه، UTC) ----------
+   شمارنده‌ها داخل همان شیء db نگه داشته می‌شوند و check/spend کاملاً
+   همگام‌اند: هیچ «await» بین بررسی و کسر وجود ندارد، پس دو درخواست
+   هم‌زمان نمی‌توانند هر دو «یکی مانده» ببینند و هر دو خرج کنند. */
+const aiQuotas = ai.createQuotaStore({
+  getState: () => db,
+  setState: (patch) => { Object.assign(db, patch); },
+  save: saveDB,
+});
+// نگه‌داشتن فقط ۳ روز از شمارنده‌ها (پاک‌سازی هنگام بالا آمدن و هر ساعت)
+setInterval(() => { aiQuotas.prune(3); }, 60 * 60 * 1000).unref();
+
+/* ---------- لایهٔ ایمنی هوش مصنوعی ---------- */
+// سقف خروجی مدل (کاراکتر) — قابل تنظیم، پیش‌فرض محافظه‌کارانه
+const AI_OUTPUT_MAX = Number(process.env.AI_OUTPUT_MAX_CHARS || 2000);
+const AI_NOT_CONFIGURED = 'هوش مصنوعی تنظیم نشده است.';
+
+/**
+ * فراخوانی امن مدل: ممیزی ورودی، ساخت پیام‌های fenced، اجرای زنجیرهٔ
+ * ارائه‌دهندگان، ممیزی خروجی و بررسی سهمیه.
+ *
+ * @returns {{ok:true, text}|{ok:false, status, error}}
+ *   status 503 = AI تنظیم نشده، 429 = سهمیه تمام، 403 = محتوا مسدود،
+ *   502 = پاسخی دریافت نشد.
+ */
+async function aiComplete({ username, isAdmin, kind, system, data, label, maxTokens, temperature }) {
+  const qKind = kind === 'image' ? 'image' : 'text';
+
+  // ۱) ممیزی ورودی کاربر (فارسی + انگلیسی)
+  const promptCheck = ai.guardPrompt(data || '');
+  if (promptCheck.blocked) return { ok: false, status: 403, error: promptCheck.error, category: promptCheck.category };
+
+  // ۲) سهمیه — پیش از هر تماس با ارائه‌دهنده، به‌صورت همگام
+  const check = aiQuotas.check(username, qKind, { isAdmin });
+  if (!check.ok) return { ok: false, status: 429, error: ai.quotaError(check.reason), resetsAt: check.resetsAt };
+
+  // ۳) ساخت پیام‌ها: دستورالعمل سیستم جدا، داده‌های غیرقابل‌اعتماد در بلوک fenced
+  const messages = ai.safeMessages(system, data, { label, maxChars: Number(process.env.AI_DATA_MAX_CHARS || 4000) });
+
+  // ۴) اجرای زنجیره (ترتیبی با failover فوری + circuit breaker)
+  const result = await ai.chatCompletion(messages, {
+    maxTokens,
+    temperature,
+    // سهمیه فقط وقتی کسر می‌شود که واقعاً پاسخی گرفته شده باشد
+    onUsage: (res) => aiQuotas.spend(username, qKind, { tokens: (res && res.tokensOut) || 0 }),
+  });
+
+  // ۵) تشخیص «اصلاً پیکربندی نشده» از «همه‌ی ارائه‌دهندگان خراب‌اند»
+  if (!result) {
+    if (!ai.isConfigured()) return { ok: false, status: 503, error: AI_NOT_CONFIGURED };
+    return { ok: false, status: 502, error: 'پاسخی از هوش مصنوعی دریافت نشد. کمی بعد دوباره تلاش کنید.' };
+  }
+
+  // ۶) ممیزی خروجی + سقف طول + حذف نشت کلید
+  const out = ai.guardOutput(result.text, AI_OUTPUT_MAX);
+  if (out.blocked) return { ok: false, status: 403, error: out.error, category: out.category };
+  if (!out.text) return { ok: false, status: 502, error: 'پاسخی از هوش مصنوعی دریافت نشد.' };
+  return { ok: true, text: out.text, provider: result.provider, model: result.model };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   قابلیت‌های هوش مصنوعی برای کاربر (فاز ۳): خلاصهٔ امروز، ترجمهٔ زنده،
+   تبدیل صدا به متن، پیام‌های ذخیره‌شده و خلاصهٔ زمان‌بندی‌شده.
+   همهٔ این مسیرها از همان aiComplete() عبور می‌کنند، پس سهمیه و ممیزی
+   محتوا دور زده نمی‌شود.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/** ارسال یک پیام ربات به یک اتاق (مانند sendBotToRoom، ولی با فیلدهای دلخواه) */
+function aiSendToRoom(roomId, fields) {
+  const msg = Object.assign({
+    id: crypto.randomUUID(),
+    roomId,
+    from: BOT_USERNAME,
+    fromName: BOT_NAME,
+    kind: 'text',
+    content: '',
+    time: Date.now(),
+    reactions: {},
+    silent: false,
+  }, fields || {});
+  if (!msg.content) return null;
+  if (!db.messages[roomId]) db.messages[roomId] = [];
+  db.messages[roomId].push(msg);
+  const over = db.messages[roomId].length - HISTORY_LIMIT;
+  if (over > 0) db.messages[roomId].splice(0, over);
+  saveDB();
+  broadcast({ type: 'message', message: msg });
+  return msg;
+}
+
+/**
+ * دریافت فایل صوتی از مسیر داخلی /uploads/ با عبور از دروازهٔ احراز هویت.
+ * یک نشست فعالِ همان کاربر استفاده می‌شود؛ مسیر بیرونی اصلاً پذیرفته نمی‌شود.
+ */
+async function aiFetchRoomAudio(url, username) {
+  if (!/^\/uploads\/[\w.-]+$/.test(String(url || ''))) throw new Error('bad audio url');
+  let token = null;
+  const now = Date.now();
+  for (const [t, s] of sessions) {
+    if (s && s.username === username && (s.exp || 0) > now) { token = t; break; }
+  }
+  if (!token) throw new Error('no active session for audio fetch');
+  const base = 'http://127.0.0.1:' + (process.env.PORT || 3000);
+  const r = await fetch(base + url, { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error('audio fetch failed ' + r.status);
+  const buf = Buffer.from(await r.arrayBuffer());
+  return buf;
+}
+
+const aiFeat = aiFeatures.createAiFeatures({
+  // getter, not a value: `db` is reassigned during boot and the module must
+  // always read/write the live object
+  getDb: () => db,
+  save: saveDB,
+  ai,
+  aiComplete,
+  aiQuotas,
+  canAccess, canPost, findGroup, findMsg, memberOf, isGroupAdmin,
+  BOT_USERNAME, BOT_NAME,
+  sendToRoom: aiSendToRoom,
+  transcribeAudio: (buf, name, opts) => ai.transcribe(buf, name, opts),
+  fetchRoomAudio: aiFetchRoomAudio,
+  env: process.env,
+});
+
+// زمان‌بندی خلاصهٔ خودکار: هر دقیقه بررسی می‌شود کدام خلاصه‌ها سررسید شده‌اند.
+// اگر همه خراب شدند یا هیچ‌کدام تنظیم نیستند، بی‌صدا رد می‌شود.
+if (ai.isConfigured()) {
+  setInterval(() => {
+    aiFeat.runDueDigests().catch((e) => console.error('ai digest scheduler failed:', e && e.message));
+  }, 60 * 1000).unref();
+}
+// پاک‌سازی دوره‌ای کش ترجمه/رونویسی (۳۰ روزه)
+setInterval(() => { try { aiFeat.cachePurge(); } catch (e) {} }, 6 * 60 * 60 * 1000).unref();
 process.on('exit', flushDB);
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => { flushDB(); dbStore.close().finally(() => process.exit(0)); });
@@ -1831,30 +1976,235 @@ app.get('/api/link-preview', auth, async (req, res) => {
 });
 
 // ===== AI داخلی (دستورات و پنل) =====
+// سازگار با نسخهٔ قبل: { action, roomId, text, tone } → { result }
+// اکنون از زنجیرهٔ ارائه‌دهندگان، سهمیهٔ روزانه و لایهٔ ایمنی عبور می‌کند.
 app.post('/api/ai', auth, async (req, res) => {
   if (!authRateOk('ai:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
-  if (!process.env.GROQ_API_KEYS_STR) return res.status(503).json({ error: 'AI تنظیم نشده' });
   const { action, roomId, text, tone } = req.body || {};
   const a = String(action || '');
   const rid = String(roomId || '');
+  // ترتیب عمدی: بررسی دسترسی پیش از «تنظیم نشده» تا یک کاربر که عضو اتاق
+  // نیست هرگز با پیام ۵۰۳ چیزی از وضعیت سرویس لو ندهد.
   if ((a === 'summarize' || a === 'reply' || a === 'ask') && !canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  if (a !== 'summarize' && a !== 'reply' && a !== 'translate' && a !== 'rewrite' && a !== 'ask') {
+    return res.status(400).json({ error: 'action نامعتبر' });
+  }
+  if (!ai.isConfigured()) return res.status(503).json({ error: AI_NOT_CONFIGURED });
+  const who = { username: req.user.username, isAdmin: req.user.isAdmin };
+
+  const SYSTEM = {
+    summarize: 'Summarize the chat in Persian in 3-5 short bullet points. Concise, no preamble.',
+    reply: 'Suggest 3 short reply options in Persian, one per line, no numbering, no labels.',
+    translate: 'Translate the text. If Persian translate to English, else to Persian. Return only the translation.',
+    ask: 'Answer briefly in Persian using the chat context if relevant.',
+  };
+  function rewriteSystem(t) {
+    return `Rewrite the text in Persian with a ${t} tone. Return only the rewritten text.`;
+  }
+
+  let out;
   try {
-    let out = null;
     if (a === 'summarize') {
-      out = await chatCompletion([{ role: 'system', content: 'Summarize the following chat in Persian in 3-5 short bullet points. Concise, no preamble.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(rid, 40) }]);
+      out = await aiComplete({ ...who, kind: 'text', system: SYSTEM.summarize, data: roomHistoryText(rid, 40), label: 'chat' });
     } else if (a === 'reply') {
-      out = await chatCompletion([{ role: 'system', content: 'Based on the recent chat, suggest 3 short reply options in Persian, one per line, no numbering, no labels.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(rid, 40) }]);
+      out = await aiComplete({ ...who, kind: 'text', system: SYSTEM.reply, data: roomHistoryText(rid, 40), label: 'chat' });
     } else if (a === 'translate') {
-      out = await chatCompletion([{ role: 'system', content: 'Translate the text. If Persian translate to English, else to Persian. Return only the translation.' }, { role: 'user', content: String(text || '') }]);
+      out = await aiComplete({ ...who, kind: 'text', system: SYSTEM.translate, data: String(text || ''), label: 'text' });
     } else if (a === 'rewrite') {
-      const t = String(tone || 'natural');
-      out = await chatCompletion([{ role: 'system', content: `Rewrite the text in Persian with a ${t} tone. Return only the rewritten text.` }, { role: 'user', content: String(text || '') }]);
+      out = await aiComplete({ ...who, kind: 'text', system: rewriteSystem(String(tone || 'natural')), data: String(text || ''), label: 'text' });
     } else if (a === 'ask') {
-      out = await chatCompletion([{ role: 'system', content: 'Answer briefly in Persian using chat context if relevant.' }, { role: 'user', content: 'Chat:\n' + roomHistoryText(rid, 30) + '\n\nQ: ' + String(text || '') }]);
-    } else return res.status(400).json({ error: 'action نامعتبر' });
-    if (!out) return res.status(502).json({ error: 'پاسخی دریافت نشد' });
-    res.json({ result: out });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+      const data = roomHistoryText(rid, 30) + '\n\nQ: ' + String(text || '');
+      out = await aiComplete({ ...who, kind: 'text', system: SYSTEM.ask, data, label: 'chat' });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: 'خطای داخلی در پردازش هوش مصنوعی' });
+  }
+  if (!out.ok) return res.status(out.status).json({ error: out.error, resetsAt: out.resetsAt });
+  res.json({ result: out.text });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   API قابلیت‌های هوش مصنوعی (فاز ۳)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/** توانایی‌های AI برای غیرفعال‌سازیِ محترمانهٔ دکمه‌ها در کلاینت. */
+app.get('/api/ai/config', auth, (req, res) => {
+  res.json({
+    enabled: ai.isConfigured(),
+    whisper: ai.whisperAvailable(),
+    image: ai.imageConfigured(),
+    consentGiven: aiFeat.consentGiven(db, req.user.username),
+    consentText: aiFeat.CONSENT_TEXT,
+    limits: {
+      digestMaxChars: aiFeat.L.digestMaxChars,
+      translateMaxChars: aiFeat.L.translateMaxChars,
+      audioMaxSeconds: aiFeat.L.audioMaxSeconds,
+      audioMaxBytes: aiFeat.L.audioMaxBytes,
+      bookmarkMax: aiFeat.L.bookmarkMax,
+    },
+    languages: aiFeat.LANG_LABEL,
+  });
+});
+
+/** رضایت یک‌باره برای ارسال محتوای گفتگو به ارائه‌دهندهٔ بیرونی. */
+app.post('/api/ai/consent', auth, (req, res) => {
+  const give = (req.body || {}).consent !== false;
+  if (!give) return res.json({ ok: true, consentGiven: false });
+  aiFeat.grantConsent(db, req.user.username);
+  saveDB();
+  res.json({ ok: true, consentGiven: true, at: Date.now() });
+});
+
+/**
+ * دروازهٔ رضایت: هر کنشی که محتوای گفتگو را به ارائه‌دهنده می‌فرستد باید
+ * ابتدا رضایت کاربر ثبت‌شده را داشته باشد.
+ *
+ * ترتیب مهم است: هر سه مسیر AI ابتدا canAccess را بررسی می‌کنند و *بعد*
+ * سراغ این دروازه می‌آیند، تا کاربری که عضو اتاق نیست با خطای ۴۲۸/۵۰۳
+ * چیزی دربارهٔ وضعیت سرویس یا رضایت او لو ندهد.
+ */
+function aiConsentGate(req, res) {
+  if (aiFeat.consentGiven(db, req.user.username)) return true;
+  res.status(428).json({
+    error: 'برای استفاده از این قابلیت باید رضایت ارسال محتوای گفتگو به هوش مصنوعی را بدهید.',
+    consentRequired: true,
+    consentText: aiFeat.CONSENT_TEXT,
+  });
+  return false;
+}
+/** دسترسی به اتاق — پیش از هر چیز دیگری در مسیرهای AI. */
+function aiRoomGuard(req, res, rid) {
+  const room = String(rid || '').slice(0, 120);
+  if (!room || !canAccess(room, req.user.username)) { res.status(403).json({ error: 'دسترسی' }); return null; }
+  return room;
+}
+
+/** خلاصهٔ امروزِ یک گفتگو یا کانال. */
+app.post('/api/ai/digest', auth, async (req, res) => {
+  if (!authRateOk('ai-digest:' + req.user.username, 10, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  const body = req.body || {};
+  // ۱) دسترسی  ۲) پیکربندی  ۳) رضایت  — این ترتیب عمدی است
+  const room = aiRoomGuard(req, res, body.roomId);
+  if (room === null) return;
+  if (!ai.isConfigured()) return res.status(503).json({ error: AI_NOT_CONFIGURED });
+  if (!aiConsentGate(req, res)) return;
+  const out = await aiFeat.digest({
+    username: req.user.username,
+    isAdmin: req.user.isAdmin,
+    roomId: room,
+    force: body.force === true,
+  });
+  if (!out.ok) return res.status(out.status).json({ error: out.error, resetsAt: out.resetsAt });
+  res.json({ ok: true, digest: out.digest, cached: !!out.cached, empty: !!out.empty, label: 'خلاصهٔ امروز' });
+});
+
+/** ترجمهٔ زندهٔ یک پیام (fa ↔ en)، با کش به‌ازای هر پیام. */
+app.post('/api/ai/translate', auth, async (req, res) => {
+  if (!authRateOk('ai-translate:' + req.user.username, 30, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  const body = req.body || {};
+  const room = aiRoomGuard(req, res, body.roomId);
+  if (room === null) return;
+  if (!ai.isConfigured()) return res.status(503).json({ error: AI_NOT_CONFIGURED });
+  if (!aiConsentGate(req, res)) return;
+  const out = await aiFeat.translate({
+    username: req.user.username,
+    isAdmin: req.user.isAdmin,
+    roomId: room,
+    msgId: body.msgId,
+    to: body.to,
+    force: body.force === true,
+  });
+  if (!out.ok) return res.status(out.status).json({ error: out.error, resetsAt: out.resetsAt });
+  res.json({ ok: true, text: out.text, lang: out.lang, cached: !!out.cached, label: aiFeat.TRANSLATION_LABEL });
+});
+
+/** تبدیل پیام صوتی به متن. */
+app.post('/api/ai/transcribe', auth, async (req, res) => {
+  if (!authRateOk('ai-transcribe:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  const body = req.body || {};
+  const room = aiRoomGuard(req, res, body.roomId);
+  if (room === null) return;
+  if (!ai.whisperAvailable()) return res.status(503).json({ error: 'تبدیل صدا به متن تنظیم نشده است.' });
+  if (!aiConsentGate(req, res)) return;
+  const out = await aiFeat.transcribe({
+    username: req.user.username,
+    isAdmin: req.user.isAdmin,
+    roomId: room,
+    msgId: body.msgId,
+    force: body.force === true,
+  });
+  if (!out.ok) return res.status(out.status).json({ error: out.error, resetsAt: out.resetsAt });
+  res.json({ ok: true, text: out.text, cached: !!out.cached, label: 'متن پیام صوتی' });
+});
+
+/* ---------- پیام‌های ذخیره‌شده (نشانک) — کاملاً خصوصیِ هر کاربر ---------- */
+app.get('/api/bookmarks', auth, (req, res) => {
+  const list = aiFeat.listBookmarks(req.user.username);
+  // فقط نشانک‌های خودِ کاربر؛ هیچ فیلد دیگری از پیام برگردانده نمی‌شود
+  res.json({
+    bookmarks: list.map((b) => ({ id: b.id, roomId: b.roomId, msgId: b.msgId, excerpt: b.excerpt, kind: b.kind, note: b.note, at: b.at })),
+    count: list.length,
+  });
+});
+
+app.post('/api/bookmarks', auth, (req, res) => {
+  const { roomId, msgId, note } = req.body || {};
+  const rid = String(roomId || '').slice(0, 120);
+  // دسترسی: فقط پیامی که کاربر اجازهٔ خواندنش را دارد قابل ذخیره است
+  if (!rid || !canAccess(rid, req.user.username)) return res.status(403).json({ error: 'دسترسی' });
+  const m = findMsg(rid, String(msgId || '').slice(0, 64));
+  if (!m) return res.status(404).json({ error: 'پیام یافت نشد' });
+  const out = aiFeat.addBookmark(req.user.username, rid, m.id, note);
+  if (!out.ok) return res.status(400).json({ error: out.error });
+  // excerpt فقط برای نمایش فهرست؛ متن کامل پیام ذخیره نمی‌شود
+  const saved = aiFeat.listBookmarks(req.user.username).find((b) => b.id === rid + '|' + m.id);
+  if (saved) saved.excerpt = aiFeat.excerptOf(m);
+  saveDB();
+  res.json({ ok: true, count: out.count, duplicate: !!out.duplicate, bookmark: saved ? { id: saved.id, excerpt: saved.excerpt, at: saved.at } : null });
+});
+
+app.delete('/api/bookmarks/:id', auth, (req, res) => {
+  const id = String(req.params.id || '');
+  const out = aiFeat.removeBookmark(req.user.username, id);
+  if (!out.ok) return res.status(out.status === 403 ? 403 : 404).json({ error: out.error || 'یافت نشد' });
+  res.json({ ok: true, count: out.count });
+});
+
+/** برچسب متنی روی نشانک، برای یادداشت شخصی. */
+app.post('/api/bookmarks/note', auth, (req, res) => {
+  const { id, note } = req.body || {};
+  const list = aiFeat.listBookmarks(req.user.username);
+  const b = list.find((x) => x.id === String(id || ''));
+  if (!b) return res.status(404).json({ error: 'یافت نشد' });
+  b.note = String(note || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  saveDB();
+  res.json({ ok: true, bookmark: { id: b.id, note: b.note } });
+});
+
+/* ---------- خلاصهٔ زمان‌بندی‌شده (ربات) ---------- */
+app.get('/api/ai/digest/schedules', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  res.json({ schedules: aiFeat.listSchedules() });
+});
+
+app.post('/api/ai/digest/schedules', auth, (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'فقط ادمین' });
+  const body = req.body || {};
+  const out = aiFeat.addSchedule({
+    channelId: body.channelId,
+    hour: body.hour,
+    minute: body.minute,
+    createdBy: req.user.username,
+    promptNote: body.note,
+  });
+  if (!out.ok) return res.status(out.status).json({ error: out.error });
+  res.json({ ok: true, schedule: out.schedule, updated: !!out.updated });
+});
+
+app.delete('/api/ai/digest/schedules/:id', auth, (req, res) => {
+  const out = aiFeat.removeSchedule(String(req.params.id || ''), req.user.username);
+  if (!out.ok) return res.status(out.status || 404).json({ error: out.error || 'یافت نشد' });
+  res.json({ ok: true });
 });
 
 // پردازش پیام‌های زمان‌بندی‌شده
@@ -3022,29 +3372,38 @@ function safeJson(s) {
 
 async function handleAiCommand(roomId, user, rawText) {
   try {
-    if (!process.env.GROQ_API_KEYS_STR) return;
+    if (!ai.isConfigured()) return;
     const m = rawText.match(/^@(?:ai|vortex_bot)\s*[:]?\s*([\s\S]+)$/i);
     if (!m) { sendBotToRoom(roomId, 'دستور نامشخص. مثلاً: @ai خلاصه / @ai ترجمه سلام / @ai بازنویسی متن'); return; }
     const cmd = m[1].trim();
     const hist = roomHistoryText(roomId, 40);
     notifyUser(user.username, { type: 'ai-thinking', roomId });
+    const who = { username: user.username, isAdmin: !!user.isAdmin };
     let out = null;
     if (/^(خلاصه|summary)/i.test(cmd)) {
-      out = await chatCompletion([{ role: 'system', content: 'You are VORTEXGRAM AI. Summarize the following chat in Persian in 3-5 short bullet points. Be concise, no preamble.' }, { role: 'user', content: 'Chat:\n' + hist }]);
-      out = out ? ('خلاصه گفتگو:\n' + out) : null;
+      const r = await aiComplete({ ...who, kind: 'text', system: 'You are VORTEXGRAM AI. Summarize the chat in Persian in 3-5 short bullet points. Be concise, no preamble.', data: hist, label: 'chat' });
+      if (!r.ok) { sendBotToRoom(roomId, r.error); return; }
+      out = 'خلاصه گفتگو:\n' + r.text;
     } else if (/^(ترجمه|translate)/i.test(cmd)) {
       const rest = cmd.replace(/^(ترجمه|translate)\s*[:]?/i, '').trim();
-      out = await chatCompletion([{ role: 'system', content: 'Translate the text. If Persian translate to English, else to Persian. Return only the translation.' }, { role: 'user', content: rest }]);
+      const r = await aiComplete({ ...who, kind: 'text', system: 'Translate the text. If Persian translate to English, else to Persian. Return only the translation.', data: rest, label: 'text' });
+      if (!r.ok) { sendBotToRoom(roomId, r.error); return; }
+      out = r.text;
     } else if (/^(بازنویسی|rewrite)/i.test(cmd)) {
       const rest = cmd.replace(/^(بازنویسی|rewrite)\s*[:]?/i, '').trim();
       let tone = 'natural'; if (/رسمی/.test(rest)) tone = 'formal'; else if (/طنز|خنده‌دار/.test(rest)) tone = 'funny'; else if (/دوستانه/.test(rest)) tone = 'friendly';
-      out = await chatCompletion([{ role: 'system', content: `Rewrite the text in Persian with a ${tone} tone. Return only the rewritten text.` }, { role: 'user', content: rest }]);
+      const r = await aiComplete({ ...who, kind: 'text', system: `Rewrite the text in Persian with a ${tone} tone. Return only the rewritten text.`, data: rest, label: 'text' });
+      if (!r.ok) { sendBotToRoom(roomId, r.error); return; }
+      out = r.text;
     } else if (/^(پاسخ|reply)/i.test(cmd)) {
-      out = await chatCompletion([{ role: 'system', content: 'Based on the recent chat, suggest 3 short reply options in Persian, one per line, no numbering, no labels.' }, { role: 'user', content: 'Chat:\n' + hist }]);
+      const r = await aiComplete({ ...who, kind: 'text', system: 'Suggest 3 short reply options in Persian, one per line, no numbering, no labels.', data: hist, label: 'chat' });
+      if (!r.ok) { sendBotToRoom(roomId, r.error); return; }
+      out = r.text;
     } else if (/^(چک‌لیست|checklist)/i.test(cmd)) {
       const rest = cmd.replace(/^(چک‌لیست|checklist)\s*[:]?/i, '').trim();
-      const j = await chatCompletion([{ role: 'system', content: 'Convert the request into JSON: {"title":"...","items":["...","..."]}. Return only valid JSON.' }, { role: 'user', content: rest }]);
-      const parsed = safeJson(j);
+      const r = await aiComplete({ ...who, kind: 'text', system: 'Convert the request into JSON: {"title":"...","items":["...","..."]}. Return only valid JSON.', data: rest, label: 'text' });
+      if (!r.ok) { sendBotToRoom(roomId, r.error); return; }
+      const parsed = safeJson(r.text);
       if (parsed && parsed.title && Array.isArray(parsed.items) && parsed.items.length) {
         const checklist = { title: String(parsed.title).slice(0, 200), items: parsed.items.slice(0, 30).map((x) => ({ text: String(x).slice(0, 120), done: false })) };
         sendBotToRoom(roomId, 'چک‌لیست پیشنهادی:');
@@ -3056,8 +3415,9 @@ async function handleAiCommand(roomId, user, rawText) {
       out = 'ساخت چک‌لیست ممکن نشد.';
     } else if (/^(نظرسنجی|poll)/i.test(cmd)) {
       const rest = cmd.replace(/^(نظرسنجی|poll)\s*[:]?/i, '').trim();
-      const j = await chatCompletion([{ role: 'system', content: 'Convert the request into JSON: {"question":"...","options":["...","..."]}. Return only valid JSON.' }, { role: 'user', content: rest }]);
-      const parsed = safeJson(j);
+      const r = await aiComplete({ ...who, kind: 'text', system: 'Convert the request into JSON: {"question":"...","options":["...","..."]}. Return only valid JSON.', data: rest, label: 'text' });
+      if (!r.ok) { sendBotToRoom(roomId, r.error); return; }
+      const parsed = safeJson(r.text);
       if (parsed && parsed.question && Array.isArray(parsed.options) && parsed.options.length >= 2) {
         const poll = { question: String(parsed.question).slice(0, 200), options: parsed.options.slice(0, 10).map((o) => String(o).slice(0, 80)), quiz: false, correct: null, votes: {} };
         sendBotToRoom(roomId, 'نظرسنجی پیشنهادی:');
@@ -3072,15 +3432,17 @@ async function handleAiCommand(roomId, user, rawText) {
       if (dt) { scheduleReminder(user.username, dt, cmd); out = 'یادآوری تنظیم شد برای ' + formatWhen(dt); }
       else out = 'زمان را متوجه نشدم. مثلاً: @ai یادآوری فردا ساعت ۱۷ جلسه';
     } else {
-      out = await chatCompletion([{ role: 'system', content: 'You are VORTEXGRAM AI assistant. Answer the request briefly in Persian, using the chat context if relevant.' }, { role: 'user', content: 'Recent chat:\n' + hist + '\n\nUser: ' + cmd }]);
+      const r = await aiComplete({ ...who, kind: 'text', system: 'You are VORTEXGRAM AI assistant. Answer the request briefly in Persian, using the chat context if relevant.', data: hist + '\n\nUser: ' + cmd, label: 'chat' });
+      if (!r.ok) { sendBotToRoom(roomId, r.error); return; }
+      out = r.text;
     }
     if (out) sendBotToRoom(roomId, out);
-  } catch (e) { console.error('ai cmd failed:', e.message); }
+  } catch (e) { console.error('ai cmd failed:', e && e.message); }
 }
 
 async function maybeAiReply(roomId, user, rawText) {
   try {
-    if (!process.env.GROQ_API_KEYS_STR) return;
+    if (!ai.isConfigured()) return;
     if (/^@(?:ai|vortex_bot)\s/i.test(rawText || '')) { handleAiCommand(roomId, user, rawText); return; }
     // ربات فقط در چت خصوصیِ خودش پاسخ می‌دهد — نه در گروه‌ها و کانال‌ها
     if (roomId !== 'dm:' + [user.username, BOT_USERNAME].sort().join('|')) return;
@@ -3101,15 +3463,27 @@ async function maybeAiReply(roomId, user, rawText) {
     const clean = text.replace(new RegExp(`@?${BOT_USERNAME}`, 'gi'), '').replace(/ربات/g, '').replace(/[:،]/g, '').trim() || text;
     storeHistory(roomId, user.displayName, text);
     const history = (aiState.history.get(roomId) || []).slice(0, -1);
-    const msgs = prompts.buildMessages(clean, history, user.username, isRude(text), !!user.isAdmin, aiState.aggression.get(roomId) ?? 1);
+    const system = prompts.promptFor({ isRude: isRude(text), isAdmin: !!user.isAdmin, aggression: aiState.aggression.get(roomId) ?? 1 });
 
-    notifyUser(user.username, { type: 'ai-thinking', roomId });
-    const reply = await chatCompletion(msgs);
+    // Privacy: this content only leaves the server because the user just typed
+    // into the bot's own DM — an explicit AI action. No background scraping.
+    const r = await aiComplete({
+      username: user.username,
+      isAdmin: !!user.isAdmin,
+      kind: 'text',
+      system,
+      data: 'recent chat:\n' + history.slice(-10).join('\n') + '\n\ncurrent message from @' + user.username + ':\n' + clean,
+      label: 'dm-chat',
+    });
     aiState.lastReply.set(roomId, Date.now());
-    if (!reply) return;
-    broadcast({ type: 'message', message: botMsg(roomId, reply) });
+    if (!r.ok) {
+      // 503/502 are silent (AI simply unavailable); refusals/quota are shown.
+      if (r.status === 403 || r.status === 429) broadcast({ type: 'message', message: botMsg(roomId, r.error) });
+      return;
+    }
+    broadcast({ type: 'message', message: botMsg(roomId, r.text) });
   } catch (e) {
-    console.error('AI reply failed:', e.message);
+    console.error('AI reply failed:', e && e.message);
   }
 }
 function botMsg(roomId, content) {
