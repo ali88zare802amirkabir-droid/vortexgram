@@ -872,3 +872,71 @@ body, #app, #chat-list-column, #conversation {
   .composer .send-btn, #composer-mic { transition: none; }
   .reac.tap { animation: none; }
 }
+
+/* ── Phase 5F — settings search, folders & help ───────────────────────────── */
+.set-search {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  padding: 0 12px; border-radius: var(--radius-xl);
+  border: 1px solid var(--border); background: var(--surface-container);
+  transition: border-color .16s var(--vx-ease);
+}
+.set-search:focus-within { border-color: var(--primary); }
+.set-search > .icon { width: 18px; height: 18px; color: var(--outline); flex: 0 0 auto; }
+.set-search input {
+  flex: 1; min-width: 0; border: none; background: transparent;
+  font: inherit; color: var(--on-surface); padding: 12px 0; outline: none;
+}
+.set-search input::-webkit-search-cancel-button { display: none; }
+.set-search-results { display: flex; flex-direction: column; gap: 8px; }
+.set-search-empty { padding: 22px 6px; text-align: center; font-size: 13px; color: var(--outline); }
+
+button.set-hit {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; box-sizing: border-box; text-align: start; font: inherit; color: inherit;
+  padding: 12px 14px; border-radius: var(--radius-lg);
+  border: 1px solid var(--border); background: var(--surface-container); cursor: pointer;
+  transition: border-color .16s var(--vx-ease), background-color .16s var(--vx-ease);
+}
+button.set-hit:hover { border-color: var(--primary); background: var(--primary-muted); }
+button.set-hit:focus-visible { outline: 2px solid rgba(var(--primary-rgb), .75); outline-offset: 2px; }
+
+button.set-action {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; box-sizing: border-box; font: inherit; font-weight: 700;
+  padding: 12px 14px; border-radius: var(--radius-lg);
+  border: 1px solid var(--border); background: var(--surface-container);
+  color: var(--on-surface); cursor: pointer;
+  transition: border-color .16s var(--vx-ease), background-color .16s var(--vx-ease);
+}
+button.set-action:hover { border-color: var(--primary); }
+button.set-action.primary { background: var(--primary); color: var(--on-primary); border-color: transparent; }
+button.set-action .icon { width: 17px; height: 17px; }
+.set-row-btns { margin-inline-start: auto; display: flex; gap: 6px; align-items: center; }
+.set-row-btns .icon { width: 17px; height: 17px; }
+
+a.settings-row.set-link {
+  text-decoration: none; color: var(--on-surface);
+  font-size: 13.5px; font-weight: 600;
+  transition: color .16s var(--vx-ease);
+}
+a.settings-row.set-link:hover { color: var(--primary); }
+a.settings-row.set-link .icon { width: 15px; height: 15px; margin-inline-start: auto; color: var(--outline); }
+
+.set-faq {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  margin-bottom: 8px; background: var(--surface-container); overflow: hidden;
+}
+.set-faq summary {
+  cursor: pointer; padding: 12px 14px; font-size: 13.5px; font-weight: 700;
+  list-style: none; display: flex; align-items: center; gap: 8px;
+}
+.set-faq summary::-webkit-details-marker { display: none; }
+.set-faq summary::after { content: '+'; margin-inline-start: auto; color: var(--outline); font-size: 16px; }
+.set-faq[open] summary::after { content: '\2212'; }
+.set-faq p { margin: 0; padding: 0 14px 12px; font-size: 12.5px; line-height: 1.9; color: var(--on-surface-variant); }
+
+@keyframes vxSetHitFlash { 0%, 100% { background-color: transparent; } 30% { background-color: var(--primary-muted); } }
+.set-hit-flash { animation: vxSetHitFlash 1.4s var(--vx-ease); border-radius: var(--radius-lg); }
+@media (prefers-reduced-motion: reduce) {
+  .set-hit-flash { animation: none; box-shadow: inset 0 0 0 2px var(--primary); }
+}

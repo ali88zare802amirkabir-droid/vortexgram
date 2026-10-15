@@ -1387,6 +1387,82 @@ async function main() {
     });
     await inter.screenshot({ path: path.join(OUT, 'interactions-settings5e.png') });
 
+    interactions.settings5f = await inter.evaluate(async () => {
+      const res = {};
+      try { switchNav('settings'); } catch (e) {}
+      state.settingsCat = 'main';
+      try { renderView('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 250));
+      const main = document.querySelector('.settings-main');
+      const cats = main ? Array.from(main.querySelectorAll('.set-cat')).map((c) => c.dataset.cat) : [];
+      res.hasSearch = !!(main && main.querySelector('#set-search'));
+      res.hasFolders = cats.indexOf('folders') >= 0;
+      res.hasHelp = cats.indexOf('help') >= 0;
+
+      // Persian query matches the language section
+      const input = main ? main.querySelector('#set-search') : null;
+      const type = async (q) => {
+        input.value = q;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 120));
+      };
+      const hits = () => Array.from(document.querySelectorAll('#set-search-results .set-hit'));
+      if (input) await type('زبان');
+      res.faHits = hits().length;
+      res.faFirstIsLanguage = hits().length > 0 && /زبان/.test(hits()[0].textContent);
+
+      // English synonym matches the same item
+      if (input) await type('theme');
+      res.enHits = hits().length;
+      res.enHasAppearance = hits().some((b) => /تم/.test(b.textContent));
+
+      // deep-link: search a privacy control, click it, land on privacy with the control present
+      if (input) await type('آخرین بازدید');
+      const ph = hits()[0];
+      res.privacyHit = !!ph;
+      if (ph) ph.click();
+      await new Promise((r) => setTimeout(r, 400));
+      res.landedPrivacy = state.settingsCat === 'privacy';
+      res.focusControl = !!document.getElementById('priv-lastseen');
+      res.flash = !!document.querySelector('.set-hit-flash');
+
+      // help section: real version + policy links
+      state.settingsCat = 'help'; try { renderView('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 120));
+      let verTxt = '';
+      for (let i = 0; i < 30; i++) { const v = document.getElementById('help-version'); verTxt = v ? v.textContent : ''; if (verTxt && verTxt !== '…') break; await new Promise((r) => setTimeout(r, 60)); }
+      res.helpVersion = verTxt;
+      res.helpVersionOk = /^v\d/.test(verTxt);
+      res.helpLinks = document.querySelectorAll('.settings-sub a.set-link[href^="/"]').length;
+      res.helpFaq = document.querySelectorAll('.settings-sub details.set-faq').length;
+
+      // folders section: list + create button opens the manager
+      state.settingsCat = 'folders'; try { renderView('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 200));
+      const newBtn = document.getElementById('fold-new');
+      res.foldersBtn = !!newBtn;
+      if (newBtn) newBtn.click();
+      await new Promise((r) => setTimeout(r, 250));
+      res.folderManagerOpen = !!document.querySelector('.u-pop-box.vx-folder-box');
+      try { const cancel = document.querySelector('.u-pop-box.vx-folder-box [data-k="0"]'); if (cancel) cancel.click(); } catch (e) {}
+      try { document.querySelectorAll('.u-pop').forEach((p) => p.remove()); } catch (e) {}
+
+      // leave the search UI visible for the screenshot
+      state.settingsCat = 'main'; try { renderView('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 150));
+      const inp2 = document.getElementById('set-search');
+      if (inp2) { inp2.value = 'حریم'; inp2.dispatchEvent(new Event('input', { bubbles: true })); }
+      await new Promise((r) => setTimeout(r, 150));
+
+      res.ok = res.hasSearch && res.hasFolders && res.hasHelp && res.faFirstIsLanguage &&
+        res.enHasAppearance && res.privacyHit && res.landedPrivacy && res.focusControl &&
+        res.helpVersionOk && res.helpLinks >= 2 && res.helpFaq >= 3 && res.foldersBtn && res.folderManagerOpen;
+      return res;
+    });
+    if (!interactions.settings5f.ok) failures.push('5F settings search/help/folders: ' + JSON.stringify(interactions.settings5f));
+
+    await inter.screenshot({ path: path.join(OUT, 'interactions-settings5f.png') });
+
     await inter.close();
 
     await browser.close();

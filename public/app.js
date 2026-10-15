@@ -998,6 +998,7 @@ function switchNav(id) {
   state.nav = id;
   /* leaving settings always re-opens it at the category list, never a stale sub-page */
   if (id !== 'settings') state.settingsCat = 'main';
+  if (id !== 'settings') state.settingsFocus = null;
   if (isMobile()) $('nav-sidebar').classList.remove('m-open');
   if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('conversation').classList.remove('chat-open'); } }
   else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) { $('conversation').classList.add('chat-open'); } }
@@ -6841,9 +6842,56 @@ const SETCATS = {
   privacy:       { title: 'حریم خصوصی',       icon: 'lock',        desc: 'آخرین بازدید، حضور، رمز عبور',       grp: 'پیام‌رسانی' },
   language:      { title: 'زبان و ترجمه',    icon: 'languages',   desc: 'زبان برنامه و دکمهٔ ترجمه',          grp: 'پیام‌رسانی' },
   storage:       { title: 'ذخیره‌سازی',       icon: 'hard-drive',  desc: 'حافظه رسانه‌ها و پاک‌سازی',           grp: 'پیام‌رسانی' },
+  folders:       { title: 'پوشه‌های گفتگو',   icon: 'layers',      desc: 'دسته‌بندی چت‌ها در پوشه‌ها',          grp: 'پیام‌رسانی' },
+  help:          { title: 'راهنما و درباره',   icon: 'compass',     desc: 'پرسش‌های متداول، نسخه، قوانین',       grp: 'بیشتر' },
   logout:        { title: 'خروج از حساب',     icon: 'log-out',     desc: 'خروج از این دستگاه',                 grp: 'نشست', action: 'logout' }
 };
-const SETGRP_ORDER = ['حساب', 'ظاهر', 'پیام‌رسانی', 'نشست'];
+const SETGRP_ORDER = ['حساب', 'ظاهر', 'پیام‌رسانی', 'بیشتر', 'نشست'];
+
+/* Phase 5F — settings search. Indexes section titles plus individual controls with
+   Persian + English synonyms so both languages find the same item. Each hit deep-links
+   into its category and (when `focus` is set) scrolls to and highlights the control. */
+const SET_SEARCH_INDEX = [
+  { cat: 'account', title: 'نام نمایشی و بیو', sub: 'حساب کاربری', kw: 'display name bio biography username at نام بیو پروفایل شناسه', focus: '#acc-bio' },
+  { cat: 'account', title: 'عکس پروفایل و پوشش', sub: 'حساب کاربری', kw: 'avatar photo cover profile عکس پروفایل تصویر', focus: '#acc-avatar' },
+  { cat: 'account', title: 'دستگاه‌های متصل و نشست‌ها', sub: 'حساب کاربری', kw: 'devices sessions active login logout دستگاه نشست ورود خروج متصل', focus: '#acc-devices' },
+  { cat: 'appearance', title: 'تم و حالت شب', sub: 'نمایش و تم', kw: 'theme dark light amoled night mode تم تاریک روشن شب حالت', focus: '[data-theme]' },
+  { cat: 'appearance', title: 'رنگ لهجه (Accent)', sub: 'نمایش و تم', kw: 'accent color palette رنگ لهجه تم اصلی', focus: '#app-accents' },
+  { cat: 'appearance', title: 'گردی گوشه حباب', sub: 'نمایش و تم', kw: 'bubble radius corner round گردی گوشه حباب', focus: '[data-bradius]' },
+  { cat: 'appearance', title: 'کیفیت شیشه (کاهش افکت)', sub: 'نمایش و تم', kw: 'glass performance reduce blur شیشه کیفیت عملکرد افکت', focus: '#app-reduceglass' },
+  { cat: 'background', title: 'پس‌زمینه گفتگو', sub: 'پس‌زمینه', kw: 'background wallpaper chat پس زمینه تصویر گفتگو', focus: '#bg-pick' },
+  { cat: 'skins', title: 'اسکین‌ها و پوسته‌ها', sub: 'ظاهر', kw: 'skins themes preset پوسته اسکین آماده', focus: '' },
+  { cat: 'notifications', title: 'اعلان‌ها و صدا', sub: 'پیام‌رسانی', kw: 'notification sound alert desktop اعلان صدا هشدار دسکتاپ', focus: '#notif-enabled' },
+  { cat: 'notifications', title: 'پیش‌نمایش پیام', sub: 'پیام‌رسانی', kw: 'preview message notifications پیش نمایش پیام', focus: '#notif-preview' },
+  { cat: 'chat', title: 'نمایش «در حال نوشتن»', sub: 'پیام‌رسانی', kw: 'typing indicator در حال نوشتن تایپ', focus: '#chat-typing' },
+  { cat: 'chat', title: 'ارسال با کلید Enter', sub: 'پیام‌رسانی', kw: 'enter send key ارسال اینتر کلید', focus: '#chat-enter' },
+  { cat: 'privacy', title: 'آخرین بازدید و آنلاین', sub: 'حریم خصوصی', kw: 'last seen online presence آخرین بازدید آنلاین حضور', focus: '#priv-lastseen' },
+  { cat: 'privacy', title: 'چه کسی عکس پروفایل را ببیند', sub: 'حریم خصوصی', kw: 'profile photo privacy عکس پروفایل حریم', focus: '#priv-photo' },
+  { cat: 'privacy', title: 'تیک خوانده‌شدن', sub: 'حریم خصوصی', kw: 'read receipts tick تیک خوانده شدن', focus: '#priv-read' },
+  { cat: 'privacy', title: 'رمز عبور', sub: 'حریم خصوصی', kw: 'password passcode pin رمز عبور پین قفل', focus: '#pw-new' },
+  { cat: 'language', title: 'زبان برنامه', sub: 'زبان و ترجمه', kw: 'language locale interface زبان برنامه رابط', focus: '#lang-code' },
+  { cat: 'language', title: 'دکمهٔ ترجمه پیام', sub: 'زبان و ترجمه', kw: 'translate translation دکمه ترجمه', focus: '#lang-translate' },
+  { cat: 'storage', title: 'دانلود خودکار رسانه', sub: 'ذخیره‌سازی', kw: 'auto download media data saver دانلود خودکار رسانه داده', focus: '#data-photos' },
+  { cat: 'storage', title: 'پاک‌سازی حافظه پنهان', sub: 'ذخیره‌سازی', kw: 'cache clear storage حافظه پنهان پاک پاکسازی', focus: '#st-clear' },
+  { cat: 'folders', title: 'پوشه‌های گفتگو', sub: 'پوشه‌ها', kw: 'folders organize chats پوشه دسته بندی سازماندهی', focus: '' },
+  { cat: 'help', title: 'راهنما، نسخه و قوانین', sub: 'بیشتر', kw: 'help faq version about support privacy terms راهنما نسخه درباره قوانین حریم پشتیبانی', focus: '#help-version' },
+  { cat: 'logout', title: 'خروج از حساب', sub: 'نشست', kw: 'logout sign out exit خروج حساب', action: 'logout' }
+];
+/* Same normalisation idea as emoji keys: strip joiners/marks, unify Arabic vs Persian
+   letters, map Eastern digits to ASCII, then lower-case. */
+function setNorm(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\u200c\u200d\u200e\u200f\ufe0f]/g, '')
+    .replace(/ي/g, 'ی').replace(/ك/g, 'ک')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .toLowerCase().trim();
+}
+function setSearch(query) {
+  const q = setNorm(query);
+  if (!q) return [];
+  return SET_SEARCH_INDEX.filter((e) => setNorm(e.title + ' ' + (e.sub || '') + ' ' + (e.kw || '')).indexOf(q) >= 0);
+}
 
 function setCatRow(k) {
   const v = SETCATS[k]; if (!v) return '';
@@ -6860,7 +6908,12 @@ function renderSettingsMain(wrap) {
   const me = state.me || {};
   const body = document.createElement('div');
   body.className = 'settings-main';
-  let h = '<button type="button" class="set-account" data-act="my-profile" aria-label="پروفایل من">'
+  let h = '<div class="set-search"><i data-lucide="search" class="icon" aria-hidden="true"></i>'
+    + '<input id="set-search" type="search" placeholder="جست‌وجو در تنظیمات…" aria-label="جست‌وجو در تنظیمات" autocomplete="off"></div>'
+    + '<div id="set-search-results" class="set-search-results" hidden></div>'
+    + '<div class="set-search-empty" id="set-search-empty" hidden>نتیجهٔ مطابق پیدا نشد</div>'
+    + '<div id="set-default">'
+    + '<button type="button" class="set-account" data-act="my-profile" aria-label="پروفایل من">'
     + '<span class="set-account-av" aria-hidden="true">' + avatarEl(me, 'md').outerHTML + '</span>'
     + '<span class="set-cat-txt"><b>' + esc(me.displayName || me.username || '') + '</b><small dir="ltr">@' + esc(me.username || '') + '</small></span>'
     + '<i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i></button>';
@@ -6869,6 +6922,7 @@ function renderSettingsMain(wrap) {
     if (!keys.length) return;
     h += '<div class="set-grp"><span>' + g + '</span></div><div class="set-rows">' + keys.map(setCatRow).join('') + '</div>';
   });
+  h += '</div>';
   body.innerHTML = h;
   wrap.appendChild(body);
   const mine = body.querySelector('[data-act="my-profile"]');
@@ -6880,6 +6934,38 @@ function renderSettingsMain(wrap) {
       renderView('settings');
     };
   });
+  /* Phase 5F — live filter. Hides the grouped list while a query is active and
+     shows matched controls; each hit deep-links into its section. */
+  const sInput = body.querySelector('#set-search');
+  const sResults = body.querySelector('#set-search-results');
+  const sEmpty = body.querySelector('#set-search-empty');
+  const sDefault = body.querySelector('#set-default');
+  const runSearch = () => {
+    const q = setNorm(sInput.value);
+    if (!q) { sResults.hidden = true; sEmpty.hidden = true; sDefault.hidden = false; sResults.innerHTML = ''; return; }
+    const hits = setSearch(sInput.value);
+    sDefault.hidden = true; sResults.hidden = false; sEmpty.hidden = hits.length > 0;
+    sResults.innerHTML = hits.map((e, i) => {
+      const meta = SETCATS[e.cat] || {};
+      return '<button type="button" class="set-hit" data-hit="' + i + '" aria-label="' + escAttr(e.title + '، ' + (e.sub || '')) + '">'
+        + '<span class="set-cat-ic" aria-hidden="true">' + ic(meta.icon || 'compass') + '</span>'
+        + '<span class="set-cat-txt"><b>' + esc(e.title) + '</b><small>' + esc(e.sub || '') + '</small></span>'
+        + '<i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i></button>';
+    }).join('');
+    sResults.querySelectorAll('.set-hit').forEach((b) => {
+      b.onclick = () => {
+        const e = hits[Number(b.dataset.hit)]; if (!e) return;
+        if (e.action === 'logout') { logout(); return; }
+        state.settingsCat = e.cat; state.settingsFocus = e.focus || null;
+        renderView('settings');
+      };
+    });
+    applyIcons(sResults);
+  };
+  if (sInput) {
+    sInput.addEventListener('input', runSearch);
+    sInput.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { sInput.value = ''; runSearch(); } });
+  }
   applyIcons(body);
 }
 function renderSettingsSub(cat, wrap) {
@@ -6893,11 +6979,84 @@ function renderSettingsSub(cat, wrap) {
   else if (cat === 'chat') renderChatSub(body);
   else if (cat === 'language') renderLangSub(body);
   else if (cat === 'storage') renderStorageSub(body);
+  else if (cat === 'folders') renderFoldersSub(body);
+  else if (cat === 'help') renderHelpSub(body);
   else if (cat === 'skins') renderSkinsSub(body);
   else if (cat === 'effects') renderEffectsSub(body);
   else if (cat === 'logout') logout();
   wrap.appendChild(body);
   applyIcons(body);
+  /* Phase 5F — if we arrived from a search hit, reveal + highlight the target control. */
+  const focusSel = state.settingsFocus; state.settingsFocus = null;
+  if (focusSel) {
+    requestAnimationFrame(() => {
+      const el = body.querySelector(focusSel);
+      if (!el) return;
+      try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { el.scrollIntoView(); }
+      const row = el.closest('.settings-row, .settings-sec, .chip-row') || el;
+      row.classList.add('set-hit-flash');
+      setTimeout(() => row.classList.remove('set-hit-flash'), 1600);
+      if (typeof el.focus === 'function' && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) { try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); } }
+    });
+  }
+}
+/* Phase 5F — folders: manage the user's own chat folders from Settings. Reuses
+   openFolderManager() so behaviour matches the folder bar (no duplicated logic). */
+function renderFoldersSub(body) {
+  const list = userFolders();
+  let t = '<div class="settings-sec"><h3>' + ic('layers') + ' پوشه‌های گفتگو</h3>'
+    + '<button type="button" class="set-action primary" id="fold-new">' + ic('plus') + ' ساخت پوشه جدید</button>';
+  if (!list.length) {
+    t += '<div class="placeholder" style="margin-top:10px;">هنوز پوشه‌ای نساخته‌ای. پوشه‌ها به تو کمک می‌کنند چت‌های کاری، خانوادگی و … را جدا نگه داری.</div>';
+  } else {
+    t += list.map((f) => '<div class="settings-row"><span>' + esc(f.name) + '</span><span class="set-row-btns">'
+      + '<button type="button" class="btn sm ghost" data-fold-edit="' + escAttr(f.id) + '" aria-label="ویرایش پوشه">' + ic('square-pen') + '</button>'
+      + '<button type="button" class="btn sm ghost danger" data-fold-del="' + escAttr(f.id) + '" aria-label="حذف پوشه">' + ic('trash-2') + '</button>'
+      + '</span></div>').join('');
+  }
+  t += '<p class="settings-hint">پوشه‌ها را از نوار بالای فهرست چت‌ها هم می‌توانی بسازی؛ نگه‌داشتن روی هر پوشه منوی ویرایش را باز می‌کند.</p></div>';
+  body.innerHTML = t;
+  const nb = body.querySelector('#fold-new'); if (nb) nb.onclick = () => openFolderManager(null);
+  body.querySelectorAll('[data-fold-edit]').forEach((b) => b.onclick = () => openFolderManager('f:' + b.dataset.foldEdit));
+  body.querySelectorAll('[data-fold-del]').forEach((b) => b.onclick = async () => {
+    if (!(await uConfirm('این پوشه حذف شود؟ چت‌ها پاک نمی‌شوند.'))) return;
+    saveUserFolders(userFolders().filter((f) => f.id !== b.dataset.foldDel));
+    renderFolderBar(); renderFoldersSub(body); toast('پوشه حذف شد');
+  });
+}
+/* Phase 5F — help/about: real version from /api/health, service status, FAQ, and
+   links to the on-disk policy pages. Nothing here is faked. */
+function renderHelpSub(body) {
+  const faq = [
+    ['پیام‌های من رمزنگاری شده‌اند؟', 'پیام‌ها روی سرور فقط برای اعضای همان گفتگو در دسترس‌اند و در انتقال با TLS محافظت می‌شوند. رمزنگاری سرتاسری (E2EE) در نقشهٔ راه است.'],
+    ['چطور حسابم را امن نگه دارم؟', 'یک رمز عبور قوی بگذار، رمز نشست را از «حریم خصوصی» فعال کن و در «حساب کاربری → دستگاه‌های متصل» نشست‌های ناشناس را ببند.'],
+    ['چطور چت‌ها را دسته‌بندی کنم؟', 'از «پوشه‌های گفتگو» در همین تنظیمات یک پوشه بساز؛ بعداً هر چت را به آن اضافه کن.'],
+    ['چطور از یک دستگاه دیگر خارج شوم؟', 'در «حساب کاربری → دستگاه‌های متصل» کنار هر نشست دکمهٔ خروج را بزن، یا همهٔ دستگاه‌های دیگر را یک‌جا خارج کن.'],
+    ['چطور یک تخلف را گزارش کنم؟', 'روی پیام یا کاربر نگه دار و گزینهٔ «گزارش» را بزن؛ گزارش برای بررسی به تیم ادمین می‌رسد.'],
+  ];
+  let t = '<div class="settings-sec"><h3>' + ic('compass') + ' راهنما و درباره</h3>'
+    + '<div class="settings-row"><span>نسخهٔ برنامه</span><b id="help-version" dir="ltr">…</b></div>'
+    + '<div class="settings-row"><span>وضعیت سرویس</span><b id="help-status">…</b></div>'
+    + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('shield') + ' قوانین و اسناد</h3>'
+    + '<a class="settings-row set-link" href="/privacy.html" target="_blank" rel="noopener">سیاست حریم خصوصی' + ic('external-link') + '</a>'
+    + '<a class="settings-row set-link" href="/terms.html" target="_blank" rel="noopener">شرایط استفاده' + ic('external-link') + '</a>'
+    + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('sparkles') + ' پرسش‌های متداول</h3>'
+    + faq.map((q) => '<details class="set-faq"><summary>' + esc(q[0]) + '</summary><p>' + esc(q[1]) + '</p></details>').join('')
+    + '<button type="button" class="set-action" id="help-ai">' + ic('sparkles') + ' پرسیدن از دستیار هوشمند</button>'
+    + '</div>';
+  body.innerHTML = t;
+  const ai = body.querySelector('#help-ai'); if (ai) ai.onclick = () => switchNav('ai');
+  fetch('/api/health', { cache: 'no-store' }).then((r) => r.json()).then((d) => {
+    const v = body.querySelector('#help-version');
+    if (v) v.textContent = 'v' + (d.version || '—') + (d.build ? ' (' + d.build + ')' : '');
+    const s = body.querySelector('#help-status');
+    if (s) s.textContent = d.status === 'ok' ? 'آنلاین' : 'نامشخص';
+  }).catch(() => {
+    const v = body.querySelector('#help-version'); if (v) v.textContent = '—';
+    const s = body.querySelector('#help-status'); if (s) s.textContent = 'آفلاین';
+  });
 }
 /* Phase 5A — a compact chip-row renderer for the appearance page. Every chip is
    a real <button> with aria-pressed, wired in JS (inline handlers never fire

@@ -109,6 +109,8 @@ function isOriginalAdmin(user) {
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const dbStore = require('./db');
+const APP_VERSION = require('./package.json').version;
+const APP_BUILD = String(process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7);
 const DEFAULT_DB = { users: [], renameRequests: [], messages: {}, groups: [], pinned: {}, scheduled: [], reports: [], messageDeletions: [], adminAudit: [], rateLimits: { authAttempts: {} } };
 let db = { ...DEFAULT_DB };
 function purgeExpiredMessageDeletions(now = Date.now()) {
@@ -1752,6 +1754,8 @@ app.get('/api/health', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({
     status: 'ok',
+    version: APP_VERSION,
+    build: APP_BUILD,
     mediaStorage: R2_ENABLED ? 'cloudflare-r2' : 'local-filesystem',
     durableMedia: R2_ENABLED,
     uploadsDir: UPLOAD_DIR,

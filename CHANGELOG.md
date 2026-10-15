@@ -4,6 +4,28 @@ All notable UI work on the "Liquid Glass" redesign. Phases ship as small,
 tested slices; each slice keeps the existing test suites green and adds
 screenshot + DOM-metric evidence under `docs/screenshots/phase4/<slice>/`.
 
+## Phase 5F — Settings search, chat folders & help/about
+
+- **Settings search** — a glass search field at the top of Settings. It filters
+  both section titles and individual controls using a Persian + English synonym
+  index (e.g. «زبان» and `language`, «آخرین بازدید» and `last seen`). Each hit
+  deep-links into its section and scrolls to + briefly highlights the target
+  control (respecting `prefers-reduced-motion`). Normalisation strips joiners
+  and unifies Arabic/Persian letters and digits.
+- **Chat folders section** — manage your own folders from Settings (create,
+  edit, delete), reusing the same `openFolderManager()` as the folder bar so
+  behaviour can't drift.
+- **Help / About section** — real app version + build fetched from
+  `/api/health`, live service status, an FAQ (`<details>`), links to the
+  on-disk `privacy.html` / `terms.html`, and a shortcut into the AI assistant.
+  Nothing here is faked.
+- **`/api/health`** now returns `version` (from `package.json`) and `build`
+  (git commit when the host provides one); covered by a new public-endpoint
+  test.
+- **Docs** — added `BACKLOG.md` listing everything the Telegram-parity spec
+  asks for that is deliberately not wired yet, so nothing is hidden or faked.
+- **Cache** — `app.js?v=189`, `shell.css?v=7`, service-worker `vortex-v202`.
+
 ## Phase 5C — Bubble shape, message grouping, composer morph
 
 - **Radius wiring fix** — chat bubbles now read `--vx-r-bubble` /

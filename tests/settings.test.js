@@ -246,3 +246,17 @@ test('settings: active sessions list + per-device revoke', async (t) => {
     assert.strictEqual(stillIn.status, 200, 'current session survives revoke-others');
   });
 });
+
+// Phase 5F — the Help/About screen needs a real version string. /api/health is
+// public (no token) and must report the package version, and must not leak any
+// secret-ish field beyond the whitelisted ones.
+test('health: reports app version + build, no auth required', async (t) => {
+  await withServer(t, async ({ base }) => {
+    const r = await api(base, 'GET', '/api/health', undefined);
+    assert.strictEqual(r.status, 200, 'health is public');
+    assert.strictEqual(r.d.status, 'ok');
+    assert.strictEqual(r.d.version, require('../package.json').version, 'version matches package.json');
+    assert.ok('build' in r.d, 'build field present (may be empty in dev)');
+    assert.ok(!('token' in r.d) && !('db' in r.d) && !('users' in r.d), 'no sensitive fields leaked');
+  });
+});
