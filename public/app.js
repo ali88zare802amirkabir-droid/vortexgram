@@ -686,9 +686,17 @@ if (AUTH_PHONE_OFF) {
 
 /* APPEARANCE */
 function applyAppearance() {
-  const th = localStorage.getItem('vx_theme') || 'cyber';
-  if (th === 'cyber' || !th) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', th);
-  document.documentElement.setAttribute('data-accent', localStorage.getItem('vx_accent') || 'blue');
+  const D = window.VXDesign;
+  if (D) {
+    /* VXDesign is the single writer for theme, accent (incl. custom accent
+       variables), aurora, bubble radius and the reduce-glass fallback. */
+    D.setTheme(localStorage.getItem('vx_theme') || 'cyber');
+    D.setAccent(localStorage.getItem('vx_accent') || 'blue', localStorage.getItem('vx_accent_custom') || '');
+  } else {
+    const th = localStorage.getItem('vx_theme') || 'cyber';
+    if (th === 'cyber' || !th) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', th);
+    document.documentElement.setAttribute('data-accent', localStorage.getItem('vx_accent') || 'blue');
+  }
   const fs = state.fontScale || 14;
   document.documentElement.style.fontSize = fs + 'px';
   applyBackground();
@@ -6675,7 +6683,7 @@ function renderCalendar(wrap) {
   h += '</div>';
   wrap.innerHTML = h; luc();
 }
-function applyBackground() { document.documentElement.style.setProperty('--chat-bg', localStorage.getItem('vx_bg') || ''); if (localStorage.getItem('vx_bgimg')) document.documentElement.style.setProperty('--chat-bg-img', "url('" + localStorage.getItem('vx_bgimg') + "')"); else document.documentElement.style.removeProperty('--chat-bg-img'); }
+function applyBackground() { document.documentElement.style.setProperty('--chat-bg', localStorage.getItem('vx_bg') || ''); if (localStorage.getItem('vx_bgimg')) document.documentElement.style.setProperty('--chat-bg-img', "url('" + localStorage.getItem('vx_bgimg') + "')"); else document.documentElement.style.removeProperty('--chat-bg-img'); if (window.VXDesign && window.VXDesign.syncWallpaper) window.VXDesign.syncWallpaper(); }
 function persistActiveSkin() {
   const th = localStorage.getItem('vx_theme') || 'cyber';
   const ac = localStorage.getItem('vx_accent') || 'blue';
@@ -6747,24 +6755,59 @@ function renderSettingsSub(cat, wrap) {
   else if (cat === 'effects') renderEffectsSub(body);
   else if (cat === 'logout') logout();
   wrap.appendChild(body);
+  applyIcons(body);
+}
+/* Phase 5A — a compact chip-row renderer for the appearance page. Every chip is
+   a real <button> with aria-pressed, wired in JS (inline handlers never fire
+   under our CSP). */
+function setChipRow(attr, list, active, labelFn) {
+  return '<div class="chip-row">' + list.map((x) => {
+    const on = x === active;
+    return '<button type="button" class="chip' + (on ? ' on' : '') + '" data-' + attr + '="' + escAttr(String(x)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(labelFn ? labelFn(x) : String(x)) + '</button>';
+  }).join('') + '</div>';
 }
 function renderAppSub(body) {
-  const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios'];
-  const accents = ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red', 'ios'];
-  let t = '<div class="settings-sec"><h3>' + ic('palette') + ' تم</h3><div class="chip-row">' + themes.map((x) => '<button class="chip" data-theme-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ اکسنت</h3><div class="chip-row">' + accents.map((x) => '<button class="chip" data-accent-btn="' + x + '">' + x + '</button>').join('') + '</div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('type') + ' اندازه فونت</h3><div class="stepper"><button id="set-font-dec">−</button><span id="fs-val">' + (state.fontScale) + '</span><button id="set-font-inc">+</button></div></div>';
+  const D = window.VXDesign;
+  const themes = D ? D.themes : ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'];
+  const accents = D ? D.accents : ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red', 'ios'];
+  const THEME_LABEL = { cyber: 'سایبر', midnight: 'نیمه‌شب', 'midnight-rose': 'رز شبانه', matrix: 'ماتریکس', synthwave: 'سینث‌ویو', sunset: 'غروب', forest: 'جنگل', light: 'روشن', ios: 'آی‌اواس', amoled: 'مشکی AMOLED' };
+  const ACCENT_LABEL = { blue: 'آبی', purple: 'بنفش', cyan: 'فیروزه‌ای', green: 'سبز', pink: 'صورتی', orange: 'نارنجی', red: 'قرمز', ios: 'آبی iOS', indigo: 'نیلی', teal: 'سبزآبی', amber: 'کهربایی', rose: 'گل‌بهی', violet: 'بنفش روشن', sky: 'آسمانی', lime: 'لیمویی' };
+  const RADIUS_LABEL = { sharp: 'تیز', compact: 'کم', round: 'گرد', pill: 'قرصی' };
+  const AUTO_LABEL = { off: 'خاموش', system: 'هماهنگ با سیستم', schedule: 'زمان‌بندی' };
+  const curTheme = localStorage.getItem('vx_theme') || 'cyber';
+  const curAccent = localStorage.getItem('vx_accent') || 'blue';
+  const curRadius = D ? D.bubbleRadius : 'round';
+  const curAurora = D ? D.aurora : true;
+  const curReduce = D ? D.reduceGlass : false;
+  const curAuto = D ? D.themeAuto : 'off';
+
+  let t = '<div class="settings-sec"><h3>' + ic('palette') + ' تم</h3>' + setChipRow('theme-btn', themes, curTheme, (x) => THEME_LABEL[x] || x) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ اکسنت</h3>' + setChipRow('accent-btn', accents, curAccent, (x) => ACCENT_LABEL[x] || x);
+  t += '<div class="set-custom-accent"><label for="set-accent-custom">رنگ سفارشی</label><input type="color" id="set-accent-custom" value="' + escAttr(localStorage.getItem('vx_accent_custom') || '#6ea8fe') + '" aria-label="انتخاب رنگ اکسنت سفارشی"></div></div>';
+  t += '<div class="settings-sec"><h3>' + ic('moon') + ' حالت شب خودکار</h3>' + setChipRow('themeauto', ['off', 'system', 'schedule'], curAuto, (x) => AUTO_LABEL[x] || x) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('sparkles') + ' پس‌زمینه متحرک</h3>' + setChipRow('aurora', ['on', 'off'], curAurora ? 'on' : 'off', (x) => (x === 'on' ? 'روشن' : 'خاموش')) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی حباب پیام</h3>' + setChipRow('radius', ['sharp', 'compact', 'round', 'pill'], curRadius, (x) => RADIUS_LABEL[x] || x) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('layers') + ' کیفیت شیشه</h3>' + setChipRow('glassmode', ['full', 'reduce'], curReduce ? 'reduce' : 'full', (x) => (x === 'full' ? 'کامل (بلور)' : 'سبک (بدون بلور)')) + '<p class="settings-hint">حالت سبک برای دستگاه‌های ضعیف: بدون بلور، با رنگ‌های نیمه‌شفاف.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('type') + ' اندازه فونت</h3><div class="stepper"><button type="button" id="set-font-dec" aria-label="کوچک‌تر">−</button><span id="fs-val" aria-live="polite">' + (state.fontScale) + '</span><button type="button" id="set-font-inc" aria-label="بزرگ‌تر">+</button></div></div>';
   const fonts = [['default', 'پیش‌فرض'], ['messenger', 'پیام‌رسان'], ['classic', 'کلاسیک'], ['modern', 'مدرن']];
   const curFont = localStorage.getItem('vx_font') || 'default';
-  t += '<div class="settings-sec"><h3>' + ic('type') + ' فونت</h3><div class="chip-row">' + fonts.map((f) => '<button class="chip' + (curFont === f[0] ? ' on' : '') + '" data-font="' + f[0] + '">' + f[1] + '</button>').join('') + '</div></div>';
-  t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '">';
+  t += '<div class="settings-sec"><h3>' + ic('type') + ' فونت</h3>' + setChipRow('font', fonts.map((f) => f[0]), curFont, (k) => (fonts.find((f) => f[0] === k) || [])[1]) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '" aria-label="گردی گوشه‌ها"></div>';
   body.innerHTML = t;
-  body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); persistActiveSkin(); });
-  body.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); persistActiveSkin(); });
+
+  body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); persistActiveSkin(); renderAppSub(body); });
+  body.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); persistActiveSkin(); renderAppSub(body); });
+  const cus = body.querySelector('#set-accent-custom');
+  if (cus) cus.oninput = (e) => { const D2 = window.VXDesign; if (D2) D2.setAccent('custom', e.target.value); persistActiveSkin(); body.querySelectorAll('[data-accent-btn]').forEach((x) => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false'); }); };
+  body.querySelectorAll('[data-themeauto]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setThemeAuto(b.dataset.themeauto); renderAppSub(body); });
+  body.querySelectorAll('[data-aurora]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setAurora(b.dataset.aurora === 'on'); renderAppSub(body); });
+  body.querySelectorAll('[data-radius]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setBubbleRadius(b.dataset.radius); renderAppSub(body); });
+  body.querySelectorAll('[data-glassmode]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setReduceGlass(b.dataset.glassmode === 'reduce'); renderAppSub(body); });
   body.querySelector('#set-font-dec').onclick = () => setFont(-1);
   body.querySelector('#set-font-inc').onclick = () => setFont(1);
   body.querySelector('#set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
-  body.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_font', b.dataset.font); applyAppearance(); renderSettingsSub('appearance', body.parentElement); });
+  body.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_font', b.dataset.font); applyAppearance(); renderAppSub(body); });
+  applyIcons(body);
 }
 function renderBgSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('palette') + ' رنگ پس‌زمینه</h3><input type="color" id="set-bg" value="' + (localStorage.getItem('vx_bg') || '#0a0a14') + '"></div>';

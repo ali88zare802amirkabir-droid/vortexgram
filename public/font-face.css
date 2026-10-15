@@ -1,0 +1,10 @@
+/* Self-hosted Vazirmatn — one variable file, weights 100–900, Latin + Arabic.
+   Shared by the app, the landing page and the legal pages so no external font
+   CDN is ever contacted (privacy + strict CSP + no third-party request). */
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('fonts/Vazirmatn-var.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

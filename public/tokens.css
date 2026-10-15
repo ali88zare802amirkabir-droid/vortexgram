@@ -1,0 +1,333 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VORTEX — Design Tokens  ·  Phase 5A  ·  "Liquid Glass"
+   Single source of truth for the design language. Loaded AFTER style.css so it
+   can extend the theme system, and BEFORE shell.css which consumes these vars.
+
+   Everything here is a CSS variable so themes, accents, power mode, the
+   user's bubble-radius choice and the reduce-glass fallback all swap values
+   without touching a single component rule.
+
+   Layers:
+     1. FONT         self-hosted Vazirmatn (no external CDN — CSP stays strict)
+     2. TYPE         scale
+     3. SPACE/RADIUS incl. user bubble radius
+     4. MOTION       durations + springs (instantly overridable by power/motion)
+     5. ELEVATION/Z  named stacking order
+     6. GLASS        recipe: blur, saturate, fill, stroke, inner highlight, noise
+     7. AURORA       animated mesh background (GPU-cheap, transform-only)
+     8. THEMES       AMOLED black
+     9. ACCENTS      extra presets (8 existing + 4 new) + custom
+    10. A11Y         reduce-glass, reduced-transparency, contrast scrim
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────── 1. FONT ─────────────────────────
+   The @font-face itself lives in font-face.css (shared with the landing and
+   legal pages). Here we only point the legacy token at it: one variable file
+   covers every weight the UI uses, and Vazirmatn already ships Latin glyphs,
+   so Inter is dropped and the system stack is the fallback. */
+:root {
+  /* Override the legacy token so every existing `var(--font)` usage benefits. */
+  --font: 'Vazirmatn', system-ui, -apple-system, 'Segoe UI', Tahoma, Roboto, sans-serif;
+  --vx-font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Consolas, monospace;
+
+  /* ───────────────────────── 2. TYPE SCALE ───────────────────────── */
+  --vx-fs-xs: 11px;
+  --vx-fs-sm: 12px;
+  --vx-fs-md: 13px;
+  --vx-fs-base: 14px;
+  --vx-fs-lg: 16px;
+  --vx-fs-xl: 19px;
+  --vx-fs-2xl: 23px;
+  --vx-fs-3xl: 29px;
+  --vx-lh-tight: 1.25;
+  --vx-lh-normal: 1.5;
+  --vx-fw-regular: 400;
+  --vx-fw-medium: 500;
+  --vx-fw-semibold: 600;
+  --vx-fw-bold: 700;
+  --vx-fw-black: 800;
+  --vx-tracking-tight: -.01em;
+
+  /* ───────────────────────── 3. SPACE / RADIUS ───────────────────────── */
+  --vx-space-1: 4px;
+  --vx-space-2: 8px;
+  --vx-space-3: 12px;
+  --vx-space-4: 16px;
+  --vx-space-5: 20px;
+  --vx-space-6: 24px;
+  --vx-space-8: 32px;
+
+  --vx-r-xs: 8px;
+  --vx-r-sm: 10px;
+  --vx-r-md: 14px;
+  --vx-r-lg: 18px;
+  --vx-r-xl: 22px;
+  --vx-r-2xl: 28px;
+  --vx-r-pill: 999px;
+
+  /* User-controlled bubble radius. Any component that draws a bubble reads
+     THIS, so the appearance slider only has to change one variable. */
+  --vx-r-bubble: var(--vx-r-lg);
+  --vx-r-bubble-tail: 6px;
+
+  /* ───────────────────────── 4. MOTION ─────────────────────────
+     Spring-y but short; the brief's 150–300 ms band. Never used for layout. */
+  --vx-dur-1: 120ms;
+  --vx-dur-2: 170ms;
+  --vx-dur-3: 220ms;
+  --vx-dur-4: 300ms;
+  --vx-ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --vx-ease-decelerate: cubic-bezier(.05, .7, .1, 1);
+  --vx-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --vx-spring-soft: cubic-bezier(.22, 1, .36, 1);
+
+  /* ───────────────────────── 5. ELEVATION / Z ───────────────────────── */
+  --vx-shadow-1: 0 1px 2px rgba(0, 0, 0, .22);
+  --vx-shadow-2: 0 4px 14px rgba(0, 0, 0, .26), 0 1px 3px rgba(0, 0, 0, .18);
+  --vx-shadow-3: 0 12px 36px rgba(0, 0, 0, .34), 0 2px 8px rgba(0, 0, 0, .20);
+  --vx-shadow-4: 0 24px 64px rgba(0, 0, 0, .44), 0 6px 18px rgba(0, 0, 0, .26);
+
+  --vx-z-sticky: 20;
+  --vx-z-nav: 900;
+  --vx-z-scrim: 950;
+  --vx-z-sheet: 1000;
+  --vx-z-menu: 1050;
+  --vx-z-modal: 1100;
+  --vx-z-toast: 1200;
+  --vx-z-palette: 1300;
+  --vx-z-fx: 1600; /* emoji effect layer — must stay on top */
+
+  /* ───────────────────────── 6. GLASS RECIPE ─────────────────────────
+     A translucent panel = blur + saturate + fill + 1px stroke + inner
+     top-edge highlight. `--vx-glass-blur` is the single switch power-saving
+     and reduce-glass flip to 0. */
+  --vx-glass-blur: 28px;
+  --vx-glass-sat: 160%;
+  --vx-glass-fill: rgba(16, 32, 52, .44);
+  --vx-glass-fill-strong: rgba(16, 32, 52, .62);
+  --vx-glass-fill-soft: rgba(16, 32, 52, .26);
+  --vx-glass-stroke: rgba(255, 255, 255, .16);
+  --vx-glass-stroke-strong: rgba(255, 255, 255, .22);
+  --vx-glass-inner: inset 0 1px 0 rgba(255, 255, 255, .20);
+  --vx-glass-filter: blur(var(--vx-glass-blur)) saturate(var(--vx-glass-sat));
+
+  /* Grain. An inline SVG so there is no extra request; imag src allows data:. */
+  --vx-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --vx-noise-opacity: .035;
+
+  /* ───────────────────────── 7. AURORA ─────────────────────────
+     Three slow colour blobs behind the glass. Animated with transform only
+     (compositor-friendly); frozen by reduced-motion / saver. */
+  --vx-aurora-a: rgba(var(--primary-rgb), .30);
+  --vx-aurora-b: rgba(139, 92, 246, .22);
+  --vx-aurora-c: rgba(34, 211, 238, .18);
+  --vx-aurora-dur: 46s;
+
+  /* ───────────────────────── 10. A11Y ───────────────────────── */
+  --vx-focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary);
+  --vx-scrim-opacity: .18; /* wallpaper dimming so text clears 4.5:1 */
+}
+
+/* ───────────────────────── 8. THEME: AMOLED ─────────────────────────
+   True black so OLED pixels switch off, maximum contrast, minimal glow.
+   Uses pure #000 surfaces and dark translucent glass. */
+[data-theme="amoled"] {
+  --surface: #000000; --surface-dim: #000000; --surface-bright: #181818;
+  --surface-container-lowest: #000000; --surface-container-low: #050505;
+  --surface-container: #0a0a0a; --surface-container-high: #121212;
+  --surface-container-highest: #1a1a1a;
+  --on-surface: #f2f2f2; --on-surface-variant: #b8b8b8;
+  --inverse-surface: #f2f2f2; --inverse-on-surface: #0a0a0a;
+  --outline: #8a8a8a; --outline-variant: #333333;
+  --border: rgba(255, 255, 255, .10); --border-hover: rgba(255, 255, 255, .22);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, .8);
+  --shadow: 0 4px 12px rgba(0, 0, 0, .8);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, .9);
+  --glass-bg: rgba(0, 0, 0, .55); --glass-border: rgba(255, 255, 255, .14);
+  --glass-bg-in: rgba(0, 0, 0, .62); --glass-border-in: rgba(255, 255, 255, .12);
+  --glass-shine: linear-gradient(145deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, .02) 35%, transparent 55%);
+  --vx-glass-fill: rgba(0, 0, 0, .55);
+  --vx-glass-fill-strong: rgba(0, 0, 0, .72);
+  --vx-glass-fill-soft: rgba(0, 0, 0, .34);
+  --vx-glass-inner: inset 0 1px 0 rgba(255, 255, 255, .12);
+  --vx-aurora-a: rgba(var(--primary-rgb), .16);
+  --vx-aurora-b: rgba(139, 92, 246, .10);
+  --vx-aurora-c: rgba(34, 211, 238, .08);
+  --msg-out: var(--primary); --msg-in: #0d0d0d;
+  --chat-bg: #000000; --sb: rgba(255, 255, 255, .10);
+  --chat-gradient: radial-gradient(ellipse at 30% 70%, rgba(var(--primary-rgb), .10) 0%, transparent 55%),
+                   radial-gradient(ellipse at 70% 25%, rgba(139, 92, 246, .07) 0%, transparent 55%),
+                   linear-gradient(160deg, #000000 0%, #050505 50%, #000000 100%);
+  --vx-scrim-opacity: .30;
+}
+
+/* ───────────────────────── 9. ACCENTS ─────────────────────────
+   Four additional presets so the picker ships 12 named accents. Each mirrors
+   the shape of the existing style.css blocks (primary + derived + gradient). */
+[data-accent="indigo"] { --primary:#6366f1;--primary-rgb:99,102,241;--primary-container:rgba(99,102,241,.15);--primary-muted:rgba(99,102,241,.08);--accent:#6366f1;--accent-glow:rgba(99,102,241,.20);--glow:rgba(99,102,241,.35);--gradient-start:#4f46e5;--gradient-end:#818cf8;--msg-out:#6366f1; }
+[data-accent="teal"]   { --primary:#14b8a6;--primary-rgb:20,184,166;--primary-container:rgba(20,184,166,.15);--primary-muted:rgba(20,184,166,.08);--accent:#14b8a6;--accent-glow:rgba(20,184,166,.20);--glow:rgba(20,184,166,.35);--gradient-start:#0d9488;--gradient-end:#2dd4bf;--msg-out:#14b8a6; }
+[data-accent="amber"]  { --primary:#f59e0b;--primary-rgb:245,158,11;--primary-container:rgba(245,158,11,.15);--primary-muted:rgba(245,158,11,.08);--accent:#f59e0b;--accent-glow:rgba(245,158,11,.20);--glow:rgba(245,158,11,.35);--gradient-start:#d97706;--gradient-end:#fbbf24;--msg-out:#f59e0b; }
+[data-accent="rose"]   { --primary:#f43f5e;--primary-rgb:244,63,94;--primary-container:rgba(244,63,94,.15);--primary-muted:rgba(244,63,94,.08);--accent:#f43f5e;--accent-glow:rgba(244,63,94,.20);--glow:rgba(244,63,94,.35);--gradient-start:#e11d48;--gradient-end:#fb7185;--msg-out:#f43f5e; }
+[data-accent="violet"] { --primary:#a855f7;--primary-rgb:168,85,247;--primary-container:rgba(168,85,247,.15);--primary-muted:rgba(168,85,247,.08);--accent:#a855f7;--accent-glow:rgba(168,85,247,.20);--glow:rgba(168,85,247,.35);--gradient-start:#9333ea;--gradient-end:#c084fc;--msg-out:#a855f7; }
+[data-accent="sky"]    { --primary:#0ea5e9;--primary-rgb:14,165,233;--primary-container:rgba(14,165,233,.15);--primary-muted:rgba(14,165,233,.08);--accent:#0ea5e9;--accent-glow:rgba(14,165,233,.20);--glow:rgba(14,165,233,.35);--gradient-start:#0284c7;--gradient-end:#38bdf8;--msg-out:#0ea5e9; }
+[data-accent="lime"]   { --primary:#84cc16;--primary-rgb:132,204,22;--primary-container:rgba(132,204,22,.15);--primary-muted:rgba(132,204,22,.08);--accent:#84cc16;--accent-glow:rgba(132,204,22,.20);--glow:rgba(132,204,22,.35);--gradient-start:#65a30d;--gradient-end:#a3e635;--msg-out:#84cc16; }
+
+/* Custom accent: JS writes --primary / --primary-rgb / --on-primary inline.
+   This block only supplies the derived values so the rest of the UI follows. */
+[data-accent="custom"] {
+  --primary-container: rgba(var(--primary-rgb), .16);
+  --primary-muted: rgba(var(--primary-rgb), .10);
+  --accent: var(--primary);
+  --accent-glow: rgba(var(--primary-rgb), .22);
+  --glow: rgba(var(--primary-rgb), .36);
+  --gradient-start: var(--primary);
+  --gradient-end: var(--primary);
+  --msg-out: var(--primary);
+  --vx-aurora-a: rgba(var(--primary-rgb), .30);
+}
+
+/* Bubble radius — one attribute, four looks, applied through appearance. */
+[data-bubble-radius="sharp"]   { --vx-r-bubble: 4px;  --vx-r-bubble-tail: 2px; }
+[data-bubble-radius="compact"] { --vx-r-bubble: 12px; --vx-r-bubble-tail: 5px; }
+[data-bubble-radius="round"]   { --vx-r-bubble: 22px; --vx-r-bubble-tail: 8px; }
+[data-bubble-radius="pill"]    { --vx-r-bubble: 26px; --vx-r-bubble-tail: 12px; }
+
+/* ───────────────────────── AURORA LAYER ─────────────────────────
+   A fixed, non-interactive backdrop. Transform-only animation keeps it on the
+   compositor; there is no layout or paint churn. */
+#vx-aurora {
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+  background: var(--chat-bg, var(--surface));
+}
+#vx-aurora i {
+  position: absolute;
+  display: block;
+  width: 60vmax; height: 60vmax;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: .85;
+  will-change: transform;
+}
+#vx-aurora i:nth-child(1) { background: radial-gradient(circle, var(--vx-aurora-a), transparent 68%); top: -18%; left: -12%; animation: vx-aurora-1 var(--vx-aurora-dur) ease-in-out infinite alternate; }
+#vx-aurora i:nth-child(2) { background: radial-gradient(circle, var(--vx-aurora-b), transparent 68%); top: 8%; right: -22%; animation: vx-aurora-2 calc(var(--vx-aurora-dur) * 1.3) ease-in-out infinite alternate; }
+#vx-aurora i:nth-child(3) { background: radial-gradient(circle, var(--vx-aurora-c), transparent 68%); bottom: -26%; left: 18%; animation: vx-aurora-3 calc(var(--vx-aurora-dur) * 1.15) ease-in-out infinite alternate; }
+
+@keyframes vx-aurora-1 { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(14%, 10%, 0) scale(1.18); } }
+@keyframes vx-aurora-2 { from { transform: translate3d(0, 0, 0) scale(1.1); } to { transform: translate3d(-12%, 14%, 0) scale(1); } }
+@keyframes vx-aurora-3 { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(10%, -12%, 0) scale(1.2); } }
+
+/* Off switch: a wallpaper that covers the aurora, or a user preference. */
+[data-aurora="off"] #vx-aurora i { display: none; }
+[data-motion="reduced"] #vx-aurora i,
+[data-power="saver"] #vx-aurora i { animation: none !important; }
+[data-power="saver"] #vx-aurora i { filter: blur(48px); }
+
+/* ───────────────────────── 10. ACCESSIBILITY FALLBACKS ─────────────────────────
+   `.reduce-glass` is the documented Android-WebView fallback: the same
+   composition, but with solid translucent fills instead of a blur pass. It is
+   additive with data-glass="off" / data-power="saver". */
+.reduce-glass,
+[data-reduce-glass="on"] {
+  --vx-glass-blur: 0px;
+  --vx-glass-fill: var(--surface-container-high);
+  --vx-glass-fill-strong: var(--surface-container-highest);
+  --vx-glass-fill-soft: var(--surface-container);
+  --vx-glass-stroke: var(--border);
+  --vx-glass-inner: none;
+  --vx-noise-opacity: 0;
+}
+.reduce-glass .vx-glass,
+.reduce-glass .vx-glass-light,
+[data-reduce-glass="on"] .vx-glass,
+[data-reduce-glass="on"] .vx-glass-light {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.reduce-glass .vx-glass-shine::before,
+[data-reduce-glass="on"] .vx-glass-shine::before { display: none; }
+
+/* The OS-level transparency preference is honoured automatically. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --vx-glass-blur: 0px;
+    --vx-glass-fill: var(--surface-container-high);
+    --vx-glass-fill-strong: var(--surface-container-highest);
+    --vx-glass-fill-soft: var(--surface-container);
+    --vx-glass-stroke: var(--border);
+    --vx-glass-inner: none;
+    --vx-noise-opacity: 0;
+  }
+  .vx-glass, .vx-glass-light { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .vx-glass-shine::before { display: none; }
+  #vx-aurora i { animation: none !important; opacity: .4; }
+}
+
+/* Noise + specular highlight helpers for glass surfaces. */
+.vx-noise::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background-image: var(--vx-noise);
+  background-size: 140px 140px;
+  opacity: var(--vx-noise-opacity);
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+[data-reduce-glass="on"] .vx-noise::after,
+[data-glass="off"] .vx-noise::after { display: none; }
+
+/* Contrast scrim — dims busy wallpapers so text stays >= 4.5:1. */
+.vx-scrimmed { position: relative; }
+.vx-scrimmed::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, var(--vx-scrim-opacity));
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Keyboard focus ring — one definition, visible on any wallpaper. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--vx-r-xs);
+}
+
+/* ───────────────────────── SHELL TRANSLUCENCY (glass mode) ─────────────────────────
+   The aurora only reads if the shell stops painting opaque walls over it. When
+   glass is ON and no wallpaper is set, the three shell surfaces become
+   translucent. Every one of these rules is reverted by reduce-glass,
+   data-glass="off" and data-power="saver" (all of which zero --vx-glass-blur),
+   so the opaque rendering is always one switch away. */
+[data-glass="on"]:not(.reduce-glass)[data-wallpaper="none"] body,
+[data-glass="on"]:not(.reduce-glass)[data-wallpaper="none"] #app { background: transparent; }
+
+[data-glass="on"]:not(.reduce-glass)[data-wallpaper="none"] #auth-screen { background: transparent; }
+
+[data-glass="on"]:not(.reduce-glass) #chat-list-column {
+  background: var(--vx-glass-fill-soft);
+  -webkit-backdrop-filter: var(--vx-glass-filter);
+  backdrop-filter: var(--vx-glass-filter);
+  border-inline-end-color: var(--vx-glass-stroke);
+}
+[data-glass="on"]:not(.reduce-glass)[data-wallpaper="none"] #conversation {
+  background-color: transparent;
+  background-image: linear-gradient(180deg, rgba(0, 0, 0, calc(var(--vx-scrim-opacity) * .5)), rgba(0, 0, 0, var(--vx-scrim-opacity))),
+                    radial-gradient(ellipse at 18% 42%, rgba(var(--primary-rgb), .10) 0%, transparent 55%),
+                    radial-gradient(ellipse at 82% 18%, rgba(139, 92, 246, .07) 0%, transparent 55%);
+}
+/* A wallpaper is a direct composition: keep the aurora, drop the gradient. */
+[data-wallpaper="set"] #vx-aurora i { display: none; }
+
+/* composer / headers float as glass when glass mode is on. */
+[data-glass="on"]:not(.reduce-glass) .cl-head,
+[data-glass="on"]:not(.reduce-glass) .composer {
+  background: var(--vx-glass-fill-soft);
+  -webkit-backdrop-filter: var(--vx-glass-filter);
+  backdrop-filter: var(--vx-glass-filter);
+}

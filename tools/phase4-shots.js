@@ -38,8 +38,9 @@ const VIEWPORTS = [
   { w: 360, h: 640 },
   { w: 1440, h: 900 },
 ];
-const THEMES = ['dark', 'light'];   // dark = app default (no data-theme)
+const THEMES = ['dark', 'light', 'amoled'];   // dark = app default (no data-theme)
 const MODES = ['glass', 'saver'];   // glass = blur on, saver = power saving on
+const THEME_LS = { dark: 'cyber', light: 'light', amoled: 'amoled', cyber: 'cyber' };
 
 const TMP = path.join(os.tmpdir(), 'vx-p4-' + Date.now());
 fs.mkdirSync(TMP, { recursive: true });
@@ -261,6 +262,33 @@ async function probe(page) {
     });
     out.a11yUnnamedControls = missing.slice(0, 20);
 
+    // — slice 5A: design tokens, self-hosted font, aurora, glass fallback —
+    const aur = document.getElementById('vx-aurora');
+    const blob0 = aur ? aur.querySelector('i') : null;
+    out.tokens = {
+      tokensSheet: !!Array.prototype.find.call(document.styleSheets, (s) => (s.href || '').indexOf('tokens.css') >= 0),
+      fontFaceSheet: !!Array.prototype.find.call(document.styleSheets, (s) => (s.href || '').indexOf('font-face.css') >= 0),
+      fontReady: (() => { try { return document.fonts && document.fonts.check('16px Vazirmatn'); } catch (e) { return null; } })(),
+      bodyFont: getComputedStyle(document.body).fontFamily,
+      radiusVar: cs.getPropertyValue('--vx-r-bubble').trim(),
+      glassBlurVar: cs.getPropertyValue('--vx-glass-blur').trim(),
+      glassSatVar: cs.getPropertyValue('--vx-glass-sat').trim(),
+      accentVar: de.getAttribute('data-accent'),
+      bubbleRadiusVar: de.getAttribute('data-bubble-radius'),
+      themeVar: de.getAttribute('data-theme') || 'cyber',
+      wallpaperVar: de.getAttribute('data-wallpaper'),
+      reduceGlassClass: de.classList.contains('reduce-glass'),
+      primaryRgb: cs.getPropertyValue('--primary-rgb').trim(),
+      aurora: {
+        present: !!aur,
+        blobs: aur ? aur.querySelectorAll('i').length : 0,
+        position: aur ? getComputedStyle(aur).position : null,
+        pointerEvents: aur ? getComputedStyle(aur).pointerEvents : null,
+        ariaHidden: aur ? aur.getAttribute('aria-hidden') : null,
+        animationName: blob0 ? getComputedStyle(blob0).animationName : null,
+      },
+    };
+
     return out;
   });
 }
@@ -325,6 +353,22 @@ function evaluate(m) {
   if (m.inlineHandlers) f.push('CSP-dead inline handlers present: ' + m.inlineHandlers);
   if (m.appView) f.push('app-view stuck while the chat list is shown');
   if (m.nestedViewBody) f.push('nested .view-body (double padding): ' + m.nestedViewBody);
+  // — slice 5A: tokens / self-hosted font / aurora baseline (applies to every slice) —
+  if (m.tokens) {
+    if (!m.tokens.tokensSheet) f.push('tokens.css not loaded');
+    if (!m.tokens.fontFaceSheet) f.push('font-face.css not loaded');
+    if (!m.tokens.bodyFont || m.tokens.bodyFont.toLowerCase().indexOf('vazirmatn') < 0) f.push('body font not Vazirmatn: ' + m.tokens.bodyFont);
+    if (!m.tokens.radiusVar) f.push('--vx-r-bubble token missing');
+    if (!m.tokens.glassBlurVar) f.push('--vx-glass-blur token missing');
+    if (!m.tokens.aurora.present) f.push('aurora layer missing');
+    else {
+      if (m.tokens.aurora.blobs !== 3) f.push('aurora blob count != 3');
+      if (m.tokens.aurora.position !== 'fixed') f.push('aurora not fixed');
+      if (m.tokens.aurora.pointerEvents !== 'none') f.push('aurora captures pointer events');
+      if (m.tokens.aurora.ariaHidden !== 'true') f.push('aurora not aria-hidden');
+    }
+    if (m.tokens.wallpaperVar && ['set', 'none'].indexOf(m.tokens.wallpaperVar) < 0) f.push('unknown data-wallpaper: ' + m.tokens.wallpaperVar);
+  }
   return f;
 }
 
@@ -409,13 +453,13 @@ async function main() {
       for (const theme of THEMES) {
         for (const mode of MODES) {
           const name = vp.w + 'x' + vp.h + '-' + theme + '-' + mode;
-          await page.evaluate((th, md) => {
+          await page.evaluate((lsTheme, md) => {
             try {
-              localStorage.setItem('vx_theme', th === 'light' ? 'light' : 'cyber');
+              localStorage.setItem('vx_theme', lsTheme);
               localStorage.setItem('vx_glass', md === 'glass' ? '1' : '0');
               localStorage.setItem('vx_power', md === 'saver' ? 'saver' : 'auto');
             } catch (e) {}
-          }, theme, mode);
+          }, THEME_LS[theme] || 'cyber', mode);
           await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
           await page.waitForFunction(() => {
             const app = document.getElementById('app');
@@ -969,6 +1013,103 @@ async function main() {
       await new Promise((r) => setTimeout(r, 350));
     });
     await inter.screenshot({ path: path.join(OUT, 'interactions-search.png') });
+
+    /* ── slice 5A: live theme / accent / radius / glass-fallback / font ──
+       Proves the token system reacts live (not just at boot): AMOLED black,
+       a custom accent hex, bubble-radius variants, the reduced-glass fallback,
+       aurora visibility and that the self-hosted Vazirmatn actually loaded. */
+    interactions.tokens = await inter.evaluate(async () => {
+      const de = document.documentElement;
+      const cs = () => getComputedStyle(de);
+      const res = {};
+      res.apiPresent = !!(window.VXDesign && window.VXDesign.setTheme);
+      if (!res.apiPresent) return { ok: false, reason: 'VXDesign API missing' };
+
+      try { switchNav('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 500));
+
+      // self-hosted font actually parsed + used
+      try { await document.fonts.ready; } catch (e) {}
+      try { res.fontLoaded = document.fonts.check('16px Vazirmatn'); } catch (e) { res.fontLoaded = null; }
+
+      // AMOLED
+      VXDesign.setTheme('amoled');
+      VXDesign.setGlass(true);
+      VXDesign.setAurora(true);
+      await new Promise((r) => setTimeout(r, 350));
+      res.amoledTheme = de.getAttribute('data-theme') === 'amoled';
+      res.amoledSurface = cs().getPropertyValue('--surface').trim().replace(/^#/, '');
+
+      // custom accent
+      VXDesign.setAccent('custom', 'ff7a00');
+      await new Promise((r) => setTimeout(r, 200));
+      res.customAccentAttr = de.getAttribute('data-accent');
+      res.customAccentRgb = cs().getPropertyValue('--primary-rgb').trim();
+      res.customAccentPrimary = cs().getPropertyValue('--primary').trim();
+
+      // bubble radius
+      const radii = {};
+      for (const r of ['sharp', 'compact', 'round', 'pill']) {
+        VXDesign.setBubbleRadius(r);
+        await new Promise((x) => setTimeout(x, 60));
+        radii[r] = { attr: de.getAttribute('data-bubble-radius'), v: cs().getPropertyValue('--vx-r-bubble').trim() };
+      }
+      res.radii = radii;
+      VXDesign.setBubbleRadius('round');
+
+      // reduced-glass fallback must zero the blur
+      VXDesign.setReduceGlass(true);
+      await new Promise((r) => setTimeout(r, 120));
+      res.reduceClass = de.classList.contains('reduce-glass');
+      res.reduceAttr = de.getAttribute('data-reduce-glass');
+      res.reduceBlur = cs().getPropertyValue('--vx-glass-blur').trim();
+      VXDesign.setReduceGlass(false);
+      await new Promise((r) => setTimeout(r, 120));
+      res.reduceBlurRestored = cs().getPropertyValue('--vx-glass-blur').trim();
+
+      // aurora visibility toggle
+      VXDesign.setAurora(false);
+      await new Promise((r) => setTimeout(r, 80));
+      const blob = document.querySelector('#vx-aurora i');
+      res.auroraOffName = de.getAttribute('data-aurora');
+      res.auroraBlobDisplayOff = blob ? getComputedStyle(blob).display : null;
+      VXDesign.setAurora(true);
+      await new Promise((r) => setTimeout(r, 80));
+      res.auroraOnName = de.getAttribute('data-aurora');
+
+      res.ok = res.amoledTheme && res.amoledSurface === '000000' &&
+        res.customAccentAttr === 'custom' && res.customAccentRgb === '255,122,0' &&
+        radii.sharp.v === '4px' && radii.compact.v === '12px' && radii.round.v === '22px' && radii.pill.v === '26px' &&
+        res.reduceClass === true && res.reduceAttr === 'on' && res.reduceBlur === '0px' &&
+        res.auroraOffName === 'off' && res.auroraBlobDisplayOff === 'none' && res.auroraOnName === 'on' &&
+        res.fontLoaded !== false;
+      return res;
+    });
+    if (!interactions.tokens.ok) failures.push('5A token system: ' + JSON.stringify(interactions.tokens));
+
+    // AMOLED + custom accent, glass on, aurora on → the 5A hero shot
+    await inter.evaluate(async () => {
+      VXDesign.setTheme('amoled'); VXDesign.setGlass(true); VXDesign.setAurora(true); VXDesign.setAccent('custom', 'ff7a00');
+      VXDesign.setBubbleRadius('round'); VXDesign.setReduceGlass(false);
+      try { switchNav('chats'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    await inter.screenshot({ path: path.join(OUT, 'interactions-amoled.png') });
+
+    // AMOLED light-on-black with the reduced-glass fallback (Android WebView path)
+    await inter.evaluate(async () => {
+      VXDesign.setTheme('amoled'); VXDesign.setGlass(true); VXDesign.setReduceGlass(true);
+      try { switchNav('chats'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    await inter.screenshot({ path: path.join(OUT, 'interactions-reduce-glass.png') });
+
+    // restore defaults before closing so metrics.json reflects a clean state
+    await inter.evaluate(async () => {
+      VXDesign.setTheme('cyber'); VXDesign.setAccent('blue'); VXDesign.setGlass(true);
+      VXDesign.setAurora(true); VXDesign.setBubbleRadius('round'); VXDesign.setReduceGlass(false);
+      await new Promise((r) => setTimeout(r, 300));
+    });
 
     await inter.close();
 

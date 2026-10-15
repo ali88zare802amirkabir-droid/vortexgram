@@ -824,7 +824,9 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   // 'blob:' در connect-src لازم است: کش دائمی رسانه‌ها (IndexedDB) blob URL را با
   // fetch می‌خواند و بدون آن مرورگر درخواست را به‌خاطر CSP بلاک می‌کند.
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  // CSP کامل: فقط same-origin. فونت‌ها self-host شده‌اند (public/fonts) پس
+  // هیچ CDN خارجی لازم نیست — و همان چیزی است که «حریم خصوصی» را واقعی می‌کند.
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }

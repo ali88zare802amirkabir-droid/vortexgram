@@ -15,9 +15,10 @@
   --vx-elev-2: 0 4px 16px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.16);
   --vx-elev-3: 0 12px 40px rgba(0,0,0,.32), 0 2px 8px rgba(0,0,0,.20);
 
-  /* Glass recipe — one definition, consumed everywhere. */
-  --vx-blur: var(--glass-blur, 28px);
-  --vx-sat: 1.5;
+  /* Glass recipe — one definition, consumed everywhere. The source values live
+     in tokens.css; these aliases keep the legacy names working. */
+  --vx-blur: var(--vx-glass-blur, 28px);
+  --vx-sat: var(--vx-glass-sat, 1.5);
   --vx-glass-bg: var(--glass-bg);
   --vx-glass-brd: var(--glass-border);
   --vx-glass-shine: var(--glass-shine);
@@ -683,3 +684,43 @@ button.set-cat.danger {
 /* saver mode: kill the settings/profile hover motion too */
 [data-power="saver"] .set-cat,
 [data-power="saver"] .set-account { transition: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Phase 5A — appearance / tokens surfaces
+   The chip rows, custom-accent picker and hints added by the expanded
+   Appearance page. Kept here so style.css stays untouched.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.settings-sec .settings-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
+.set-custom-accent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.set-custom-accent label { font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
+.set-custom-accent input[type="color"] {
+  width: 40px; height: 32px; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--vx-r-xs);
+  background: transparent; cursor: pointer;
+}
+.set-custom-accent input[type="color"]:focus-visible {
+  outline: 2px solid rgba(var(--primary-rgb), .75); outline-offset: 2px;
+}
+
+/* Ease the theme/glass swap so switching does not strobe. */
+body, #app, #chat-list-column, #conversation {
+  transition: background-color var(--vx-dur-3) var(--vx-ease-standard);
+}
+[data-motion="reduced"] body,
+[data-motion="reduced"] #app,
+[data-motion="reduced"] #chat-list-column,
+[data-motion="reduced"] #conversation { transition: none; }
+
+/* The aurora layer must not swallow pointer events or break scroll. */
+#vx-aurora { pointer-events: none; }
+@media print { #vx-aurora { display: none; } }
