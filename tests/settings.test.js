@@ -250,6 +250,65 @@ test('settings: active sessions list + per-device revoke', async (t) => {
 // Phase 5F — the Help/About screen needs a real version string. /api/health is
 // public (no token) and must report the package version, and must not leak any
 // secret-ish field beyond the whitelisted ones.
+// Phase 5G — live delivery: a message must reach the other party's open socket
+// immediately (that is the whole point of the chat), and the keepalive ping must
+// be answered so a half-open socket can be detected instead of going silent.
+function wsOpen(token) {
+  const { WebSocket } = require('ws');
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket('ws://127.0.0.1:' + PORT, { origin: 'http://127.0.0.1:' + PORT });
+    const inbox = [];
+    const waiters = [];
+    ws.on('message', (raw) => {
+      const d = JSON.parse(raw.toString());
+      for (let i = 0; i < waiters.length; i++) { if (waiters[i](d)) { waiters.splice(i, 1); i--; return; } }
+      inbox.push(d);
+    });
+    const waitFor = (match, timeout = 4000) => new Promise((res, rej) => {
+      const idx = inbox.findIndex(match);
+      if (idx >= 0) return res(inbox.splice(idx, 1)[0]);
+      const to = setTimeout(() => rej(new Error('ws wait timeout')), timeout);
+      waiters.push((d) => { if (match(d)) { clearTimeout(to); res(d); return true; } return false; });
+    });
+    ws.on('open', () => { ws.send(JSON.stringify({ type: 'auth', token })); resolve({ ws, waitFor, inbox }); });
+    ws.on('error', reject);
+  });
+}
+
+test('realtime: message reaches the other party live + ping is answered', async (t) => {
+  await withServer(t, async () => {
+    const alice = await wsOpen('tokenAlice');
+    const bob = await wsOpen('tokenBob');
+    try {
+      await alice.waitFor((d) => d.type === 'ready');
+      await bob.waitFor((d) => d.type === 'ready');
+
+      // keepalive: app-level ping is echoed as pong (half-open detection)
+      alice.ws.send(JSON.stringify({ type: 'ping', t: 12345 }));
+      const pong = await alice.waitFor((d) => d.type === 'pong');
+      assert.strictEqual(pong.t, 12345, 'pong echoes the ping token');
+
+      // live delivery: alice → bob on the shared DM room
+      const roomId = 'dm:alice|bob';
+      const t0 = Date.now();
+      alice.ws.send(JSON.stringify({ type: 'message', roomId, kind: 'text', content: 'سلام لحظه‌ای' }));
+      const got = await bob.waitFor((d) => d.type === 'message' && d.message && d.message.content === 'سلام لحظه‌ای');
+      const dt = Date.now() - t0;
+      assert.strictEqual(got.message.from, 'alice', 'recipient sees the sender');
+      assert.ok(dt < 1500, 'delivered promptly, not after a reconnect (' + dt + 'ms)');
+
+      // sender gets its own echo too (so the sender's copy is real, not optimistic-only)
+      const echo = await alice.waitFor((d) => d.type === 'message' && d.message && d.message.id === got.message.id);
+      assert.strictEqual(echo.message.content, 'سلام لحظه‌ای');
+    } finally {
+      alice.ws.terminate(); bob.ws.terminate();
+    }
+  });
+});
+
+// Phase 5F — the Help/About screen needs a real version string. /api/health is
+// public (no token) and must report the package version, and must not leak any
+// secret-ish field beyond the whitelisted ones.
 test('health: reports app version + build, no auth required', async (t) => {
   await withServer(t, async ({ base }) => {
     const r = await api(base, 'GET', '/api/health', undefined);

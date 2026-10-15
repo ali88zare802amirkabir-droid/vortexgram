@@ -4,6 +4,29 @@ All notable UI work on the "Liquid Glass" redesign. Phases ship as small,
 tested slices; each slice keeps the existing test suites green and adds
 screenshot + DOM-metric evidence under `docs/screenshots/phase4/<slice>/`.
 
+## Phase 5G — Live delivery hardening (instant display for the other party)
+
+- **Root cause**: the server already pushed a message to the other party in
+  ~1 ms (measured with two sockets). The visible delay came from *idle sockets
+  being silently dropped* (Render/proxy idle timeout) followed by a 2.5 s
+  reconnect with no catch-up — so a message sent during the gap only appeared
+  after the socket came back.
+- **Server heartbeat** — protocol-level `ping` every 30 s to every online
+  socket; a socket that misses a full cycle is terminated so the client
+  reconnects (and `close` still clears presence / stamps `lastSeen`). Also
+  answers an app-level `{type:'ping'}` with `{type:'pong'}`.
+- **Client keepalive** — the socket sends `{type:'ping'}` every 25 s and forces
+  a clean reconnect if no traffic arrives for 60 s (half-open guard).
+- **Faster reconnect** — exponential backoff starting at 500 ms (was a flat
+  2.5 s), capped at 8 s, reset on a successful `ready`.
+- **Resync on reconnect** — the moment a reconnect completes, the open
+  conversation pulls incremental history (`after` the last known message) and
+  the chat list refreshes, so nothing sent during the gap is lost.
+- **Tests** — new `realtime` case in `tests/settings.test.js`: two live sockets,
+  alice's message reaches bob promptly (<1.5 s) and the sender gets its own
+  echo; plus ping→pong. Harness slice `5g` asserts the keepalive/resync wiring
+  in a real browser (24/24).
+
 ## Phase 5F — Settings search, chat folders & help/about
 
 - **Settings search** — a glass search field at the top of Settings. It filters

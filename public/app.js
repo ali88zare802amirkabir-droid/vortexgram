@@ -1225,20 +1225,54 @@ function wireDesignControls() {
 }
 
 /* WEBSOCKET */
+/* Live delivery hardening: proxies (Render) drop idle sockets, which made an
+   incoming message appear late (only after the 2.5s reconnect + reload). We now
+   keep the socket warm with an app-level ping, reconnect with backoff, and pull
+   anything missed the moment a reconnect completes. */
+let wsRetry = 0, wsPingTimer = null, wsPongAt = 0, wsSawClose = false;
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(proto + '://' + location.host); state.ws = ws;
-  ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: state.token }));
-  ws.onmessage = (ev) => { try { handleWS(JSON.parse(ev.data)); } catch (e) { try { console.error('WS:', e && e.stack ? e.stack : e); } catch (e2) {} } };
-  ws.onclose = () => setTimeout(() => { if (state.token && $('app') && !$('app').classList.contains('hidden')) connectWS(); }, 2500);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'auth', token: state.token }));
+    wsPongAt = Date.now();
+    if (wsPingTimer) clearInterval(wsPingTimer);
+    wsPingTimer = setInterval(() => {
+      if (ws.readyState !== 1) return;
+      /* Half-open guard: no traffic for 60s → force a clean reconnect. */
+      if (Date.now() - wsPongAt > 60000) { try { ws.close(); } catch (e) {} return; }
+      try { ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); } catch (e) {}
+    }, 25000);
+  };
+  ws.onmessage = (ev) => { wsPongAt = Date.now(); try { handleWS(JSON.parse(ev.data)); } catch (e) { try { console.error('WS:', e && e.stack ? e.stack : e); } catch (e2) {} } };
+  ws.onclose = () => {
+    if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
+    wsSawClose = true;
+    const wait = Math.min(8000, Math.round(500 * Math.pow(1.6, wsRetry++)));
+    setTimeout(() => { if (state.token && $('app') && !$('app').classList.contains('hidden')) connectWS(); }, wait);
+  };
+  ws.onerror = () => { /* onclose drives the reconnect */ };
+}
+/* Fetch whatever was sent while the socket was down so nothing is missed. */
+function resyncAfterReconnect() {
+  const r = state.room && state.rooms[state.room];
+  if (state.room && state.ws && state.ws.readyState === 1) {
+    const after = r && r.last ? r.last.time : 0;
+    try { state.ws.send(JSON.stringify({ type: 'history', roomId: state.room, after: after || 0 })); } catch (e) {}
+  }
+  scheduleChatListRefresh(40);
+  scheduleRoomsPersist();
 }
 function handleWS(d) {
   switch (d.type) {
     case 'ready': state.me = d.me; state.groups = d.groups || []; state.chatState = d.chatState || {}; state.readState = d.readState || {}; state.pinned = d.pinned || {}; state.dmRooms = d.dmRooms || []; for (const [rid, pv] of Object.entries(d.previews || {})) { const pr = state.rooms[rid] || (state.rooms[rid] = { messages: [], last: null, unread: 0 }); if (pr.messages.length && !pr.previewOnly) { if (pv && (!pr.last || pv.time > pr.last.time)) { const idx = pr.messages.findIndex((m) => m.id === pv.id); if (idx >= 0) pr.messages[idx] = pv; else { pr.messages.push(pv); pr.lastSync = Date.now(); } pr.last = pv; } pr.unread = pv && (pv.unread !== undefined) ? pv.unread : pr.unread; } else { pr.messages = pv ? [pv] : []; pr.last = pv || null; pr.unread = pv ? (pv.unread || 0) : 0; pr.previewOnly = true; } } loadReactionConfig(); loadAiConfig(); loadTranslations(); loadTranscripts(); renderNav(); renderDock(); buildChatList(); scheduleRoomsPersist(); handleInviteFollow(); handleGroupInvite();
+      wsRetry = 0;
+      if (wsSawClose) { wsSawClose = false; try { resyncAfterReconnect(); } catch (e) {} }
       /* چتِ لینک مستقیم فقط وقتی باز می‌شود که WebSocket آماده و احرازهویت شده باشد */
       if (state._deepRoom) { const deep = state._deepRoom; state._deepRoom = null; try { openRoom(deep, { fromHistory: true }); } catch (e) {} }
       break;
     case 'users': state.users = d.users || []; scheduleChatListRefresh(); break;
+    case 'pong': wsPongAt = Date.now(); break;
     case 'profile-updated': applyProfileUpdate(d); break;
     case 'groups': state.groups = d.groups || []; scheduleChatListRefresh(); break;
     case 'room-read': if (!state.readState[d.roomId]) state.readState[d.roomId] = {}; state.readState[d.roomId][d.username] = d.time; if (d.username === state.me.username && state.rooms[d.roomId]) state.rooms[d.roomId].unread = 0; scheduleChatListRefresh(); scheduleRoomsPersist(); refreshReadTicks(d.roomId); break;

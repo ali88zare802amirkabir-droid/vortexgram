@@ -1463,6 +1463,27 @@ async function main() {
 
     await inter.screenshot({ path: path.join(OUT, 'interactions-settings5f.png') });
 
+    interactions.realtime5g = await inter.evaluate(async () => {
+      const res = {};
+      res.hasConnectWS = typeof connectWS === 'function';
+      res.hasResync = typeof resyncAfterReconnect === 'function';
+      res.keepaliveRunning = typeof wsPingTimer !== 'undefined' && wsPingTimer !== null;
+      res.pongTracked = typeof wsPongAt === 'number' && wsPongAt > 0;
+      // the live socket answers an app-level ping with a pong
+      res.pong = await new Promise((resolve) => {
+        const ws = state.ws;
+        if (!ws || ws.readyState !== 1) return resolve('no-socket');
+        let done = false;
+        const onMsg = (ev) => { try { const d = JSON.parse(ev.data); if (d.type === 'pong') { done = true; ws.removeEventListener('message', onMsg); resolve(true); } } catch (e) {} };
+        ws.addEventListener('message', onMsg);
+        try { ws.send(JSON.stringify({ type: 'ping', t: 777 })); } catch (e) { return resolve('send-failed'); }
+        setTimeout(() => { if (!done) { ws.removeEventListener('message', onMsg); resolve(false); } }, 3000);
+      });
+      res.ok = res.hasConnectWS && res.hasResync && res.keepaliveRunning && res.pongTracked && res.pong === true;
+      return res;
+    });
+    if (!interactions.realtime5g.ok) failures.push('5G realtime keepalive: ' + JSON.stringify(interactions.realtime5g));
+
     await inter.close();
 
     await browser.close();

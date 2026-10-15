@@ -1,0 +1,4276 @@
+{
+  "summary": {
+    "slice": "slice5g",
+    "generatedAt": "2026-10-15T15:34:40.813Z",
+    "total": 24,
+    "failed": 0,
+    "failures": [],
+    "browserErrors": []
+  },
+  "interactions": {
+    "tabs": {
+      "chats": {
+        "tab": "چت‌ها",
+        "focusable": 1,
+        "ind": {
+          "x": 285,
+          "w": 84,
+          "inside": true
+        }
+      },
+      "contacts": {
+        "tab": "مخاطبان",
+        "focusable": 1,
+        "ind": {
+          "x": 197,
+          "w": 84,
+          "inside": true
+        }
+      },
+      "settings": {
+        "tab": "تنظیمات",
+        "focusable": 1,
+        "ind": {
+          "x": 109,
+          "w": 84,
+          "inside": true
+        }
+      }
+    },
+    "indicatorMoved": true,
+    "keyboard": {
+      "ok": true,
+      "focused": "پروفایل"
+    },
+    "designControls": {
+      "ok": true,
+      "named": {
+        "g": true,
+        "p": true
+      },
+      "start": {
+        "glassPressed": "true",
+        "powerMode": "auto",
+        "powerLabel": "خودکار"
+      },
+      "afterGlass": "false",
+      "restored": "true",
+      "modes": [
+        {
+          "mode": "saver",
+          "label": "ذخیره باتری",
+          "de": "saver"
+        },
+        {
+          "mode": "full",
+          "label": "کامل",
+          "de": "full"
+        },
+        {
+          "mode": "auto",
+          "label": "خودکار",
+          "de": "full"
+        }
+      ]
+    },
+    "designApi": {
+      "ok": true,
+      "before": "on",
+      "off": "off",
+      "on": "on",
+      "autoPref": "auto",
+      "autoAttr": "full",
+      "autoEff": "full",
+      "saver": "saver",
+      "saverFilter": "blur(0px) saturate(1.6)",
+      "saverBg": "rgb(27, 43, 63)",
+      "full": "full",
+      "fullFilter": "blur(28px) saturate(1.6)",
+      "endAttr": "full",
+      "blurOff": true,
+      "blurOn": true
+    },
+    "folders": {
+      "ok": true,
+      "steps": [
+        {
+          "id": "unread",
+          "active": "unread",
+          "rows": 0,
+          "empty": true,
+          "tabbable": 1,
+          "selected": "true"
+        },
+        {
+          "id": "private",
+          "active": "private",
+          "rows": 2,
+          "empty": false,
+          "tabbable": 1,
+          "selected": "true"
+        },
+        {
+          "id": "groups",
+          "active": "groups",
+          "rows": 0,
+          "empty": true,
+          "tabbable": 1,
+          "selected": "true"
+        },
+        {
+          "id": "all",
+          "active": "all",
+          "rows": 3,
+          "empty": false,
+          "tabbable": 1,
+          "selected": "true"
+        }
+      ],
+      "kb": {
+        "focused": "unread"
+      },
+      "unreadRows": 0,
+      "allRows": 3
+    },
+    "folderManager": {
+      "ok": true,
+      "before": 0,
+      "created": true,
+      "label": "کاری",
+      "activeFolder": "f:umv9p8k0a",
+      "persisted": true,
+      "persistedCount": 1,
+      "rows": 1,
+      "empty": false,
+      "hasDel": true,
+      "afterDelete": 0
+    },
+    "swipe": {
+      "ok": true,
+      "restVis": "hidden",
+      "opened": true,
+      "openVis": "visible",
+      "transform": "matrix(1, 0, 0, 1, 148, 0)",
+      "closed": true,
+      "restTr": "none",
+      "restTrClean": true,
+      "restVisAfter": "hidden",
+      "rtl": true,
+      "buttonsFocusable": true
+    },
+    "contacts": {
+      "ok": true,
+      "sections": [
+        "مخاطبین2"
+      ],
+      "items": 2,
+      "namesOk": true,
+      "btnsOk": true,
+      "empty": false,
+      "toolbar": true,
+      "search": true,
+      "focusable": true,
+      "sectioned": true
+    },
+    "settings": {
+      "ok": true,
+      "cats": 12,
+      "named": true,
+      "allButtons": true,
+      "grps": 5,
+      "rowGroups": 5,
+      "hasAccount": true,
+      "hasLogout": true,
+      "nested": 0,
+      "inline": 0,
+      "appView": true,
+      "headH2": "تنظیمات",
+      "labels": [
+        "حساب کاربری",
+        "نمایش و تم",
+        "پس‌زمینه",
+        "اسکین‌ها و تم‌ها",
+        "اعلان‌ها",
+        "تنظیمات گفتگو",
+        "حریم خصوصی",
+        "زبان و ترجمه",
+        "ذخیره‌سازی",
+        "پوشه‌های گفتگو",
+        "راهنما و درباره",
+        "خروج از حساب"
+      ]
+    },
+    "settingsSub": {
+      "ok": true,
+      "sub": true,
+      "crumb": "تنظیمات",
+      "backLabel": "بازگشت به تنظیمات",
+      "secs": 9,
+      "chips": 40,
+      "nested": 0,
+      "inAppView": true,
+      "stateCat": "appearance",
+      "backToMain": true,
+      "catAfterBack": "main",
+      "appViewGone": true,
+      "relandedMain": true,
+      "appViewAgain": true
+    },
+    "logoutRow": {
+      "ok": true,
+      "listBefore": true,
+      "confirmShown": true,
+      "stillLoggedIn": true,
+      "listStillThere": true,
+      "cat": "main"
+    },
+    "accountCard": {
+      "ok": true,
+      "opened": true,
+      "backToSettings": true
+    },
+    "profile": {
+      "ok": true,
+      "title": "علیرضا",
+      "titleTag": "H2",
+      "actionsInside": true,
+      "heroInside": true,
+      "top": true,
+      "backNamed": true,
+      "backIcon": true,
+      "role": "region",
+      "labelled": "profile-title",
+      "labelledOk": true,
+      "focusOnView": true,
+      "inline": 0,
+      "chatOpenBefore": false,
+      "chatOpenNow": true,
+      "appViewNow": true
+    },
+    "search": {
+      "ok": true,
+      "inputNamed": true,
+      "restHidden": true,
+      "heads": [
+        "مخاطبین یافت‌شده (1)"
+      ],
+      "staticHeads": 1,
+      "people": 1,
+      "xShown": true,
+      "unnamedRows": 0,
+      "cleared": true,
+      "room": "dm:ali|sara",
+      "empty": true,
+      "emptyHasQuery": true,
+      "backToFull": true
+    },
+    "tokens": {
+      "apiPresent": true,
+      "fontLoaded": true,
+      "amoledTheme": true,
+      "amoledSurface": "000000",
+      "customAccentAttr": "custom",
+      "customAccentRgb": "255,122,0",
+      "customAccentPrimary": "#ff7a00",
+      "radii": {
+        "sharp": {
+          "attr": "sharp",
+          "v": "4px"
+        },
+        "compact": {
+          "attr": "compact",
+          "v": "12px"
+        },
+        "round": {
+          "attr": "round",
+          "v": "22px"
+        },
+        "pill": {
+          "attr": "pill",
+          "v": "26px"
+        }
+      },
+      "reduceClass": true,
+      "reduceAttr": "on",
+      "reduceBlur": "0px",
+      "reduceBlurRestored": "28px",
+      "auroraOffName": "off",
+      "auroraBlobDisplayOff": "none",
+      "auroraOnName": "on",
+      "ok": true
+    },
+    "palette": {
+      "ok": true,
+      "opened": true,
+      "itemsAll": 29,
+      "groups": 5,
+      "firstSelected": true,
+      "filtered": 1,
+      "filteredLabel": "AMOLED",
+      "closedAfterRun": true,
+      "themeAfter": "amoled",
+      "selIdx": "1",
+      "closedAfterEsc": true
+    },
+    "resize": {
+      "ok": true,
+      "rtl": true,
+      "before": 320,
+      "afterRight": 304,
+      "afterLeft": 320,
+      "afterDrag": 380,
+      "persisted": "380",
+      "afterReset": 320,
+      "ariaNow": "380"
+    },
+    "conversation": {
+      "msgs": 3,
+      "byId": {
+        "c1": "grp-first",
+        "c2": "grp-last",
+        "c3": "grp-only"
+      },
+      "allClassed": true,
+      "adjSameFromGrouped": true,
+      "groupingOk": true,
+      "radiusSharp": "4px",
+      "radiusRound": "22px",
+      "radiusWired": true,
+      "morphEmptyHasText": false,
+      "morphTypedHasText": true,
+      "morphTypedOpacity": 1,
+      "morphOk": true,
+      "ok": true
+    },
+    "settings5e": {
+      "hasChat": true,
+      "hasLanguage": true,
+      "controls": true,
+      "localLastSeen": "nobody",
+      "localRead": false,
+      "srvLastSeen": "nobody",
+      "srvRead": false,
+      "accentChip": true,
+      "accentChanged": true,
+      "ok": true
+    },
+    "settings5f": {
+      "hasSearch": true,
+      "hasFolders": true,
+      "hasHelp": true,
+      "faHits": 2,
+      "faFirstIsLanguage": true,
+      "enHits": 2,
+      "enHasAppearance": true,
+      "privacyHit": true,
+      "landedPrivacy": true,
+      "focusControl": true,
+      "flash": true,
+      "helpVersion": "v1.0.0",
+      "helpVersionOk": true,
+      "helpLinks": 2,
+      "helpFaq": 5,
+      "foldersBtn": true,
+      "folderManagerOpen": true,
+      "ok": true
+    },
+    "realtime5g": {
+      "hasConnectWS": true,
+      "hasResync": true,
+      "keepaliveRunning": true,
+      "pongTracked": true,
+      "pong": true,
+      "ok": true
+    }
+  },
+  "results": {
+    "390x844-dark-glass": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 390,
+      "viewportW": 390,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 774,
+          "w": 362,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(16, 32, 52, 0.08)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 84,
+          "x": 285,
+          "transform": "matrix(1, 0, 0, 1, 270, 0)",
+          "widthProp": "84px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "390x844-dark-glass.png",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "theme": "dark",
+      "mode": "glass",
+      "fail": []
+    },
+    "390x844-dark-saver": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 390,
+      "viewportW": 390,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 774,
+          "w": 362,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(27, 43, 63)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 84,
+          "x": 285,
+          "transform": "matrix(1, 0, 0, 1, 270, 0)",
+          "widthProp": "84px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "390x844-dark-saver.png",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "theme": "dark",
+      "mode": "saver",
+      "fail": []
+    },
+    "390x844-light-glass": {
+      "flags": {
+        "theme": "light",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 390,
+      "viewportW": 390,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 774,
+          "w": 362,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(255, 255, 255, 0.3)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 84,
+          "x": 285,
+          "transform": "matrix(1, 0, 0, 1, 270, 0)",
+          "widthProp": "84px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "390x844-light-glass.png",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "theme": "light",
+      "mode": "glass",
+      "fail": []
+    },
+    "390x844-light-saver": {
+      "flags": {
+        "theme": "light",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 390,
+      "viewportW": 390,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 774,
+          "w": 362,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(232, 235, 242)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 84,
+          "x": 285,
+          "transform": "matrix(1, 0, 0, 1, 270, 0)",
+          "widthProp": "84px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "390x844-light-saver.png",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "theme": "light",
+      "mode": "saver",
+      "fail": []
+    },
+    "390x844-amoled-glass": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 390,
+      "viewportW": 390,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 774,
+          "w": 362,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(0, 0, 0, 0.55)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 84,
+          "x": 285,
+          "transform": "matrix(1, 0, 0, 1, 270, 0)",
+          "widthProp": "84px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "390x844-amoled-glass.png",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "theme": "amoled",
+      "mode": "glass",
+      "fail": []
+    },
+    "390x844-amoled-saver": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 390,
+      "viewportW": 390,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 774,
+          "w": 362,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(18, 18, 18)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 84,
+          "x": 285,
+          "transform": "matrix(1, 0, 0, 1, 270, 0)",
+          "widthProp": "84px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "390x844-amoled-saver.png",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "theme": "amoled",
+      "mode": "saver",
+      "fail": []
+    },
+    "430x932-dark-glass": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 430,
+      "viewportW": 430,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 862,
+          "w": 402,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(16, 32, 52, 0.08)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 94,
+          "x": 315,
+          "transform": "matrix(1, 0, 0, 1, 300, 0)",
+          "widthProp": "94px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "430x932-dark-glass.png",
+      "viewport": {
+        "w": 430,
+        "h": 932
+      },
+      "theme": "dark",
+      "mode": "glass",
+      "fail": []
+    },
+    "430x932-dark-saver": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 430,
+      "viewportW": 430,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 862,
+          "w": 402,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(27, 43, 63)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 94,
+          "x": 315,
+          "transform": "matrix(1, 0, 0, 1, 300, 0)",
+          "widthProp": "94px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "430x932-dark-saver.png",
+      "viewport": {
+        "w": 430,
+        "h": 932
+      },
+      "theme": "dark",
+      "mode": "saver",
+      "fail": []
+    },
+    "430x932-light-glass": {
+      "flags": {
+        "theme": "light",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 430,
+      "viewportW": 430,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 862,
+          "w": 402,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(255, 255, 255, 0.3)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 94,
+          "x": 315,
+          "transform": "matrix(1, 0, 0, 1, 300, 0)",
+          "widthProp": "94px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "430x932-light-glass.png",
+      "viewport": {
+        "w": 430,
+        "h": 932
+      },
+      "theme": "light",
+      "mode": "glass",
+      "fail": []
+    },
+    "430x932-light-saver": {
+      "flags": {
+        "theme": "light",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 430,
+      "viewportW": 430,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 862,
+          "w": 402,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(232, 235, 242)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 94,
+          "x": 315,
+          "transform": "matrix(1, 0, 0, 1, 300, 0)",
+          "widthProp": "94px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "430x932-light-saver.png",
+      "viewport": {
+        "w": 430,
+        "h": 932
+      },
+      "theme": "light",
+      "mode": "saver",
+      "fail": []
+    },
+    "430x932-amoled-glass": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 430,
+      "viewportW": 430,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 862,
+          "w": 402,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(0, 0, 0, 0.55)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 94,
+          "x": 315,
+          "transform": "matrix(1, 0, 0, 1, 300, 0)",
+          "widthProp": "94px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "430x932-amoled-glass.png",
+      "viewport": {
+        "w": 430,
+        "h": 932
+      },
+      "theme": "amoled",
+      "mode": "glass",
+      "fail": []
+    },
+    "430x932-amoled-saver": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 430,
+      "viewportW": 430,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 862,
+          "w": 402,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(18, 18, 18)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 94,
+          "x": 315,
+          "transform": "matrix(1, 0, 0, 1, 300, 0)",
+          "widthProp": "94px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 300,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "430x932-amoled-saver.png",
+      "viewport": {
+        "w": 430,
+        "h": 932
+      },
+      "theme": "amoled",
+      "mode": "saver",
+      "fail": []
+    },
+    "360x640-dark-glass": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 360,
+      "viewportW": 360,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 570,
+          "w": 332,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(16, 32, 52, 0.08)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 77,
+          "x": 263,
+          "transform": "matrix(1, 0, 0, 1, 248, 0)",
+          "widthProp": "76.5px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 295,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "360x640-dark-glass.png",
+      "viewport": {
+        "w": 360,
+        "h": 640
+      },
+      "theme": "dark",
+      "mode": "glass",
+      "fail": []
+    },
+    "360x640-dark-saver": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 360,
+      "viewportW": 360,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 570,
+          "w": 332,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(27, 43, 63)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 77,
+          "x": 263,
+          "transform": "matrix(1, 0, 0, 1, 248, 0)",
+          "widthProp": "76.5px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 295,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "360x640-dark-saver.png",
+      "viewport": {
+        "w": 360,
+        "h": 640
+      },
+      "theme": "dark",
+      "mode": "saver",
+      "fail": []
+    },
+    "360x640-light-glass": {
+      "flags": {
+        "theme": "light",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 360,
+      "viewportW": 360,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 570,
+          "w": 332,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(255, 255, 255, 0.3)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 77,
+          "x": 263,
+          "transform": "matrix(1, 0, 0, 1, 248, 0)",
+          "widthProp": "76.5px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 295,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "360x640-light-glass.png",
+      "viewport": {
+        "w": 360,
+        "h": 640
+      },
+      "theme": "light",
+      "mode": "glass",
+      "fail": []
+    },
+    "360x640-light-saver": {
+      "flags": {
+        "theme": "light",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 360,
+      "viewportW": 360,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 570,
+          "w": 332,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(232, 235, 242)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 77,
+          "x": 263,
+          "transform": "matrix(1, 0, 0, 1, 248, 0)",
+          "widthProp": "76.5px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 295,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "360x640-light-saver.png",
+      "viewport": {
+        "w": 360,
+        "h": 640
+      },
+      "theme": "light",
+      "mode": "saver",
+      "fail": []
+    },
+    "360x640-amoled-glass": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 360,
+      "viewportW": 360,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 570,
+          "w": 332,
+          "h": 60
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(0, 0, 0, 0.55)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 77,
+          "x": 263,
+          "transform": "matrix(1, 0, 0, 1, 248, 0)",
+          "widthProp": "76.5px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 295,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "360x640-amoled-glass.png",
+      "viewport": {
+        "w": 360,
+        "h": 640
+      },
+      "theme": "amoled",
+      "mode": "glass",
+      "fail": []
+    },
+    "360x640-amoled-saver": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 360,
+      "viewportW": 360,
+      "pill": {
+        "present": true,
+        "visible": true,
+        "rect": {
+          "x": 14,
+          "y": 570,
+          "w": 332,
+          "h": 60
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(18, 18, 18)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 77,
+          "x": 263,
+          "transform": "matrix(1, 0, 0, 1, 248, 0)",
+          "widthProp": "76.5px"
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 82,
+        "listClearsPill": true
+      },
+      "rail": {
+        "visible": true,
+        "w": 295,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "row",
+        "labelsShown": "none",
+        "onScreen": false
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "none",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "360x640-amoled-saver.png",
+      "viewport": {
+        "w": 360,
+        "h": 640
+      },
+      "theme": "amoled",
+      "mode": "saver",
+      "fail": []
+    },
+    "1440x900-dark-glass": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 1440,
+      "viewportW": 1440,
+      "pill": {
+        "present": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(16, 32, 52, 0.08)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 0,
+          "x": 0,
+          "transform": "none",
+          "widthProp": ""
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 0,
+        "listClearsPill": false
+      },
+      "rail": {
+        "visible": true,
+        "w": 76,
+        "expanded": false,
+        "backdropFilter": "blur(14px) saturate(1.6)",
+        "items": 11,
+        "itemDirs": "column",
+        "labelsShown": "none",
+        "onScreen": true
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "block",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "1440x900-dark-glass.png",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "theme": "dark",
+      "mode": "glass",
+      "fail": []
+    },
+    "1440x900-dark-saver": {
+      "flags": {
+        "theme": "cyber",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "cyber",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 1440,
+      "viewportW": 1440,
+      "pill": {
+        "present": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(27, 43, 63)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 0,
+          "x": 0,
+          "transform": "none",
+          "widthProp": ""
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 0,
+        "listClearsPill": false
+      },
+      "rail": {
+        "visible": true,
+        "w": 76,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "column",
+        "labelsShown": "none",
+        "onScreen": true
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(11, 28, 48)",
+        "rowBg": "rgb(11, 28, 48)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "cyber",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "block",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "1440x900-dark-saver.png",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "theme": "dark",
+      "mode": "saver",
+      "fail": []
+    },
+    "1440x900-light-glass": {
+      "flags": {
+        "theme": "light",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 1440,
+      "viewportW": 1440,
+      "pill": {
+        "present": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(255, 255, 255, 0.3)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 0,
+          "x": 0,
+          "transform": "none",
+          "widthProp": ""
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 0,
+        "listClearsPill": false
+      },
+      "rail": {
+        "visible": true,
+        "w": 76,
+        "expanded": false,
+        "backdropFilter": "blur(14px) saturate(1.6)",
+        "items": 11,
+        "itemDirs": "column",
+        "labelsShown": "none",
+        "onScreen": true
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "block",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "1440x900-light-glass.png",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "theme": "light",
+      "mode": "glass",
+      "fail": []
+    },
+    "1440x900-light-saver": {
+      "flags": {
+        "theme": "light",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "light",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 1440,
+      "viewportW": 1440,
+      "pill": {
+        "present": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(232, 235, 242)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 0,
+          "x": 0,
+          "transform": "none",
+          "widthProp": ""
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 0,
+        "listClearsPill": false
+      },
+      "rail": {
+        "visible": true,
+        "w": 76,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "column",
+        "labelsShown": "none",
+        "onScreen": true
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(248, 249, 252)",
+        "rowBg": "rgb(248, 249, 252)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "light",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "block",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "1440x900-light-saver.png",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "theme": "light",
+      "mode": "saver",
+      "fail": []
+    },
+    "1440x900-amoled-glass": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "on",
+        "power": "full",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": true,
+        "power": "auto",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "full",
+      "horizontalOverflow": false,
+      "docScrollW": 1440,
+      "viewportW": 1440,
+      "pill": {
+        "present": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "backdropFilter": "blur(28px) saturate(1.6)",
+        "background": "rgba(0, 0, 0, 0.55)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 0,
+          "x": 0,
+          "transform": "none",
+          "widthProp": ""
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 0,
+        "listClearsPill": false
+      },
+      "rail": {
+        "visible": true,
+        "w": 76,
+        "expanded": false,
+        "backdropFilter": "blur(14px) saturate(1.6)",
+        "items": 11,
+        "itemDirs": "column",
+        "labelsShown": "none",
+        "onScreen": true
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "vx-aurora-1"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "block",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "1440x900-amoled-glass.png",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "theme": "amoled",
+      "mode": "glass",
+      "fail": []
+    },
+    "1440x900-amoled-saver": {
+      "flags": {
+        "theme": "amoled",
+        "glass": "off",
+        "power": "saver",
+        "motion": "full",
+        "lowend": null,
+        "dir": "rtl"
+      },
+      "design": {
+        "glass": false,
+        "power": "saver",
+        "theme": "amoled",
+        "accent": "blue",
+        "accentCustom": "",
+        "aurora": true,
+        "bubbleRadius": "round",
+        "reduceGlass": false,
+        "themeAuto": "off"
+      },
+      "designEffective": "saver",
+      "horizontalOverflow": false,
+      "docScrollW": 1440,
+      "viewportW": 1440,
+      "pill": {
+        "present": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "backdropFilter": "blur(0px) saturate(1.6)",
+        "background": "rgb(18, 18, 18)",
+        "inViewport": true,
+        "buttons": 4,
+        "selected": "چت‌ها",
+        "tabRoles": 4,
+        "tabsRoving": 1,
+        "indicator": {
+          "w": 0,
+          "x": 0,
+          "transform": "none",
+          "widthProp": ""
+        },
+        "overlapsComposer": false,
+        "listBottomPadding": 0,
+        "listClearsPill": false
+      },
+      "rail": {
+        "visible": true,
+        "w": 76,
+        "expanded": false,
+        "backdropFilter": "none",
+        "items": 11,
+        "itemDirs": "column",
+        "labelsShown": "none",
+        "onScreen": true
+      },
+      "legacyDockHidden": true,
+      "folders": {
+        "present": true,
+        "count": 6,
+        "labels": [
+          "همه",
+          "خوانده‌نشده",
+          "خصوصی",
+          "گروه‌ها",
+          "کانال‌ها",
+          "ربات‌ها"
+        ],
+        "active": "all",
+        "addBtn": true,
+        "roving": 1,
+        "allTabs": true,
+        "allNamed": true,
+        "overflowX": true,
+        "overflowXStyle": "auto",
+        "boxInViewport": true,
+        "wrapped": false,
+        "height": 38,
+        "listStartsBelow": true
+      },
+      "chatRows": {
+        "count": 3,
+        "hasSurface": true,
+        "surfaceIsTop": true,
+        "surfaceBg": "rgb(5, 5, 5)",
+        "rowBg": "rgb(5, 5, 5)",
+        "restActionsVisibility": "hidden",
+        "startActionsVisibility": "hidden",
+        "rowHeight": 64,
+        "swipeClass": true,
+        "touchAction": "auto",
+        "surfaces": 3,
+        "actionCount": 9
+      },
+      "searchCtl": {
+        "present": true,
+        "inputNamed": true,
+        "clearPresent": true,
+        "clearHidden": true,
+        "clearNamed": true
+      },
+      "inlineHandlers": 0,
+      "appView": false,
+      "nestedViewBody": 0,
+      "a11yUnnamedControls": [],
+      "tokens": {
+        "tokensSheet": true,
+        "fontFaceSheet": true,
+        "fontReady": true,
+        "bodyFont": "Vazirmatn, system-ui, -apple-system, \"Segoe UI\", Tahoma, Roboto, sans-serif",
+        "radiusVar": "22px",
+        "glassBlurVar": "28px",
+        "glassSatVar": "160%",
+        "accentVar": "blue",
+        "bubbleRadiusVar": "round",
+        "themeVar": "amoled",
+        "wallpaperVar": "none",
+        "reduceGlassClass": false,
+        "primaryRgb": "59,130,246",
+        "aurora": {
+          "present": true,
+          "blobs": 3,
+          "position": "fixed",
+          "pointerEvents": "none",
+          "ariaHidden": "true",
+          "animationName": "none"
+        }
+      },
+      "resize": {
+        "present": true,
+        "display": "block",
+        "role": "separator",
+        "orientation": "vertical",
+        "tabbable": true,
+        "hasName": true,
+        "valueMin": "240",
+        "valueMax": "560",
+        "valueNow": "320",
+        "listW": "320px"
+      },
+      "palette": {
+        "present": true,
+        "hiddenByDefault": true,
+        "hasInput": true,
+        "hasList": true,
+        "role": "dialog",
+        "modal": "true",
+        "inputNamed": true
+      },
+      "screenshot": "1440x900-amoled-saver.png",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "theme": "amoled",
+      "mode": "saver",
+      "fail": []
+    }
+  }
+}

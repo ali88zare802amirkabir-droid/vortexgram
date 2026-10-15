@@ -3496,6 +3496,10 @@ function notifyUser(username, obj) {
 
 wss.on('connection', (ws, req) => {
   let username = null;
+  /* Heartbeat: Render and most proxies silently kill idle WebSockets, which made
+     messages only show up after a reconnect/refresh. Mark liveness + reply to pongs. */
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (raw) => {
     let data;
@@ -3534,6 +3538,10 @@ wss.on('connection', (ws, req) => {
       return;
     }
     if (!username) return;
+
+    /* Keepalive from the client; answering lets the browser detect a half-open
+       socket and reconnect quickly instead of waiting for a proxy timeout. */
+    if (data.type === 'ping') { return wsSend(ws, { type: 'pong', t: data.t }); }
 
     if (data.type === 'history') {
       if (!wsRateOk(username, 'history', 40, 60 * 1000)) return;
@@ -3755,6 +3763,19 @@ wss.on('connection', (ws, req) => {
     }
   });
 });
+
+/* Protocol-level heartbeat keeps idle sockets (and any intermediary) alive; a
+   socket that misses a full ping cycle is dropped so the client reconnects and
+   resyncs instead of sitting on a dead connection. */
+const wsHeartbeat = setInterval(() => {
+  for (const [, info] of online) {
+    const ws = info.ws;
+    if (ws.isAlive === false) { try { ws.terminate(); } catch (e) {} continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch (e) {}
+  }
+}, 30000);
+if (wsHeartbeat.unref) wsHeartbeat.unref();
 
 // ---------- AI chat (پورت از ربات clan) ----------
 const RUDE_WORDS = [
