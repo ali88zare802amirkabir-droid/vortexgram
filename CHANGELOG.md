@@ -4,6 +4,19 @@ All notable UI work on the "Liquid Glass" redesign. Phases ship as small,
 tested slices; each slice keeps the existing test suites green and adds
 screenshot + DOM-metric evidence under `docs/screenshots/phase4/<slice>/`.
 
+## Phase 5B — Resizable desktop panes + command palette
+
+- **3-zone desktop layout** — the chat-list track is now driven by a single
+  `--vx-list-w` variable. A drag handle (`role="separator"`, keyboard-operable
+  with Arrow/Home/End, RTL-aware) resizes it between 240 and 560 px,
+  persists the choice in `localStorage`, and double-click resets it. The
+  conversation column keeps a floor so narrow desktops never overflow.
+- **Command palette** — ⌘/Ctrl-K (and a header button) opens a glass overlay
+  with a filtered, grouped, keyboard-navigable list: navigation, open
+  conversation, theme switch, glass/aurora/saver toggles, and actions (new
+  chat/group/channel, profile, log out). ARIA combobox/listbox wiring, focus
+  restore, no inline handlers.
+
 ## Phase 5A — Design tokens, themes, self-hosted fonts
 
 - **New `public/tokens.css`** — the single source of truth for the visual

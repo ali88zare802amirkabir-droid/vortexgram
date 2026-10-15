@@ -16,9 +16,9 @@
   <link rel="preload" href="fonts/Vazirmatn-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="font-face.css?v=1" />
 <link rel="stylesheet" href="style.css?v=162" />
-  <link rel="stylesheet" href="tokens.css?v=1" />
-  <link rel="stylesheet" href="shell.css?v=4" />
-  <script src="icons.js?v=90"></script>
+  <link rel="stylesheet" href="tokens.css?v=2" />
+  <link rel="stylesheet" href="shell.css?v=5" />
+  <script src="icons.js?v=91"></script>
   <script src="design.js?v=2"></script>
 </head>
 <body>
@@ -86,6 +86,7 @@
       <div class="cl-head">
         <div class="cl-title">چت‌ها</div>
         <button class="icon-btn" id="cl-new" title="چت جدید" aria-label="شروع چت جدید"><i data-lucide="square-pen" class="icon"></i></button>
+        <button class="icon-btn" id="vx-palette-open" title="جست‌وجوی سریع (Ctrl+K)" aria-label="جست‌وجوی سریع و دستورها" aria-keyshortcuts="Control+K Meta+K"><i data-lucide="search" class="icon"></i></button>
         <button class="icon-btn mobile-only" id="cl-menu" title="منو" aria-label="باز کردن فهرست ناوبری" aria-controls="nav-sidebar"><i data-lucide="menu" class="icon"></i></button>
       </div>
       <div class="cl-search"><i data-lucide="search" class="icon" aria-hidden="true"></i><input id="cl-search-input" type="text" aria-label="جستجو در چت‌ها، مخاطبین و گروه‌ها" placeholder="جستجوی چت‌ها..." /><button type="button" id="cl-search-x" class="cl-search-x" aria-label="پاک کردن جستجو" hidden><i data-lucide="x" class="icon" aria-hidden="true"></i></button></div>
@@ -98,6 +99,7 @@
         <div class="np-prog"><div class="np-fill" id="np-fill"></div></div>
       </div>
 <div class="cl-items" id="cl-items"></div>
+      <div class="vx-resize" id="vx-resize" role="separator" aria-orientation="vertical" aria-label="تغییر عرض فهرست گفت‌وگوها" aria-valuemin="240" aria-valuemax="560" aria-valuenow="320" tabindex="0" title="برای تغییر عرض بکشید (دوبار کلیک: بازنشانی)"></div>
     </section>
 
     <main id="conversation">
@@ -175,10 +177,27 @@
     </div>
   </div>
 
+  <div id="vx-palette" class="vx-palette hidden" role="dialog" aria-modal="true" aria-label="جست‌وجو و دستورها">
+    <div class="vx-palette-scrim" data-palette-close></div>
+    <div class="vx-palette-box">
+      <div class="vx-palette-search">
+        <i data-lucide="search" class="icon" aria-hidden="true"></i>
+        <input id="vx-palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="vx-palette-list" aria-autocomplete="list" aria-label="جست‌وجوی دستور یا گفت‌وگو" placeholder="دستور یا گفت‌وگو…" autocomplete="off" spellcheck="false" />
+        <kbd class="vx-kbd">Esc</kbd>
+      </div>
+      <div id="vx-palette-list" class="vx-palette-list" role="listbox" aria-label="دستورها"></div>
+      <div class="vx-palette-foot" aria-hidden="true">
+        <span><kbd class="vx-kbd">↑</kbd><kbd class="vx-kbd">↓</kbd> حرکت</span>
+        <span><kbd class="vx-kbd">Enter</kbd> اجرا</span>
+        <span><kbd class="vx-kbd">Esc</kbd> بستن</span>
+      </div>
+    </div>
+  </div>
+
   <div id="toast"></div>
   <script src="effects.js?v=78"></script>
   <script src="sanitize.js?v=1"></script>
-<script src="app.js?v=185"></script>
+<script src="app.js?v=186"></script>
   <script src="photo-editor.js?v=4"></script>
   <script src="video-actions.js?v=2"></script>
 <script src="map-picker.js?v=6"></script>

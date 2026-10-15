@@ -8297,11 +8297,213 @@ async function sendRemoteGif(url) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Phase 5B — resizable desktop panes + command palette (⌘/Ctrl-K)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── resizable chat-list track (one CSS var, dragged + persisted) ── */
+const VX_LIST_KEY = 'vx_list_w';
+const VX_LIST_DEFAULT = 320;
+function vxListBounds() {
+  const cs = getComputedStyle(document.documentElement);
+  const min = parseInt(cs.getPropertyValue('--vx-list-w-min'), 10) || 240;
+  const max = parseInt(cs.getPropertyValue('--vx-list-w-max'), 10) || 560;
+  /* never let the list eat the conversation column on a narrow desktop */
+  return { min, max: Math.max(min, Math.min(max, Math.round(window.innerWidth * 0.6))) };
+}
+function vxApplyListWidth(px, persist) {
+  const b = vxListBounds();
+  const w = Math.max(b.min, Math.min(b.max, Math.round(px)));
+  document.documentElement.style.setProperty('--vx-list-w', w + 'px');
+  const h = $('vx-resize');
+  if (h) h.setAttribute('aria-valuenow', String(w));
+  if (persist) { try { localStorage.setItem(VX_LIST_KEY, String(w)); } catch (e) {} }
+  return w;
+}
+function vxInitResize() {
+  const h = $('vx-resize');
+  if (!h) return;
+  let saved = NaN;
+  try { saved = parseInt(localStorage.getItem(VX_LIST_KEY), 10); } catch (e) {}
+  if (Number.isFinite(saved)) vxApplyListWidth(saved, false);
+
+  const rtl = () => getComputedStyle(document.documentElement).direction === 'rtl';
+  const readW = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--vx-list-w')) || VX_LIST_DEFAULT;
+  let dragging = false, startX = 0, startW = 0;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    vxApplyListWidth(startW + (rtl() ? dx : -dx), false);
+    e.preventDefault();
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    h.classList.remove('vx-resizing');
+    document.body.classList.remove('vx-resizing');
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    try { localStorage.setItem(VX_LIST_KEY, String(Math.round(readW()))); } catch (e) {}
+  };
+  h.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    dragging = true; startX = e.clientX; startW = readW();
+    h.classList.add('vx-resizing');
+    document.body.classList.add('vx-resizing');
+    try { h.setPointerCapture(e.pointerId); } catch (er) {}
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    e.preventDefault();
+  });
+  h.addEventListener('dblclick', () => vxApplyListWidth(VX_LIST_DEFAULT, true));
+  h.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 48 : 16;
+    const b = vxListBounds();
+    const cur = readW();
+    if (e.key === 'ArrowRight') { vxApplyListWidth(cur + (rtl() ? -step : step), true); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { vxApplyListWidth(cur + (rtl() ? step : -step), true); e.preventDefault(); }
+    else if (e.key === 'Home') { vxApplyListWidth(b.min, true); e.preventDefault(); }
+    else if (e.key === 'End') { vxApplyListWidth(b.max, true); e.preventDefault(); }
+    else if (e.key === 'Enter' || e.key === ' ') { vxApplyListWidth(VX_LIST_DEFAULT, true); e.preventDefault(); }
+  });
+}
+
+/* ── command palette ── */
+const VX_PALETTE_THEMES = [
+  ['cyber', 'تیره'], ['light', 'روشن'], ['amoled', 'AMOLED'],
+  ['midnight', 'نیمه‌شب'], ['sunset', 'غروب'], ['forest', 'جنگل'], ['synthwave', 'سینث‌ویو'],
+];
+const VX_ADMIN_NAV = ['users', 'signups', 'stats', 'reports', 'audit'];
+let vxPalette = { open: false, items: [], active: 0, lastFocus: null };
+
+function vxPaletteBuild() {
+  const acts = [];
+  const push = (group, label, icon, run, hint) => acts.push({ group, label, icon, run, hint });
+
+  const isAdmin = !!(state.me && state.me.isAdmin);
+  NAV.forEach((n) => {
+    if (VX_ADMIN_NAV.includes(n.id) && !isAdmin) return;
+    push('رفتن به', n.label, n.icon, () => switchNav(n.id));
+  });
+
+  (state.dmRooms || []).slice(0, 30).forEach((rid) => push('گفت‌وگوها', roomTitle(rid), 'message-circle', () => openRoom(rid)));
+  (state.groups || []).slice(0, 30).forEach((g) => push('گروه‌ها و کانال‌ها', g.name, g.isChannel ? 'megaphone' : 'users', () => openRoom('group:' + g.id)));
+
+  VX_PALETTE_THEMES.forEach(([id, label]) => push('تم', label, 'palette', () => { try { window.VXDesign.setTheme(id); } catch (e) {} }));
+
+  const D = window.VXDesign;
+  if (D) {
+    push('نمایش', D.glass ? 'خاموش‌کردن افکت شیشه‌ای' : 'روشن‌کردن افکت شیشه‌ای', 'droplet', () => D.toggleGlass());
+    push('نمایش', D.aurora ? 'خاموش‌کردن پس‌زمینهٔ متحرک' : 'روشن‌کردن پس‌زمینهٔ متحرک', 'sparkles', () => D.toggleAurora());
+    push('نمایش', D.reduceGlass ? 'خاموش‌کردن حالت سبک' : 'روشن‌کردن حالت سبک (بدون بلور)', 'zap', () => D.toggleReduceGlass());
+    push('نمایش', 'حالت کم‌مصرف: ' + (D.effectivePower === 'saver' ? 'روشن' : 'خاموش'), 'gauge', () => D.setPower(D.effectivePower === 'saver' ? 'full' : 'saver'));
+  }
+
+  push('کارها', 'چت جدید', 'square-pen', () => { const b = $('cl-new'); if (b) b.click(); });
+  push('کارها', 'گروه جدید', 'square-pen', () => startGroup());
+  push('کارها', 'کانال جدید', 'megaphone', () => startGroup(true));
+  push('کارها', 'پروفایل من', 'user', () => openProfile(state.me.username));
+  push('کارها', 'خروج از حساب', 'log-out', () => logout());
+  return acts;
+}
+function vxPaletteRender() {
+  const inp = $('vx-palette-input'), list = $('vx-palette-list');
+  if (!inp || !list) return;
+  const q = (inp.value || '').trim().toLowerCase();
+  const all = vxPaletteBuild();
+  const filtered = q ? all.filter((a) => a.label.toLowerCase().indexOf(q) >= 0 || a.group.toLowerCase().indexOf(q) >= 0) : all;
+  vxPalette.items = filtered.slice(0, 60);
+  if (vxPalette.active >= vxPalette.items.length || vxPalette.active < 0) vxPalette.active = 0;
+
+  if (!vxPalette.items.length) {
+    list.innerHTML = '<div class="vx-palette-empty">چیزی پیدا نشد</div>';
+    inp.removeAttribute('aria-activedescendant');
+    return;
+  }
+  let html = '', lastGroup = null;
+  vxPalette.items.forEach((a, idx) => {
+    if (a.group !== lastGroup) { html += '<div class="vx-palette-group">' + esc(a.group) + '</div>'; lastGroup = a.group; }
+    html += '<button type="button" role="option" id="vxp-' + idx + '" class="vx-palette-item" data-idx="' + idx + '" aria-selected="' + (idx === vxPalette.active ? 'true' : 'false') + '">'
+      + ic(a.icon) + '<span class="vx-palette-label">' + esc(a.label) + '</span>'
+      + (a.hint ? '<span class="vx-palette-hint">' + esc(a.hint) + '</span>' : '') + '</button>';
+  });
+  list.innerHTML = html;
+  inp.setAttribute('aria-activedescendant', 'vxp-' + vxPalette.active);
+  const cur = list.querySelector('[aria-selected="true"]');
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  luc();
+}
+function vxPaletteMove(delta) {
+  if (!vxPalette.items.length) return;
+  vxPalette.active = (vxPalette.active + delta + vxPalette.items.length) % vxPalette.items.length;
+  vxPaletteRender();
+}
+function vxPaletteRun(idx) {
+  const a = vxPalette.items[idx];
+  if (!a) return;
+  vxPaletteClose();
+  try { a.run(); } catch (e) { console.error('palette action failed', e); }
+}
+function vxPaletteOpen() {
+  const el = $('vx-palette'); if (!el) return;
+  vxPalette.lastFocus = document.activeElement;
+  el.classList.remove('hidden');
+  vxPalette.open = true;
+  const inp = $('vx-palette-input');
+  if (inp) inp.value = '';
+  vxPalette.active = 0;
+  vxPaletteRender();
+  requestAnimationFrame(() => { try { if (inp) inp.focus(); } catch (e) {} });
+}
+function vxPaletteClose() {
+  const el = $('vx-palette'); if (!el) return;
+  el.classList.add('hidden');
+  vxPalette.open = false;
+  const lf = vxPalette.lastFocus;
+  if (lf && lf.focus) { try { lf.focus(); } catch (e) {} }
+}
+function vxPaletteToggle() { if (vxPalette.open) vxPaletteClose(); else vxPaletteOpen(); }
+function vxInitPalette() {
+  const el = $('vx-palette'), inp = $('vx-palette-input'), list = $('vx-palette-list');
+  if (!el || !inp || !list) return;
+  el.querySelectorAll('[data-palette-close]').forEach((n) => n.addEventListener('click', vxPaletteClose));
+  const openBtn = $('vx-palette-open');
+  if (openBtn) openBtn.addEventListener('click', vxPaletteOpen);
+  inp.addEventListener('input', () => { vxPalette.active = 0; vxPaletteRender(); });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); vxPaletteMove(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); vxPaletteMove(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); vxPaletteRun(vxPalette.active); }
+    else if (e.key === 'Escape') { e.preventDefault(); vxPaletteClose(); }
+    else if (e.key === 'Home') { e.preventDefault(); vxPalette.active = 0; vxPaletteRender(); }
+    else if (e.key === 'End') { e.preventDefault(); vxPalette.active = vxPalette.items.length - 1; vxPaletteRender(); }
+  });
+  list.addEventListener('click', (e) => {
+    const item = e.target.closest ? e.target.closest('.vx-palette-item') : null;
+    if (item) vxPaletteRun(parseInt(item.dataset.idx, 10));
+  });
+  list.addEventListener('mouseover', (e) => {
+    const item = e.target.closest ? e.target.closest('.vx-palette-item') : null;
+    if (!item) return;
+    const idx = parseInt(item.dataset.idx, 10);
+    if (Number.isFinite(idx) && idx !== vxPalette.active) { vxPalette.active = idx; vxPaletteRender(); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+      if (state.me) { e.preventDefault(); vxPaletteToggle(); }
+    } else if (e.key === 'Escape' && vxPalette.open) {
+      vxPaletteClose();
+    }
+  });
+}
+
 (async function init() {
   try {
     bindCtxReposition();
     initMultiSelect();
-    if (state.token) {
+    vxInitResize();
+    vxInitPalette();    if (state.token) {
       const cached = cachedMe();
       if (cached) {
         /* یک‌راست داخل پیام‌رسان — بدون انتظار شبکه/بدون فلش صفحهٔ شماره */

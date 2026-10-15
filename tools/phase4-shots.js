@@ -289,6 +289,36 @@ async function probe(page) {
       },
     };
 
+    // — slice 5B: resizable panes + command palette —
+    const rz = document.getElementById('vx-resize');
+    if (rz) {
+      const rst = getComputedStyle(rz);
+      out.resize = {
+        present: true,
+        display: rst.display,
+        role: rz.getAttribute('role'),
+        orientation: rz.getAttribute('aria-orientation'),
+        tabbable: rz.tabIndex === 0,
+        hasName: !!((rz.getAttribute('aria-label') || '').trim()),
+        valueMin: rz.getAttribute('aria-valuemin'),
+        valueMax: rz.getAttribute('aria-valuemax'),
+        valueNow: rz.getAttribute('aria-valuenow'),
+        listW: cs.getPropertyValue('--vx-list-w').trim(),
+      };
+    } else {
+      out.resize = { present: false };
+    }
+    const pal = document.getElementById('vx-palette');
+    out.palette = {
+      present: !!pal,
+      hiddenByDefault: pal ? pal.classList.contains('hidden') : null,
+      hasInput: !!(pal && pal.querySelector('#vx-palette-input')),
+      hasList: !!(pal && pal.querySelector('#vx-palette-list')),
+      role: pal ? pal.getAttribute('role') : null,
+      modal: pal ? pal.getAttribute('aria-modal') : null,
+      inputNamed: !!(pal && (function () { const i = pal.querySelector('#vx-palette-input'); return i && (i.getAttribute('aria-label') || '').trim(); })()),
+    };
+
     return out;
   });
 }
@@ -368,6 +398,27 @@ function evaluate(m) {
       if (m.tokens.aurora.ariaHidden !== 'true') f.push('aurora not aria-hidden');
     }
     if (m.tokens.wallpaperVar && ['set', 'none'].indexOf(m.tokens.wallpaperVar) < 0) f.push('unknown data-wallpaper: ' + m.tokens.wallpaperVar);
+  }
+  // — slice 5B: resizable panes + command palette —
+  if (m.resize && m.resize.present) {
+    const desktop = m.viewportW >= 720;
+    if (desktop) {
+      if (m.resize.display === 'none') f.push('resize handle hidden on desktop');
+      if (m.resize.role !== 'separator') f.push('resize handle role != separator');
+      if (m.resize.orientation !== 'vertical') f.push('resize handle aria-orientation != vertical');
+      if (!m.resize.tabbable) f.push('resize handle not keyboard focusable');
+      if (!m.resize.hasName) f.push('resize handle has no accessible name');
+      if (!m.resize.listW) f.push('--vx-list-w token missing');
+    } else if (m.resize.display !== 'none') {
+      f.push('resize handle visible on mobile');
+    }
+  }
+  if (!m.palette || !m.palette.present) f.push('command palette missing');
+  else {
+    if (m.palette.hiddenByDefault !== true) f.push('palette visible at rest');
+    if (m.palette.role !== 'dialog') f.push('palette role != dialog');
+    if (m.palette.modal !== 'true') f.push('palette aria-modal != true');
+    if (!m.palette.hasInput || !m.palette.hasList) f.push('palette missing input/list');
   }
   return f;
 }
@@ -1110,6 +1161,94 @@ async function main() {
       VXDesign.setAurora(true); VXDesign.setBubbleRadius('round'); VXDesign.setReduceGlass(false);
       await new Promise((r) => setTimeout(r, 300));
     });
+
+    /* ── slice 5B: command palette + resizable panes ── */
+    interactions.palette = await inter.evaluate(async () => {
+      const pal = document.getElementById('vx-palette');
+      const inp = document.getElementById('vx-palette-input');
+      const list = document.getElementById('vx-palette-list');
+      if (!pal || !inp || !list) return { ok: false, reason: 'palette DOM missing' };
+      const before = VXDesign.theme;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+      await new Promise((r) => setTimeout(r, 300));
+      const opened = !pal.classList.contains('hidden');
+      const itemsAll = list.querySelectorAll('.vx-palette-item').length;
+      const groups = list.querySelectorAll('.vx-palette-group').length;
+      const firstSelected = !!list.querySelector('.vx-palette-item[aria-selected="true"]');
+      inp.value = 'amoled';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 150));
+      const filtered = list.querySelectorAll('.vx-palette-item').length;
+      const filteredLabel = (list.querySelector('.vx-palette-item .vx-palette-label') || {}).textContent || '';
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 300));
+      const closedAfterRun = pal.classList.contains('hidden');
+      const themeAfter = VXDesign.theme;
+      try { VXDesign.setTheme(before); } catch (e) {}
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+      await new Promise((r) => setTimeout(r, 250));
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 120));
+      const selEl = list.querySelector('.vx-palette-item[aria-selected="true"]');
+      const selIdx = selEl ? selEl.dataset.idx : null;
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 200));
+      const closedAfterEsc = pal.classList.contains('hidden');
+      const ok = opened && itemsAll > 0 && groups > 0 && firstSelected &&
+        filtered >= 1 && filteredLabel.indexOf('AMOLED') >= 0 &&
+        closedAfterRun && themeAfter === 'amoled' && selIdx === '1' && closedAfterEsc;
+      return { ok, opened, itemsAll, groups, firstSelected, filtered, filteredLabel, closedAfterRun, themeAfter, selIdx, closedAfterEsc };
+    });
+    if (!interactions.palette.ok) failures.push('command palette: ' + JSON.stringify(interactions.palette));
+
+    // screenshot with the palette open (filtered to show both groups + matching)
+    await inter.evaluate(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    await inter.screenshot({ path: path.join(OUT, 'interactions-palette.png') });
+    await inter.evaluate(() => { const p = document.getElementById('vx-palette'); if (p) p.classList.add('hidden'); });
+
+    // resizable panes need a desktop viewport
+    await inter.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+    await inter.evaluate(async () => { try { switchNav('chats'); } catch (e) {} await new Promise((r) => setTimeout(r, 400)); });
+    interactions.resize = await inter.evaluate(async () => {
+      const de = document.documentElement;
+      const h = document.getElementById('vx-resize');
+      if (!h) return { ok: false, reason: 'no resize handle' };
+      const display = getComputedStyle(h).display;
+      if (display === 'none') return { ok: false, reason: 'handle hidden on desktop' };
+      const read = () => parseFloat(getComputedStyle(de).getPropertyValue('--vx-list-w')) || 320;
+      const rtl = getComputedStyle(de).direction === 'rtl';
+      const before = read();
+      h.focus();
+      h.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 90));
+      const afterRight = read();
+      h.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 90));
+      const afterLeft = read();
+      const r = h.getBoundingClientRect();
+      const startX = r.left + r.width / 2;
+      h.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: startX, button: 0, pointerId: 1 }));
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: startX + 60, pointerId: 1 }));
+      await new Promise((r2) => setTimeout(r2, 70));
+      const afterDrag = read();
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: startX + 60, pointerId: 1 }));
+      await new Promise((r2) => setTimeout(r2, 70));
+      const persisted = localStorage.getItem('vx_list_w');
+      const ariaNow = h.getAttribute('aria-valuenow');
+      h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await new Promise((r2) => setTimeout(r2, 90));
+      const afterReset = read();
+      const ok = afterRight !== before && afterLeft === before &&
+        afterDrag !== afterRight && persisted !== null &&
+        afterReset === 320 && parseInt(ariaNow, 10) === Math.round(afterDrag);
+      return { ok, rtl, before, afterRight, afterLeft, afterDrag, persisted, afterReset, ariaNow };
+    });
+    if (!interactions.resize.ok) failures.push('resize panes: ' + JSON.stringify(interactions.resize));
+    await inter.screenshot({ path: path.join(OUT, 'interactions-resize.png') });
+    await inter.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
 
     await inter.close();
 

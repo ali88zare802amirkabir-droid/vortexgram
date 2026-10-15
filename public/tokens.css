@@ -97,6 +97,15 @@
   --vx-z-palette: 1300;
   --vx-z-fx: 1600; /* emoji effect layer — must stay on top */
 
+  /* ── resizable desktop panes (Phase 5B) ──
+     The chat-list track reads this. JS drags it between the min and max and
+     persists the choice; every breakpoint uses the same variable so there is
+     one source of truth. */
+  --vx-list-w: 320px;
+  --vx-list-w-min: 240px;
+  --vx-list-w-max: 560px;
+  --vx-resize-hit: 10px; /* grab area is wider than the visible 2px line */
+
   /* ───────────────────────── 6. GLASS RECIPE ─────────────────────────
      A translucent panel = blur + saturate + fill + 1px stroke + inner
      top-edge highlight. `--vx-glass-blur` is the single switch power-saving
