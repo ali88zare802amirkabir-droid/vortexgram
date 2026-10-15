@@ -78,3 +78,10 @@ swipe actions already existed from earlier slices and were left intact.
 
 - Design-token foundation, the glass / power-saving system, and the floating
   mobile navigation pill with a morphing active indicator plus a desktop rail.
+
+## 2026-10-15 — Phase 5E (Telegram-grade Settings · server-side persistence)
+- Server: users.settings JSONB (migration 0005_user_settings); GET/POST /api/profile/settings with whitelist, sparse merge, rate-limit (40/min), WS settings-updated.
+- Active Sessions: /api/profile/devices includes id+current; revoke single and revoke-others; device IDs per login (sha1 UA/platform).
+- Privacy (server): /api/users/exists/:username hides lastSeen for nobody/contacts (non-self), hides online when privacy.presence false.
+- Client: VXSettings (debounced 400ms, optimistic, WS adopt); wired privacy, notifications, appearance (theme expanded to 10), chat, language, data; Active Sessions UI with revoke actions.
+- Tests: tests/settings.test.js added; all 127/127 pass (+4 settings).

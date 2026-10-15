@@ -1332,6 +1332,61 @@ async function main() {
     if (!interactions.conversation.ok) failures.push('5C conversation polish: ' + JSON.stringify(interactions.conversation));
     await inter.screenshot({ path: path.join(OUT, 'interactions-conversation.png') });
 
+    /* ── slice 5E: server-backed settings + active sessions ── */
+    interactions.settings5e = await inter.evaluate(async () => {
+      const res = {};
+      try { switchNav('settings'); } catch (e) {}
+      state.settingsCat = 'main';
+      try { renderView('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 250));
+      const main = document.querySelector('.settings-main');
+      const cats = main ? Array.from(main.querySelectorAll('.set-cat')).map((c) => c.dataset.cat) : [];
+      res.hasChat = cats.indexOf('chat') >= 0;
+      res.hasLanguage = cats.indexOf('language') >= 0;
+
+      const pc = main ? main.querySelector('.set-cat[data-cat="privacy"]') : null;
+      if (pc) pc.click();
+      await new Promise((r) => setTimeout(r, 250));
+      const sel = document.getElementById('priv-lastseen');
+      const read = document.getElementById('priv-read');
+      const pres = document.getElementById('priv-presence');
+      res.controls = !!(sel && read && pres);
+      if (sel) { sel.value = 'nobody'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      if (read) { read.checked = false; read.dispatchEvent(new Event('change', { bubbles: true })); }
+      await new Promise((r) => setTimeout(r, 750));
+      res.localLastSeen = VXSettings.get('privacy.lastSeen');
+      res.localRead = VXSettings.get('privacy.readReceipts');
+      let srv = null;
+      try { const rr = await api('/api/profile/settings'); srv = (await rr.json()).settings; } catch (e) { res.err = String(e); }
+      res.srvLastSeen = srv && srv.privacy ? srv.privacy.lastSeen : null;
+      res.srvRead = srv && srv.privacy ? srv.privacy.readReceipts : null;
+      if (sel) { sel.value = 'everybody'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      if (read) { read.checked = true; read.dispatchEvent(new Event('change', { bubbles: true })); }
+      await new Promise((r) => setTimeout(r, 550));
+
+      state.settingsCat = 'appearance'; try { renderView('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 250));
+      const prevAccent = VXSettings.get('appearance.accent');
+      const other = document.querySelector('.settings-sub [data-accent-btn]:not(.on)');
+      res.accentChip = !!other;
+      if (other) other.click();
+      await new Promise((r) => setTimeout(r, 250));
+      res.accentChanged = VXSettings.get('appearance.accent') !== prevAccent;
+      VXSettings.set('appearance.accent', prevAccent);
+      await new Promise((r) => setTimeout(r, 550));
+
+      res.ok = res.hasChat && res.hasLanguage && res.controls && res.localLastSeen === 'nobody' &&
+        res.localRead === false && res.srvLastSeen === 'nobody' && res.srvRead === false && res.accentChanged;
+      return res;
+    });
+    if (!interactions.settings5e.ok) failures.push('5E settings: ' + JSON.stringify(interactions.settings5e));
+
+    await inter.evaluate(async () => {
+      try { switchNav('settings'); state.settingsCat = 'privacy'; renderView('settings'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    await inter.screenshot({ path: path.join(OUT, 'interactions-settings5e.png') });
+
     await inter.close();
 
     await browser.close();

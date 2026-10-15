@@ -61,6 +61,7 @@ function buildAll(data) {
       Array.isArray(u.blocked) ? u.blocked : [], num(u.createdAt), num(u.lastSeen), num(u.updatedAt),
       Array.isArray(u.devices) && u.devices.length ? JSON.stringify(u.devices) : JSON.stringify([]),
       num(u.lastLogin), bool(u.isBot),
+      (u.settings && typeof u.settings === 'object' && !Array.isArray(u.settings) && Object.keys(u.settings).length) ? JSON.stringify(u.settings) : JSON.stringify({}),
     ]);
   }
   const knownUsers = new Set(data.users.map((u) => u && u.username));
@@ -265,7 +266,7 @@ function buildAll(data) {
   for (const uname of referenced) {
     if (!uname || knownUsers.has(uname) || users.some((u) => u[0] === uname)) continue;
     stubs.push(uname);
-    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null, JSON.stringify([]), null, false]);
+    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null, JSON.stringify([]), null, false, JSON.stringify({})]);
   }
 
   // --- kv (non-modeled top-level keys + internal bookkeeping) ---------------
@@ -318,7 +319,7 @@ async function truncateAll(exec) {
 
 async function insertAll(exec, b) {
   // FK-safe order
-  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login', 'is_bot'], b.users);
+  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login', 'is_bot', 'settings'], b.users);
   await _insertRows(exec, 'conversations', ['id', 'type', 'title', 'avatar', 'owner', 'invite_token', 'created_at', 'updated_at', 'category'], b.conversations);
   await _insertRows(exec, 'conversation_members', ['conversation_id', 'user_id', 'role', 'joined_at', 'last_read_message_id'], b.members);
   await _insertRows(exec, 'messages', ['id', 'conversation_id', 'from', 'from_name', 'from_avatar', 'from_premium', 'kind', 'content', 'silent', 'fwd_from', 'edited', 'reply_to_id', 'reply_to_message_id', 'reply_to_name', 'reply_to_snippet', 'poll', 'checklist', 'album', 'time', 'updated_at', 'deleted_at'], b.messages);
@@ -354,7 +355,7 @@ async function loadAll(exec) {
   const emptyChatUsers = new Set(JSON.parse(kvMap.get('__chat_empty__') || '[]'));
 
   // --- users (stub handles excluded from the runtime list) -----------------
-  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at, devices, last_login, is_bot FROM users')).rows;
+  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at, devices, last_login, is_bot, settings FROM users')).rows;
   const usersById = new Map();
   for (const r of userRows) {
     if (stubUsers.has(r.username)) continue;
@@ -369,6 +370,7 @@ async function loadAll(exec) {
     setIf(u, 'updatedAt', lnum(r.updated_at));
     if (Array.isArray(r.devices) && r.devices.length) u.devices = r.devices;
     setIf(u, 'lastLogin', lnum(r.last_login));
+    if (r.settings && typeof r.settings === 'object' && !Array.isArray(r.settings) && Object.keys(r.settings).length) u.settings = r.settings;
     if (r.is_bot) u.isBot = true;   // absent/false stays absent so snapshots round-trip cleanly
     usersById.set(r.username, r.username);
     db.users.push(u);

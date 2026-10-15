@@ -452,6 +452,7 @@ function normalizeSessionRecord(token, record, now = Date.now()) {
   const iat = Number.isFinite(record.iat) ? record.iat : now;
   const maxExp = Number.isFinite(record.maxExp) ? record.maxExp : iat + SESSION_ABSOLUTE_MAX;
   const normalized = { username: record.username, exp: Number(record.exp), iat, maxExp };
+  if (typeof record.deviceId === 'string' && record.deviceId) normalized.deviceId = record.deviceId;
   sessions.set(token, normalized);
   return normalized;
 }
@@ -463,10 +464,12 @@ function normalizeSessions(now = Date.now()) {
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
 }
-function createSession(username) {
+function createSession(username, deviceId) {
   const token = newToken();
   const now = Date.now();
-  sessions.set(token, { username, exp: now + SESSION_TTL, iat: now, maxExp: now + SESSION_ABSOLUTE_MAX });
+  const record = { username, exp: now + SESSION_TTL, iat: now, maxExp: now + SESSION_ABSOLUTE_MAX };
+  if (deviceId) record.deviceId = deviceId;
+  sessions.set(token, record);
   saveDB();
   return token;
 }
@@ -491,6 +494,22 @@ function revokeUserSessions(username) {
   }
   if (revoked) saveDB();
   return revoked;
+}
+/* بستن نشست‌های یک دستگاه مشخص (نشست‌های فعال). */
+function revokeDeviceSessions(username, deviceId) {
+  let n = 0;
+  for (const [token, record] of [...sessions.entries()]) {
+    if (record && record.username === username && record.deviceId === deviceId) { sessions.delete(token); n += 1; }
+  }
+  return n;
+}
+/* بستن همهٔ نشست‌ها به‌جز دستگاه فعلی. */
+function revokeOtherSessions(username, keepDeviceId) {
+  let n = 0;
+  for (const [token, record] of [...sessions.entries()]) {
+    if (record && record.username === username && record.deviceId !== keepDeviceId) { sessions.delete(token); n += 1; }
+  }
+  return n;
 }
 function auditAdmin(req, action, target, details = {}) {
   db.adminAudit = Array.isArray(db.adminAudit) ? db.adminAudit : [];
@@ -579,6 +598,14 @@ function clientDevice(req) {
     : browser + ' — ' + category;
   return { ip, region: '', platform, category, browser, os, osVersion, model, app: isApp, appVersion: isApp ? appM[1] : '', device };
 }
+/* شناسهٔ پایدار دستگاه برای «نشست‌های فعال»: از پلتفرم/مرورگر/سیستم ساخته
+   می‌شود (نه IP که عوض می‌شود) تا بتوان یک دستگاه مشخص را از راه دور بست. */
+function deviceId(req) {
+  const d = clientDevice(req);
+  return crypto.createHash('sha1')
+    .update([d.platform, d.browser, d.os, d.osVersion, d.model, d.app ? 'app:' + d.appVersion : 'web'].join('|'))
+    .digest('hex').slice(0, 16);
+}
 // توکن از هدر Authorization یا کوکی نشست خوانده می‌شود (برای سرو فایل‌های خصوصی).
 function requestToken(req) {
   const h = req.headers.authorization || '';
@@ -606,8 +633,9 @@ function noteDevice(user, req) {
   if (!user) return;
   const d = clientDevice(req);
   const now = Date.now();
+  d.id = deviceId(req);
   user.devices = Array.isArray(user.devices) ? user.devices : [];
-  const existing = user.devices.find((x) => x && x.ip === d.ip && ((x.browser && x.platform === d.platform && x.browser === d.browser) || (!x.platform && x.device === d.device)));
+  const existing = user.devices.find((x) => x && (x.id === d.id || (x.ip === d.ip && ((x.browser && x.platform === d.platform && x.browser === d.browser) || (!x.platform && x.device === d.device)))));
   if (existing) { Object.assign(existing, d); existing.lastLogin = now; }
   else { user.devices.push(Object.assign({}, d, { lastLogin: now })); }
   if (user.devices.length > 12) user.devices = user.devices.slice(-12);
@@ -935,7 +963,7 @@ app.post('/api/register', (req, res) => {
   db.users.push(user);
   saveDB();
   pushUsers();
-  const token = createSession(username);
+  const token = createSession(username, deviceId(req));
   setSessionCookie(res, token);
   noteDevice(user, req);
   res.json({ ok: true, token, me: publicUser(user) });
@@ -951,7 +979,7 @@ app.post('/api/login', (req, res) => {
   if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
   // ربات‌ها کلید API دارند، نه رمز عبور؛ ورود با رمز برایشان همیشه رد می‌شود
   if (isBotUser(user)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
-  const token = createSession(user.username);
+  const token = createSession(user.username, deviceId(req));
   setSessionCookie(res, token);
   noteDevice(user, req);
   res.json({ token, me: publicUser(user) });
@@ -986,7 +1014,7 @@ app.post('/api/send-code', async (req, res) => {
     if (user) {
       if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
       if (isBotUser(user)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
-      const token = createSession(user.username);
+      const token = createSession(user.username, deviceId(req));
       setSessionCookie(res, token);
       noteDevice(user, req);
       return res.json({ ok: true, token, me: publicUser(user) });
@@ -1019,7 +1047,7 @@ app.post('/api/verify-code', (req, res) => {
     pendingCodes.delete(phone);
     if (user.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
     if (isBotUser(user)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
-    const token = createSession(user.username);
+    const token = createSession(user.username, deviceId(req));
     setSessionCookie(res, token);
     noteDevice(user, req);
     return res.json({ token, me: publicUser(user) });
@@ -1045,7 +1073,7 @@ app.post('/api/complete-register', (req, res) => {
     pendingCodes.delete(phone);
     if (existing.banned) return res.status(403).json({ error: 'حساب شما مسدود شده است' });
     if (isBotUser(existing)) return res.status(403).json({ error: BOT_LOGIN_ERROR });
-    const token = createSession(existing.username);
+    const token = createSession(existing.username, deviceId(req));
     setSessionCookie(res, token);
     noteDevice(existing, req);
     return res.json({ token, me: publicUser(existing) });
@@ -1068,7 +1096,7 @@ if (username) {
   pendingCodes.delete(phone);
   saveDB();
   pushUsers();
-  const token = createSession(user.username);
+  const token = createSession(user.username, deviceId(req));
   setSessionCookie(res, token);
   noteDevice(user, req);
   return res.json({ ok: true, token, me: publicUser(user), message: isAdmin ? 'حساب ادمین ساخته شد ✅' : 'حساب ساخته شد ✅' });
@@ -1133,7 +1161,98 @@ app.post('/api/profile/bio', auth, (req, res) => {
 });
 
 // ---------- profile settings (theme/accent/font/pin/devices) ----------
+/* ── ساختار تنظیمات کاربر (فاز ۵E) ────────────────────────────────────────
+   user.settings یک سند پراکنده است: فقط مسیرهایی که کاربر واقعاً تغییر داده
+   ذخیره می‌شوند؛ پیش‌فرض‌ها در «نمای خواندن» اعمال می‌شوند و هرگز نوشته
+   نمی‌شوند تا حساب دست‌نخورده بایت‌به‌بایت برگردد. هر مقدار پیش از ادغام از
+   یک لیست سفید (enum/bool/accent) رد می‌شود، پس هیچ کلید یا رشتهٔ آزادی
+   ذخیره نمی‌شود. */
+const SETTINGS_DEFAULTS = {
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', readReceipts: true, presence: true },
+  notifications: { enabled: true, sound: true, preview: true },
+  data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
+  appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
+  language: { code: 'fa', translateEnabled: false },
+  chat: { showTyping: true, enterToSend: true },
+};
+const SETTINGS_ENUMS = {
+  'privacy.lastSeen': ['everybody', 'contacts', 'nobody'],
+  'privacy.profilePhoto': ['everybody', 'contacts', 'nobody'],
+  'appearance.theme': ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
+  'appearance.bubbleRadius': ['sharp', 'compact', 'round', 'pill'],
+  'language.code': ['fa', 'en', 'ar', 'tr', 'ru'],
+};
+const SETTINGS_BOOLS = [
+  'privacy.readReceipts', 'privacy.presence',
+  'notifications.enabled', 'notifications.sound', 'notifications.preview',
+  'data.autoDownloadPhotos', 'data.autoDownloadVideos', 'data.saveData',
+  'appearance.reduceGlass', 'appearance.aurora',
+  'language.translateEnabled',
+  'chat.showTyping', 'chat.enterToSend',
+];
+function getPath(obj, path) { return path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj); }
+function setPath(obj, path, val) {
+  const parts = path.split('.'); let o = obj;
+  for (let i = 0; i < parts.length - 1; i++) { if (typeof o[parts[i]] !== 'object' || o[parts[i]] === null) o[parts[i]] = {}; o = o[parts[i]]; }
+  o[parts[parts.length - 1]] = val;
+}
+function deepMergeSettings(base, patch) {
+  const out = (base && typeof base === 'object' && !Array.isArray(base)) ? JSON.parse(JSON.stringify(base)) : {};
+  for (const k of Object.keys(patch || {})) {
+    const v = patch[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = deepMergeSettings(out[k], v);
+    else out[k] = v;
+  }
+  return out;
+}
+/* ادغام پیش‌فرض‌ها با سند ذخیره‌شده (ذخیره‌شده برنده) — بدون تغییر پیش‌فرض‌ها. */
+function settingsView(user) {
+  const stored = (user && typeof user.settings === 'object' && user.settings && !Array.isArray(user.settings)) ? user.settings : {};
+  return deepMergeSettings(SETTINGS_DEFAULTS, stored);
+}
+/* اعتبارسنجی وصلهٔ تنظیمات: فقط کلیدهای شناخته‌شده؛ در غیر این صورت لیست خطا. */
+function sanitizeSettingsPatch(patch) {
+  const out = {}; const errors = [];
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { out, errors };
+  for (const key of Object.keys(SETTINGS_ENUMS)) {
+    const v = getPath(patch, key);
+    if (v === undefined) continue;
+    if (typeof v === 'string' && SETTINGS_ENUMS[key].includes(v)) setPath(out, key, v); else errors.push(key);
+  }
+  for (const key of SETTINGS_BOOLS) {
+    const v = getPath(patch, key);
+    if (v === undefined) continue;
+    if (typeof v === 'boolean') setPath(out, key, v); else errors.push(key);
+  }
+  const ac = getPath(patch, 'appearance.accent');
+  if (ac !== undefined) {
+    const s = String(ac).trim().slice(0, 30);
+    if (/^[a-zA-Z0-9#_-]+$/.test(s)) setPath(out, 'appearance.accent', s); else errors.push('appearance.accent');
+  }
+  return { out, errors };
+}
+/* محدودیت نرخ برای نوشتن تنظیمات (per-user، در حافظه). */
+const settingsWrites = new Map();
+function settingsRateOk(username, max = 40, windowMs = 60000) {
+  const now = Date.now();
+  const arr = (settingsWrites.get(username) || []).filter((t) => now - t < windowMs);
+  if (arr.length >= max) { settingsWrites.set(username, arr); return false; }
+  arr.push(now); settingsWrites.set(username, arr); return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, arr] of settingsWrites) { const f = arr.filter((t) => now - t < 60000); if (f.length) settingsWrites.set(k, f); else settingsWrites.delete(k); }
+}, 60000).unref();
+
+app.get('/api/profile/settings', auth, (req, res) => {
+  // `settings` = کامل (پیش‌فرض‌ها اعمال‌شده) برای رندر؛ `stored` = سند پراکندهٔ
+  // واقعی روی حساب — تا کلاینت بفهمد کاربر واقعاً چه چیزی را تغییر داده (مثلاً
+  // آیا ظاهر را خودش انتخاب کرده یا هنوز پیش‌فرض است).
+  res.json({ ok: true, settings: settingsView(req.user), stored: (req.user.settings && typeof req.user.settings === 'object' && !Array.isArray(req.user.settings)) ? req.user.settings : {} });
+});
+
 app.post('/api/profile/settings', auth, (req, res) => {
+  if (!settingsRateOk(req.user.username)) return res.status(429).json({ error: 'درخواست‌های تنظیمات زیاد است — کمی صبر کن' });
   const b = req.body || {};
   if (typeof b.theme === 'string') req.user.theme = b.theme.trim().slice(0, 20);
   if (typeof b.accent === 'string') {
@@ -1149,13 +1268,24 @@ app.post('/api/profile/settings', auth, (req, res) => {
     if (Number.isFinite(fs)) req.user.fontScale = Math.max(11, Math.min(30, fs));
   }
   if (typeof b.pinHash === 'string') req.user.pinHash = b.pinHash.trim().slice(0, 100);
+  let applied = null;
+  if (b.settings !== undefined) {
+    const { out, errors } = sanitizeSettingsPatch(b.settings);
+    if (errors.length) return res.status(400).json({ error: 'مقدار تنظیمات نامعتبر: ' + [...new Set(errors)].join('، ') });
+    req.user.settings = deepMergeSettings(req.user.settings || {}, out);
+    applied = out;
+  }
   saveDB();
-  res.json({ ok: true, me: publicUser(req.user) });
+  try { notifyUser(req.user.username, { type: 'settings-updated', settings: settingsView(req.user) }); } catch (e) {}
+  res.json({ ok: true, me: publicUser(req.user), settings: settingsView(req.user), applied });
 });
 
 app.get('/api/profile/devices', auth, (req, res) => {
-  const d = req.user.devices || [];
+  const cur = deviceId(req);
+  const d = Array.isArray(req.user.devices) ? req.user.devices : [];
   res.json({ devices: d.map((dev) => ({
+    id: dev.id || null,
+    current: !!(dev.id && dev.id === cur),
     ip: dev.ip,
     region: dev.region || '',
     platform: dev.platform || 'web',
@@ -1169,6 +1299,25 @@ app.get('/api/profile/devices', auth, (req, res) => {
     appVersion: dev.appVersion || '',
     lastLogin: dev.lastLogin
   })) });
+});
+
+/* بستن یک دستگاه مشخص: نشست‌هایش باطل و از لیست حذف می‌شود. */
+app.post('/api/profile/devices/revoke', auth, (req, res) => {
+  const id = String((req.body || {}).id || '').trim();
+  if (!id) return res.status(400).json({ error: 'شناسهٔ دستگاه لازم است' });
+  req.user.devices = (Array.isArray(req.user.devices) ? req.user.devices : []).filter((d) => d && d.id !== id);
+  const revoked = revokeDeviceSessions(req.user.username, id);
+  saveDB();
+  res.json({ ok: true, revoked });
+});
+
+/* بستن همهٔ نشست‌ها به‌جز دستگاه فعلی. */
+app.post('/api/profile/devices/revoke-others', auth, (req, res) => {
+  const cur = deviceId(req);
+  req.user.devices = (Array.isArray(req.user.devices) ? req.user.devices : []).filter((d) => d && d.id === cur);
+  const revoked = revokeOtherSessions(req.user.username, cur);
+  saveDB();
+  res.json({ ok: true, revoked });
 });
 
 // ذخیره تم/اسکین فعال کاربر (برای جلوه‌های پروفایل دیسکوردی)
@@ -1475,7 +1624,7 @@ app.post('/api/admin/impersonate', auth, (req, res) => {
   const target = db.users.find((u) => u.username === username);
   if (!target) return res.status(404).json({ error: 'کاربر یافت نشد' });
   if (target.banned) return res.status(400).json({ error: 'کاربر مسدود است' });
-  const token = createSession(target.username);
+  const token = createSession(target.username, deviceId(req));
   setSessionCookie(res, token);
   saveDB();
   auditAdmin(req, 'impersonate', target.username, {});
@@ -2284,7 +2433,14 @@ app.get('/api/users/exists/:username', auth, (req, res) => {
   const uname = String(req.params.username || '').trim().replace(/^@/, '');
   const u = db.users.find((x) => x.username.toLowerCase() === uname.toLowerCase());
   if (!u) return res.status(404).json({ error: 'کاربری با این آیدی ثبت نشده' });
-  res.json({ username: u.username, displayName: u.displayName, avatar: u.avatar || null, isPremium: !!u.isPremium, online: online.has(u.username), lastSeen: u.lastSeen || null });
+  // حریم خصوصی سمت سرور: انتخاب کاربر در «آخرین بازدید/حضور» اینجا اعمال می‌شود
+  // (نه مخفی‌کردن در کلاینت). برای بینندهٔ غیرِ خود: nobody → همیشه پنهان؛
+  // contacts → فعلاً پنهان (گراف مخاطبان تعریف نشده)؛ everyone → نمایش.
+  const priv = (u.settings && u.settings.privacy) || {};
+  const isSelf = req.user.username === u.username;
+  const hideSeen = !isSelf && (priv.lastSeen === 'nobody' || priv.lastSeen === 'contacts');
+  const hidePresence = !isSelf && priv.presence === false;
+  res.json({ username: u.username, displayName: u.displayName, avatar: u.avatar || null, isPremium: !!u.isPremium, online: !hidePresence && online.has(u.username), lastSeen: hideSeen ? null : (u.lastSeen || null) });
 });
 
 // تکمیل مشخصات فرستنده در پیام‌های قدیمی که آواتار/پرمیوم ندارند

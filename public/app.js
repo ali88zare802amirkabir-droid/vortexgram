@@ -706,6 +706,113 @@ function applyAppearance() {
 }
 applyAppearance();
 
+/* ═══════════ SETTINGS SYNC (phase 5E) ═══════════
+   Server keeps the authoritative `user.settings` document (privacy,
+   notifications, data, appearance, language, chat). The client mirrors it in a
+   local cache, applies appearance instantly, and POSTs only the changed paths
+   (debounced) to /api/profile/settings. The server also broadcasts
+   `settings-updated` over WS so a change on one device lands on the others. */
+const VX_SETTINGS_DEFAULTS = {
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', readReceipts: true, presence: true },
+  notifications: { enabled: true, sound: true, preview: true },
+  data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
+  appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
+  language: { code: 'fa', translateEnabled: false },
+  chat: { showTyping: true, enterToSend: true },
+};
+function vxSetPath(obj, path, val) {
+  const parts = path.split('.'); let o = obj;
+  for (let i = 0; i < parts.length - 1; i++) { if (typeof o[parts[i]] !== 'object' || o[parts[i]] === null) o[parts[i]] = {}; o = o[parts[i]]; }
+  o[parts[parts.length - 1]] = val; return obj;
+}
+function vxDeepMerge(base, patch) {
+  const out = (base && typeof base === 'object' && !Array.isArray(base)) ? JSON.parse(JSON.stringify(base)) : {};
+  for (const k of Object.keys(patch || {})) {
+    const v = patch[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = vxDeepMerge(out[k], v); else out[k] = v;
+  }
+  return out;
+}
+const VXSettings = {
+  _cache: null, _pending: {}, _timer: null, _loaded: false,
+  get(path, fallback) {
+    const read = (src) => path.split('.').reduce((o, k) => (o && typeof o === 'object') ? o[k] : undefined, src);
+    const v = read(this._cache || {});
+    if (v !== undefined) return v;
+    const dv = read(VX_SETTINGS_DEFAULTS);
+    return dv !== undefined ? dv : fallback;
+  },
+  cache() { return this._cache || JSON.parse(JSON.stringify(VX_SETTINGS_DEFAULTS)); },
+  async load() {
+    try {
+      const r = await api('/api/profile/settings');
+      if (!r.ok) return;
+      const d = await r.json().catch(() => ({}));
+      if (!d.settings) return;
+      /* Capture the device's current appearance BEFORE adopting, so a user who
+         picked a theme in an older client isn't silently reset to the default
+         just because the server hasn't seen that choice yet. */
+      const cap = {
+        theme: localStorage.getItem('vx_theme') || 'cyber',
+        accent: localStorage.getItem('vx_accent') || 'blue',
+        bubbleRadius: (window.VXDesign && window.VXDesign.bubbleRadius) || 'round',
+        aurora: window.VXDesign ? !!window.VXDesign.aurora : true,
+        reduceGlass: window.VXDesign ? !!window.VXDesign.reduceGlass : false,
+      };
+      this.adopt(d.settings, { silent: true });
+      const sa = (d.stored && d.stored.appearance) || null;
+      const finalApp = {};
+      for (const k of Object.keys(VX_SETTINGS_DEFAULTS.appearance)) finalApp[k] = (sa && sa[k] !== undefined) ? sa[k] : cap[k];
+      vxSetPath(this._cache, 'appearance', finalApp);
+      this.applyAppearance();
+      if (!sa) this.flush(); /* first run on this account: persist current appearance */
+    } catch (e) {}
+  },
+  adopt(settings, opts) {
+    this._cache = vxDeepMerge(VX_SETTINGS_DEFAULTS, settings || {});
+    this._loaded = true;
+    this.applyAppearance();
+    if (!(opts && opts.silent) && state.nav === 'settings' && document.querySelector('.view-body')) {
+      try { renderView('settings'); } catch (e) {}
+    }
+  },
+  set(path, value) {
+    if (!this._cache) this._cache = JSON.parse(JSON.stringify(VX_SETTINGS_DEFAULTS));
+    vxSetPath(this._cache, path, value);
+    vxSetPath(this._pending, path, value);
+    this.applyAppearance();
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => this.flush(), 400);
+  },
+  async flush() {
+    const patch = this._pending; this._pending = {};
+    if (!Object.keys(patch).length) return;
+    try {
+      const r = await api('/api/profile/settings', { method: 'POST', body: JSON.stringify({ settings: patch }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { if (d.error) toast(d.error); this.load(); return; }
+      if (d.settings) this._cache = vxDeepMerge(VX_SETTINGS_DEFAULTS, d.settings);
+    } catch (e) {}
+  },
+  /* Appearance settings win over localStorage; the rest of the app still reads
+     the vx_* keys, so mirror the resolved values back for instant, consistent paint. */
+  applyAppearance() {
+    const a = (this._cache && this._cache.appearance) || VX_SETTINGS_DEFAULTS.appearance;
+    try {
+      if (a.theme) localStorage.setItem('vx_theme', a.theme);
+      if (a.accent) localStorage.setItem('vx_accent', a.accent);
+    } catch (e) {}
+    const D = window.VXDesign;
+    if (D) {
+      if (typeof a.bubbleRadius === 'string') D.setBubbleRadius(a.bubbleRadius);
+      if (typeof a.aurora === 'boolean') D.setAurora(a.aurora);
+      if (typeof a.reduceGlass === 'boolean') D.setReduceGlass(a.reduceGlass);
+      if (typeof D.setThemeAuto === 'function' && localStorage.getItem('vx_themeauto')) D.setThemeAuto(localStorage.getItem('vx_themeauto'));
+    }
+    applyAppearance();
+  },
+};
+
 /* ENTER */
 function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
@@ -717,6 +824,7 @@ function enterApp() {
   state.userFolders = null; // reload per-account folders now that state.me is known
   renderFolderBar();
   renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); connectWS(); applyVX();
+  VXSettings.load();
   showImpersonateBanner();
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
   if (state.me.isAdmin) {
@@ -1196,6 +1304,7 @@ function handleWS(d) {
     case 'auth-failed': logout(true); break;
     case 'kicked': toast('حساب شما مسدود شد'); logout(true); break;
     case 'premium-changed': if (state.me) { state.me.isPremium = d.isPremium; renderNav(); } break;
+    case 'settings-updated': if (d.settings) { VXSettings.adopt(d.settings); } break;
     case 'rename-result': if (state.me) { if (d.approved) { state.me.displayName = d.displayName; toast('نام نمایشی شما تایید شد'); } else toast('درخواست تغییر نام شما رد شد'); renderNav(); } break;
   }
 }
@@ -6728,7 +6837,9 @@ const SETCATS = {
   background:    { title: 'پس‌زمینه',         icon: 'image',       desc: 'رنگ یا تصویر پس‌زمینه گفتگو',        grp: 'ظاهر' },
   skins:         { title: 'اسکین‌ها و تم‌ها', icon: 'paintbrush',  desc: 'پوسته‌های آماده پیام‌رسان',          grp: 'ظاهر' },
   notifications: { title: 'اعلان‌ها',         icon: 'bell',        desc: 'اعلان دسکتاپ و هشدار صوتی',          grp: 'پیام‌رسانی' },
-  privacy:       { title: 'حریم خصوصی',       icon: 'lock',        desc: 'دید آنلاین، شماره و رمز عبور',       grp: 'پیام‌رسانی' },
+  chat:          { title: 'تنظیمات گفتگو',   icon: 'message-circle', desc: 'تایپینگ، ارسال با Enter',        grp: 'پیام‌رسانی' },
+  privacy:       { title: 'حریم خصوصی',       icon: 'lock',        desc: 'آخرین بازدید، حضور، رمز عبور',       grp: 'پیام‌رسانی' },
+  language:      { title: 'زبان و ترجمه',    icon: 'languages',   desc: 'زبان برنامه و دکمهٔ ترجمه',          grp: 'پیام‌رسانی' },
   storage:       { title: 'ذخیره‌سازی',       icon: 'hard-drive',  desc: 'حافظه رسانه‌ها و پاک‌سازی',           grp: 'پیام‌رسانی' },
   logout:        { title: 'خروج از حساب',     icon: 'log-out',     desc: 'خروج از این دستگاه',                 grp: 'نشست', action: 'logout' }
 };
@@ -6779,6 +6890,8 @@ function renderSettingsSub(cat, wrap) {
   else if (cat === 'account') renderAccSub(body);
   else if (cat === 'notifications') renderNotifSub(body);
   else if (cat === 'privacy') renderPrivSub(body);
+  else if (cat === 'chat') renderChatSub(body);
+  else if (cat === 'language') renderLangSub(body);
   else if (cat === 'storage') renderStorageSub(body);
   else if (cat === 'skins') renderSkinsSub(body);
   else if (cat === 'effects') renderEffectsSub(body);
@@ -6794,6 +6907,16 @@ function setChipRow(attr, list, active, labelFn) {
     const on = x === active;
     return '<button type="button" class="chip' + (on ? ' on' : '') + '" data-' + attr + '="' + escAttr(String(x)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(labelFn ? labelFn(x) : String(x)) + '</button>';
   }).join('') + '</div>';
+}
+/* Phase 5E — server-backed row helpers (switch + enum select). */
+function setSwitchRow(id, label, checked, hint) {
+  return '<div class="settings-row"><span>' + esc(label) + '</span><label class="switch"><input type="checkbox" id="' + escAttr(id) + '"' + (checked ? ' checked' : '') + '><span class="slider"></span></label></div>'
+    + (hint ? '<p class="settings-hint">' + esc(hint) + '</p>' : '');
+}
+function setSelectRow(id, label, opts, value) {
+  return '<div class="settings-row"><span>' + esc(label) + '</span><select class="inp set-select" id="' + escAttr(id) + '">'
+    + opts.map((o) => '<option value="' + escAttr(o[0]) + '"' + (o[0] === value ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('')
+    + '</select></div>';
 }
 function renderAppSub(body) {
   const D = window.VXDesign;
@@ -6824,14 +6947,14 @@ function renderAppSub(body) {
   t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '" aria-label="گردی گوشه‌ها"></div>';
   body.innerHTML = t;
 
-  body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); applyAppearance(); persistActiveSkin(); renderAppSub(body); });
-  body.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); applyAppearance(); persistActiveSkin(); renderAppSub(body); });
+  body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); VXSettings.set('appearance.theme', b.dataset.themeBtn); applyAppearance(); persistActiveSkin(); renderAppSub(body); });
+  body.querySelectorAll('[data-accent-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_accent', b.dataset.accentBtn); VXSettings.set('appearance.accent', b.dataset.accentBtn); applyAppearance(); persistActiveSkin(); renderAppSub(body); });
   const cus = body.querySelector('#set-accent-custom');
   if (cus) cus.oninput = (e) => { const D2 = window.VXDesign; if (D2) D2.setAccent('custom', e.target.value); persistActiveSkin(); body.querySelectorAll('[data-accent-btn]').forEach((x) => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false'); }); };
   body.querySelectorAll('[data-themeauto]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setThemeAuto(b.dataset.themeauto); renderAppSub(body); });
-  body.querySelectorAll('[data-aurora]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setAurora(b.dataset.aurora === 'on'); renderAppSub(body); });
-  body.querySelectorAll('[data-radius]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setBubbleRadius(b.dataset.radius); renderAppSub(body); });
-  body.querySelectorAll('[data-glassmode]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setReduceGlass(b.dataset.glassmode === 'reduce'); renderAppSub(body); });
+  body.querySelectorAll('[data-aurora]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setAurora(b.dataset.aurora === 'on'); VXSettings.set('appearance.aurora', b.dataset.aurora === 'on'); renderAppSub(body); });
+  body.querySelectorAll('[data-radius]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setBubbleRadius(b.dataset.radius); VXSettings.set('appearance.bubbleRadius', b.dataset.radius); renderAppSub(body); });
+  body.querySelectorAll('[data-glassmode]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setReduceGlass(b.dataset.glassmode === 'reduce'); VXSettings.set('appearance.reduceGlass', b.dataset.glassmode === 'reduce'); renderAppSub(body); });
   body.querySelector('#set-font-dec').onclick = () => setFont(-1);
   body.querySelector('#set-font-inc').onclick = () => setFont(1);
   body.querySelector('#set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
@@ -6886,17 +7009,62 @@ function renderAccSub(body) {
       const spec = det.join(' • ');
       const seen = 'آخرین بازدید: ' + (x.lastLogin ? fmt(x.lastLogin) : '—');
       const meta = spec + (spec && x.ip && x.ip !== '?' ? '<br>' : '') + seen + (x.ip && x.ip !== '?' ? ' • IP: ' + esc(x.ip) : '');
-      return '<div class="dev-row"><span class="dev-ic">' + ic(devIcon(x.platform)) + '</span><span class="dev-info"><b>' + esc(title) + (x.app ? ' <i class="dev-tag">' + esc(x.appVersion || 'اپ') + '</i>' : '') + '</b><small>' + meta + '</small></span></div>';
+      const badge = x.current ? ' <i class="dev-tag">این دستگاه</i>' : (x.id ? ' <button class="btn sm ghost dev-revoke" data-dev="' + escAttr(x.id) + '" title="بستن این دستگاه">' + ic('log-out') + '</button>' : '');
+      return '<div class="dev-row"><span class="dev-ic">' + ic(devIcon(x.platform)) + '</span><span class="dev-info"><b>' + esc(title) + (x.app ? ' <i class="dev-tag">' + esc(x.appVersion || 'اپ') + '</i>' : '') + badge + '</b><small>' + meta + '</small></span></div>';
     }).join('');
-    box.innerHTML = '<div class="settings-row"><span>تعداد دستگاه</span><b>' + devs.length + '</b></div>' + rows;
+    const others = devs.filter((x) => !x.current && x.id).length;
+    box.innerHTML = '<div class="settings-row"><span>تعداد دستگاه</span><b>' + devs.length + '</b></div>' + rows
+      + (others ? '<button class="btn sm danger" id="dev-revoke-others" style="width:100%;justify-content:center;margin-top:8px;">' + ic('log-out') + ' بستن همهٔ دستگاه‌های دیگر</button>' : '');
     box.querySelectorAll('.dev-row').forEach((el) => applyIcons(el));
+    box.querySelectorAll('.dev-revoke').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!(await uConfirm('این دستگاه از حساب خارج شود؟'))) return;
+        try { const rr = await api('/api/profile/devices/revoke', { method: 'POST', body: JSON.stringify({ id: btn.dataset.dev }) }); const dd = await rr.json().catch(() => ({})); if (!rr.ok) return toast(dd.error || 'خطا'); toast('دستگاه بسته شد'); renderView('settings'); } catch (e) { toast('خطا'); }
+      };
+    });
+    const roBtn = box.querySelector('#dev-revoke-others');
+    if (roBtn) roBtn.onclick = async () => {
+      if (!(await uConfirm('همهٔ دستگاه‌های دیگر از حساب خارج شوند؟'))) return;
+      try { const rr = await api('/api/profile/devices/revoke-others', { method: 'POST', body: '{}' }); const dd = await rr.json().catch(() => ({})); if (!rr.ok) return toast(dd.error || 'خطا'); toast((dd.revoked || 0) + ' نشست بسته شد'); renderView('settings'); } catch (e) { toast('خطا'); }
+    };
   }).catch(() => { const box = body.querySelector('#acc-devices'); if (box) box.innerHTML = '<div class="placeholder">خطا در بارگذاری.</div>'; });
   luc();
 }
 function renderNotifSub(body) {
-  let t = '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان‌ها</h3><div class="settings-row"><span>اعلان مرورگر</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
+  const S = VXSettings;
+  let t = '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان‌ها</h3>';
+  t += setSwitchRow('notif-enabled', 'اعلان‌ها فعال', S.get('notifications.enabled'));
+  t += setSwitchRow('notif-sound', 'صدای اعلان', S.get('notifications.sound'));
+  t += setSwitchRow('notif-preview', 'نمایش پیش‌نمایش پیام', S.get('notifications.preview'));
+  t += '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان مرورگر</h3><div class="settings-row"><span>اجازهٔ اعلان سیستمی</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
   body.innerHTML = t;
+  const be = body.querySelector('#notif-enabled'); if (be) be.onchange = () => { S.set('notifications.enabled', be.checked); toast('اعلان‌ها ذخیره شد'); };
+  const bs = body.querySelector('#notif-sound'); if (bs) bs.onchange = () => { S.set('notifications.sound', bs.checked); toast('اعلان‌ها ذخیره شد'); };
+  const bp = body.querySelector('#notif-preview'); if (bp) bp.onchange = () => { S.set('notifications.preview', bp.checked); toast('اعلان‌ها ذخیره شد'); };
   const nb = body.querySelector('#set-notif'); if (nb) nb.onclick = async () => { if (!('Notification' in window)) { toast('مرورگر پشتیبانی نمی‌کند'); return; } const p = await Notification.requestPermission(); localStorage.setItem('vx_notify', p === 'granted' ? '1' : '0'); nb.textContent = p === 'granted' ? 'روشن' : 'خاموش'; toast(p === 'granted' ? 'اعلان روشن شد' : 'اعلان خاموش شد'); };
+}
+/* Phase 5E — chat behaviour + language sections (server-backed). */
+function renderChatSub(body) {
+  const S = VXSettings;
+  let t = '<div class="settings-sec"><h3>' + ic('message-circle') + ' تنظیمات گفتگو</h3>';
+  t += setSwitchRow('chat-typing', 'نمایش «در حال نوشتن…»', S.get('chat.showTyping'));
+  t += setSwitchRow('chat-enter', 'ارسال با Enter (Shift+Enter = خط جدید)', S.get('chat.enterToSend'));
+  t += '</div>';
+  body.innerHTML = t;
+  const bt = body.querySelector('#chat-typing'); if (bt) bt.onchange = () => { S.set('chat.showTyping', bt.checked); toast('ذخیره شد'); };
+  const bn = body.querySelector('#chat-enter'); if (bn) bn.onchange = () => { S.set('chat.enterToSend', bn.checked); toast('ذخیره شد'); };
+}
+function renderLangSub(body) {
+  const S = VXSettings;
+  const LANGS = [['fa', 'فارسی'], ['en', 'English'], ['ar', 'العربية'], ['tr', 'Türkçe'], ['ru', 'Русский']];
+  let t = '<div class="settings-sec"><h3>' + ic('languages') + ' زبان</h3>';
+  t += setSelectRow('lang-code', 'زبان برنامه', LANGS, S.get('language.code'));
+  t += setSwitchRow('lang-translate', 'نمایش دکمهٔ ترجمه روی پیام‌ها', S.get('language.translateEnabled'));
+  t += '</div>';
+  body.innerHTML = t;
+  const lc = body.querySelector('#lang-code'); if (lc) lc.onchange = () => { S.set('language.code', lc.value); toast('زبان ذخیره شد'); };
+  const lt = body.querySelector('#lang-translate'); if (lt) lt.onchange = () => { S.set('language.translateEnabled', lt.checked); toast('ذخیره شد'); };
 }
 function fmtBytes(n) { if (!n) return '۰ بایت'; if (n < 1024) return n + ' بایت'; if (n < 1048576) return (n / 1024).toFixed(1) + ' کیلوبایت'; if (n < 1073741824) return (n / 1048576).toFixed(1) + ' مگابایت'; return (n / 1073741824).toFixed(2) + ' گیگابایت'; }
 async function vxMediaUsage() {
@@ -6971,7 +7139,13 @@ async function clearMediaCache() {
   const pv = document.querySelector('.view-body.settings-sub'); if (pv && pv.parentElement) renderSettingsSub('storage', pv.parentElement);
 }
 function renderStorageSub(body) {
-  let t = '<div class="settings-sec"><h3>' + ic('image') + ' نمایش GIF</h3>';
+  const S = VXSettings;
+  let t = '<div class="settings-sec"><h3>' + ic('download') + ' داده و دانلود خودکار</h3>';
+  t += setSwitchRow('data-photos', 'دانلود خودکار عکس‌ها', S.get('data.autoDownloadPhotos'));
+  t += setSwitchRow('data-videos', 'دانلود خودکار ویدیوها', S.get('data.autoDownloadVideos'));
+  t += setSwitchRow('data-savedata', 'حالت صرفه‌جویی در داده (WiFi)', S.get('data.saveData'));
+  t += '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('image') + ' نمایش GIF</h3>';
   t += '<div class="settings-row"><span>پخش پشت‌سرهم GIFها</span><label class="switch"><input type="checkbox" id="st-gif-loop"' + (gifLoopEnabled() ? ' checked' : '') + '><span class="slider"></span></label></div>';
   t += '<p class="hint" style="margin:10px 0 12px;text-align:right;">اگر خاموش باشد، هر GIF فقط یک‌بار پخش می‌شود و روی آخرین فریم می‌ایستد.</p></div>';
   t += '<div class="settings-sec"><h3>' + ic('hard-drive') + ' حافظه پنهان دستگاه</h3>';
@@ -6981,6 +7155,9 @@ function renderStorageSub(body) {
   t += '<button class="btn danger" id="st-clear" style="width:100%;justify-content:center;">' + ic('trash-2') + ' پاک کردن حافظه پنهان رسانه</button>';
   t += '</div>';
   body.innerHTML = t;
+  const dp = body.querySelector('#data-photos'); if (dp) dp.onchange = () => { S.set('data.autoDownloadPhotos', dp.checked); toast('ذخیره شد'); };
+  const dv = body.querySelector('#data-videos'); if (dv) dv.onchange = () => { S.set('data.autoDownloadVideos', dv.checked); toast('ذخیره شد'); };
+  const ds = body.querySelector('#data-savedata'); if (ds) ds.onchange = () => { S.set('data.saveData', ds.checked); toast('ذخیره شد'); };
   const gl = body.querySelector('#st-gif-loop');
   if (gl) gl.onchange = () => {
     localStorage.setItem('vx_gif_loop', gl.checked ? '1' : '0');
@@ -6991,14 +7168,15 @@ function renderStorageSub(body) {
   const cb = body.querySelector('#st-clear'); if (cb) cb.onclick = clearMediaCache;
 }
 function renderPrivSub(body) {
-  const ptoggle = (key, label) => '<div class="settings-row"><span>' + label + '</span><label class="switch"><input type="checkbox" id="priv-' + key + '" ' + (localStorage.getItem(key) !== '0' ? 'checked' : '') + '><span class="slider"></span></label></div>';
+  const S = VXSettings;
+  const AUD = [['everybody', 'همه'], ['contacts', 'مخاطبان'], ['nobody', 'هیچ‌کس']];
   const hasPw = !!(state.me && state.me.hasPassword);
   let t = '<div class="settings-sec"><h3>' + ic('lock') + ' حریم خصوصی</h3>';
-  t += ptoggle('vx_online', 'نمایش وضعیت آنلاین');
-  t += ptoggle('vx_lastseen', 'نمایش آخرین بازدید');
-  t += ptoggle('vx_showphone', 'نمایش شماره به دیگران');
-  t += ptoggle('vx_acceptall', 'پذیرش پیام از همه');
-  t += '</div>';
+  t += setSelectRow('priv-lastseen', 'آخرین بازدید', AUD, S.get('privacy.lastSeen'));
+  t += setSelectRow('priv-photo', 'عکس پروفایل', AUD, S.get('privacy.profilePhoto'));
+  t += setSwitchRow('priv-read', 'تیک خوانده‌شدن', S.get('privacy.readReceipts'));
+  t += setSwitchRow('priv-presence', 'نمایش وضعیت آنلاین', S.get('privacy.presence'));
+  t += '<p class="settings-hint">این تنظیمات روی سرور ذخیره و همان‌جا اعمال می‌شود؛ دیگران واقعاً نمی‌توانند چیزی را که پنهان کرده‌ای ببینند.</p></div>';
   t += '<div class="settings-sec"><h3>' + ic('key') + ' رمز عبور</h3>';
   t += '<div class="settings-row"><span>وضعیت رمز</span><b>' + (hasPw ? 'فعال' : 'غیرفعال — حساب با پیامک ساخته شده') + '</b></div>';
   t += '<div class="settings-row' + (hasPw ? '' : ' hidden') + '"><span>رمز فعلی</span><input type="password" id="pw-current" class="inp" autocomplete="current-password" placeholder="••••••" style="max-width:150px"></div>';
@@ -7008,7 +7186,10 @@ function renderPrivSub(body) {
   t += '<div class="pw-note">بعد از ساخت رمز می‌توانید از صفحه ورود با «رمز عبور» وارد شوید.</div>';
   t += '</div>';
   body.innerHTML = t;
-  ['vx_online', 'vx_lastseen', 'vx_showphone', 'vx_acceptall'].forEach((k) => { const el = body.querySelector('#priv-' + k); if (el) el.onchange = (e) => { localStorage.setItem(k, e.target.checked ? '1' : '0'); toast('تنظیمات حریم خصوصی ذخیره شد'); }; });
+  const seen = body.querySelector('#priv-lastseen'); if (seen) seen.onchange = () => { S.set('privacy.lastSeen', seen.value); toast('حریم خصوصی ذخیره شد'); };
+  const photo = body.querySelector('#priv-photo'); if (photo) photo.onchange = () => { S.set('privacy.profilePhoto', photo.value); toast('حریم خصوصی ذخیره شد'); };
+  const read = body.querySelector('#priv-read'); if (read) read.onchange = () => { S.set('privacy.readReceipts', read.checked); toast('حریم خصوصی ذخیره شد'); };
+  const pres = body.querySelector('#priv-presence'); if (pres) pres.onchange = () => { S.set('privacy.presence', pres.checked); toast('حریم خصوصی ذخیره شد'); };
   const save = body.querySelector('#pw-save');
   if (save) save.onclick = async () => {
     const cur = hasPw ? (body.querySelector('#pw-current') ? body.querySelector('#pw-current').value : '') : '';
