@@ -4,6 +4,24 @@ All notable UI work on the "Liquid Glass" redesign. Phases ship as small,
 tested slices; each slice keeps the existing test suites green and adds
 screenshot + DOM-metric evidence under `docs/screenshots/phase4/<slice>/`.
 
+## Phase 5C — Bubble shape, message grouping, composer morph
+
+- **Radius wiring fix** — chat bubbles now read `--vx-r-bubble` /
+  `--vx-r-bubble-tail`, so the appearance radius setting (sharp / compact /
+  round / pill), added in 5A as a token, actually reshapes messages. Media
+  bubbles keep their fixed frame.
+- **Message grouping** — consecutive messages from one sender render as a
+  single cluster: tighter spacing, one tail on the last bubble, avatar only on
+  the last. Grouping is applied by a post-render pass, so it works for both a
+  full history render and incremental appends, and day separators break groups.
+- **Send ↔ mic morph** — the composer's round button settles to a muted mic
+  look while the field is empty and springs to the accent send button once text
+  exists, with `prefers-reduced-motion` respected.
+- **Reaction feedback** — tapping an existing reaction pops it briefly.
+
+Note: typing indicator, swipe-to-reply, the scroll-to-bottom pill and chat-row
+swipe actions already existed from earlier slices and were left intact.
+
 ## Phase 5B — Resizable desktop panes + command palette
 
 - **3-zone desktop layout** — the chat-list track is now driven by a single

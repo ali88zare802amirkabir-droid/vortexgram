@@ -2095,7 +2095,7 @@ function renderMessagesBatch(messages) {
       frag.appendChild(sep);
     }
     const mine = m.from === state.me.username;
-    const wrap = document.createElement('div'); wrap.className = 'msg ' + (mine ? 'mine' : ''); wrap.dataset.id = m.id;
+    const wrap = document.createElement('div'); wrap.className = 'msg ' + (mine ? 'mine' : ''); wrap.dataset.id = m.id; wrap.dataset.from = m.from || '';
     if (showMsgAvatar()) {
       const av = mine ? avatarEl(state.me, 'xs') : avatarEl(state.users.find((u) => u.username === m.from) || { displayName: m.from }, 'xs');
       wrap.innerHTML = '<div class="msg-av">' + av.outerHTML + '</div>';
@@ -2179,8 +2179,30 @@ function renderMessagesBatch(messages) {
   }
   
   msgs.appendChild(frag);
+  applyMsgGrouping(msgs);
   applyIcons(msgs);
   scrollBottom();
+}
+/* فاز ۵C — گروه‌بندی پیام‌های پشت‌سرهم یک فرستنده.
+   فقط کلاس روی گره‌های موجود می‌گذارد، پس هم برای رندر کامل و هم برای
+   append تدریجی (پیام تازه) درست کار می‌کند. روز-جداکننده گروه را می‌شکند. */
+function applyMsgGrouping(container) {
+  const c = container || $('messages');
+  if (!c) return;
+  const nodes = Array.from(c.querySelectorAll('.msg'));
+  for (const n of nodes) n.classList.remove('grp-first', 'grp-mid', 'grp-last', 'grp-only');
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const from = n.dataset.from || '';
+    const prev = nodes[i - 1];
+    const next = nodes[i + 1];
+    const contPrev = !!prev && prev.dataset.from === from && prev.nextElementSibling === n;
+    const contNext = !!next && next.dataset.from === from && n.nextElementSibling === next;
+    if (!contPrev && !contNext) n.classList.add('grp-only');
+    else if (!contPrev) n.classList.add('grp-first');
+    else if (!contNext) n.classList.add('grp-last');
+    else n.classList.add('grp-mid');
+  }
 }
 function addMessage(m) {
   if (!m) return;
@@ -2724,9 +2746,15 @@ function sendMessage() {
   const txt = $('composer-input').value.trim(); if (!txt) return;
   const rt = state.replyTo; const m = { kind: 'text', content: txt };
   if (rt) m.replyTo = { id: rt.id, name: rt.from || '', snippet: previewText(rt) };
-  doSend(m); $('composer-input').value = ''; setReply(null);
+  doSend(m); $('composer-input').value = ''; setReply(null); syncComposerState();
 }
 async function doSend(m) { if (!state.ws || state.ws.readyState !== 1) { toast('اتصال برقرار نیست'); return; } state.ws.send(JSON.stringify(Object.assign({ type: 'message', roomId: state.room }, m))); }
+/* فاز ۵C — تغییرشکل ارسال↔میکروفون: دکمهٔ گرد بر اساس وجود متن حالت عوض می‌کند. */
+function syncComposerState() {
+  const box = $('composer'), inp = $('composer-input');
+  if (!box || !inp) return;
+  box.classList.toggle('has-text', !!inp.value.trim());
+}
 $('composer-send').onclick = sendMessage;
 $('composer-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } if (e.key === 'Escape') setReply(null); });
 let lastTypingSentAt = 0;
@@ -2736,6 +2764,7 @@ function sendTyping(on) {
 $('composer-input').addEventListener('input', () => {
   const now = Date.now();
   if (now - lastTypingSentAt > 2000) { lastTypingSentAt = now; sendTyping(true); }
+  syncComposerState();
   handleMentionAutocomplete();
 });
 $('composer-input').addEventListener('blur', () => sendTyping(false));

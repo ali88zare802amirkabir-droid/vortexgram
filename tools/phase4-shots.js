@@ -1250,6 +1250,88 @@ async function main() {
     await inter.screenshot({ path: path.join(OUT, 'interactions-resize.png') });
     await inter.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
 
+    /* ── slice 5C: bubble radius wiring, message grouping, composer morph ── */
+    interactions.conversation = await inter.evaluate(async () => {
+      const res = {};
+      try { switchNav('chats'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 300));
+      try { openRoom('dm:ali|sara'); } catch (e) { res.openErr = String(e); }
+      await new Promise((r) => setTimeout(r, 500));
+
+      // deterministic conversation: two back-to-back from one sender + one reply
+      try {
+        const rid = 'dm:ali|sara';
+        state.room = rid;
+        state.rooms[rid] = state.rooms[rid] || {};
+        const t = Date.now();
+        state.rooms[rid].messages = [
+          { id: 'c1', from: 'sara', content: 'سلام', time: t - 60000, kind: 'text', roomId: rid },
+          { id: 'c2', from: 'sara', content: 'خوبی؟', time: t - 55000, kind: 'text', roomId: rid },
+          { id: 'c3', from: 'ali', content: 'مرسی', time: t - 50000, kind: 'text', roomId: rid },
+        ];
+        const box = document.getElementById('messages');
+        box.innerHTML = ''; state.lastDay = null;
+        renderMessagesBatch(state.rooms[rid].messages.slice(-100));
+      } catch (e) { res.renderErr = String(e); }
+      await new Promise((r) => setTimeout(r, 120));
+
+      const nodes = Array.from(document.querySelectorAll('#messages .msg'));
+      res.msgs = nodes.length;
+      res.byId = {};
+      for (const n of nodes) res.byId[n.dataset.id] = (n.className.match(/grp-\w+/) || [null])[0];
+      res.allClassed = nodes.every((n) =>
+        n.classList.contains('grp-first') || n.classList.contains('grp-mid') ||
+        n.classList.contains('grp-last') || n.classList.contains('grp-only'));
+      let adjSameFromGrouped = true;
+      for (let i = 1; i < nodes.length; i++) {
+        const a = nodes[i - 1], b = nodes[i];
+        if (a.dataset.from && a.dataset.from === b.dataset.from && a.nextElementSibling === b) {
+          if (b.classList.contains('grp-first') || b.classList.contains('grp-only')) adjSameFromGrouped = false;
+        }
+      }
+      res.adjSameFromGrouped = adjSameFromGrouped;
+      // c1 starts the sara group, c2 ends it (gets the tail), c3 is a lone message
+      res.groupingOk = res.byId.c1 === 'grp-first' && res.byId.c2 === 'grp-last' && res.byId.c3 === 'grp-only';
+
+      // radius wiring: the bubble corner must follow --vx-r-bubble
+      const bubble = document.querySelector('#messages .msg:not(:has(.media)) .bubble') ||
+        document.querySelector('#messages .bubble');
+      const radiusFor = (r) => {
+        try { VXDesign.setBubbleRadius(r); } catch (e) {}
+        return bubble ? getComputedStyle(bubble).borderTopLeftRadius : null;
+      };
+      res.radiusSharp = radiusFor('sharp');
+      res.radiusRound = radiusFor('round');
+      res.radiusWired = res.radiusSharp === '4px' && res.radiusRound === '22px';
+
+      // composer morph: has-text follows the field, send button settles vs glows
+      const box = document.getElementById('composer');
+      const inp = document.getElementById('composer-input');
+      const send = document.getElementById('composer-send');
+      const morph = async (val) => {
+        inp.value = val;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 280));
+        return {
+          hasText: box.classList.contains('has-text'),
+          sendOpacity: parseFloat(getComputedStyle(send).opacity),
+        };
+      };
+      const empty = await morph('');
+      const typed = await morph('سلام');
+      res.morphEmptyHasText = empty.hasText;
+      res.morphTypedHasText = typed.hasText;
+      res.morphTypedOpacity = typed.sendOpacity;
+      res.morphOk = empty.hasText === false && typed.hasText === true && typed.sendOpacity > 0.9;
+      inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true }));
+
+      res.ok = res.msgs >= 3 && res.allClassed === true && res.groupingOk === true &&
+        res.adjSameFromGrouped === true && res.radiusWired === true && res.morphOk === true;
+      return res;
+    });
+    if (!interactions.conversation.ok) failures.push('5C conversation polish: ' + JSON.stringify(interactions.conversation));
+    await inter.screenshot({ path: path.join(OUT, 'interactions-conversation.png') });
+
     await inter.close();
 
     await browser.close();
