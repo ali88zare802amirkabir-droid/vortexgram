@@ -827,11 +827,30 @@ function enterApp() {
   VXSettings.load();
   showImpersonateBanner();
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
+  initRoomOpenMirror();
   if (state.me.isAdmin) {
     api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {});
     api('/api/admin/requests').then((r) => r.json()).then((d) => { const list = (d.requests || []).filter((s) => s.status === 'pending'); state.signupCount = list.length; renderNav(); }).catch(() => {});
   }
   if (pinIsSet()) pinShow('login');
+}
+
+/* The floating bottom pill (chats/contacts/settings/profile) is `position:fixed`
+   and would otherwise sit ON TOP of the chat composer on phones — you could not
+   type. Mirror the "a real room is open" state onto <body> so CSS can hide the
+   pill (Telegram-style) only while an actual conversation is open, without
+   hiding it on the settings/profile/contacts views (which also reuse the
+   .chat-open slide class). One observer covers every place that toggles it. */
+function initRoomOpenMirror() {
+  const conv = $('conversation');
+  if (!conv || conv._vxRoomMirror) return;
+  conv._vxRoomMirror = true;
+  const apply = () => {
+    const open = isMobile() && !!(state && state.room) && conv.classList.contains('chat-open');
+    document.body.classList.toggle('vx-room-open', open);
+  };
+  new MutationObserver(apply).observe(conv, { attributes: true, attributeFilter: ['class'] });
+  apply();
 }
 
 /* ═══════════ PIN LOCK ═══════════ */

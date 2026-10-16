@@ -290,6 +290,14 @@
   #chat-list-column { padding-bottom: calc(var(--vx-pill-h) + env(safe-area-inset-bottom, 0px) + 22px); }
   /* The composer must clear the pill when the list is behind it. */
   #conversation { padding-bottom: 0; }
+  /* While a real conversation is open the floating bottom nav would cover the
+     composer, so it steps out of the way (a Back control is always present). */
+  body.vx-room-open .vx-pill {
+    transform: translateY(calc(100% + 20px));
+    opacity: 0;
+    pointer-events: none;
+  }
+  [data-motion="reduced"] body.vx-room-open .vx-pill { transition: none; }
 }
 
 /* ── power-saving: chat background gradient is a large paint ── */
@@ -919,6 +927,42 @@ button.set-action .icon { width: 17px; height: 17px; }
   font-size: 10.5px; font-weight: 600; color: var(--outline);
   max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   direction: ltr;
+}
+/* Enum setting rows: a compact, RTL-aware select instead of a full-width native
+   control (which looked broken next to the row label). */
+.set-select {
+  width: auto;
+  flex: 0 1 auto;
+  max-width: 62%;
+  min-width: 116px;
+  height: 38px;
+  margin-inline-start: auto;
+  padding-inline: 14px 32px;
+  border-radius: 11px;
+  border: 1px solid var(--vx-glass-brd, var(--border));
+  background-color: var(--surface-container-high);
+  color: var(--on-surface);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: start;
+  text-align-last: start;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a4b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: left 11px center;
+  background-size: 15px;
+  transition: border-color .16s var(--vx-ease), background-color .16s var(--vx-ease);
+}
+[dir="ltr"] .set-select { background-position: right 11px center; }
+.set-select:hover { border-color: var(--primary); }
+.set-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .18); }
+.set-select option { background: var(--surface-container-high); color: var(--on-surface); font-size: 14px; }
+@media (max-width: 520px) {
+  .set-select { max-width: 58%; min-width: 96px; font-size: 12.5px; }
 }
 
 a.settings-row.set-link {
