@@ -703,7 +703,7 @@ async function sendSMS(phone, text) {
   }
 }
 function publicUser(u) {
-  return { username: u.username, uid: (typeof u.uid === 'number' ? u.uid : null), displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null,     danger: !!u.danger,
+  return { username: u.username, uid: (typeof u.uid === 'number' ? u.uid : null), displayName: u.displayName, isAdmin: !!u.isAdmin, banned: !!u.banned, avatar: u.avatar || null, bio: u.bio || '', birthday: u.birthday || '', emojiStatus: u.emojiStatus || '', isPremium: !!u.isPremium, phone: u.phone || null, activeSkin: u.activeSkin || 'default', profileEffect: u.profileEffect || 'off', profileEffectColor: u.profileEffectColor || null, profileBg: u.profileBg || null,     danger: !!u.danger,
     restricted: !!u.restricted,
     // نشان ربات: کلاینت با آن برچسب «ربات/AI» را کنار نام نشان می‌دهد
     isBot: !!u.isBot,
@@ -1215,6 +1215,37 @@ app.post('/api/profile/bio', auth, (req, res) => {
   res.json({ ok: true, me: publicUser(req.user) });
 });
 
+// Slice A — birthday. Free-form text stored as 'YYYY-MM-DD' (validated) or ''.
+app.post('/api/profile/birthday', auth, (req, res) => {
+  const raw = String((req.body || {}).birthday || '').trim();
+  if (raw === '') { req.user.birthday = ''; saveDB(); pushUsers(); broadcastProfile(req.user.username); return res.json({ ok: true, me: publicUser(req.user) }); }
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!m) return res.status(400).json({ error: 'تاریخ تولد را به شکل YYYY-MM-DD وارد کن' });
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  const now = new Date();
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return res.status(400).json({ error: 'تاریخ نامعتبر است' });
+  if (y < 1900 || dt.getTime() > now.getTime()) return res.status(400).json({ error: 'تاریخ نامعتبر است' });
+  req.user.birthday = raw;
+  saveDB();
+  pushUsers();
+  broadcastProfile(req.user.username);
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
+// Slice A — emoji status (a single short emoji shown next to the name). '' clears it.
+app.post('/api/profile/emoji-status', auth, (req, res) => {
+  const raw = String((req.body || {}).emoji || '').trim().slice(0, 16);
+  if (raw === '') { req.user.emojiStatus = ''; saveDB(); pushUsers(); broadcastProfile(req.user.username); return res.json({ ok: true, me: publicUser(req.user) }); }
+  /* Keep it an emoji-ish glyph sequence: no letters/digits/control chars. */
+  if (/[\p{L}\p{N}]/u.test(raw) || !/\p{Extended_Pictographic}/u.test(raw)) return res.status(400).json({ error: 'فقط ایموجی مجاز است' });
+  req.user.emojiStatus = raw;
+  saveDB();
+  pushUsers();
+  broadcastProfile(req.user.username);
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
 // ---------- profile settings (theme/accent/font/pin/devices) ----------
 /* ── ساختار تنظیمات کاربر (فاز ۵E) ────────────────────────────────────────
    user.settings یک سند پراکنده است: فقط مسیرهایی که کاربر واقعاً تغییر داده
@@ -1223,7 +1254,7 @@ app.post('/api/profile/bio', auth, (req, res) => {
    یک لیست سفید (enum/bool/accent) رد می‌شود، پس هیچ کلید یا رشتهٔ آزادی
    ذخیره نمی‌شود. */
 const SETTINGS_DEFAULTS = {
-  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', phone: 'nobody', readReceipts: true, presence: true },
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
   appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
@@ -1234,6 +1265,7 @@ const SETTINGS_ENUMS = {
   'privacy.lastSeen': ['everybody', 'contacts', 'nobody'],
   'privacy.profilePhoto': ['everybody', 'contacts', 'nobody'],
   'privacy.bio': ['everybody', 'contacts', 'nobody'],
+  'privacy.birthday': ['everybody', 'contacts', 'nobody'],
   'privacy.phone': ['everybody', 'contacts', 'nobody'],
   'appearance.theme': ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
   'appearance.bubbleRadius': ['sharp', 'compact', 'round', 'pill'],
@@ -1679,6 +1711,7 @@ app.get('/api/user/:username', auth, (req, res) => {
     if (!canSee(req.user.username, target, 'phone')) delete pu.phone;
     if (!canSee(req.user.username, target, 'profilePhoto')) pu.avatar = null;
     if (!canSee(req.user.username, target, 'bio')) pu.bio = '';
+    if (!canSee(req.user.username, target, 'birthday')) pu.birthday = '';
   }
   res.json({ u: pu });
 });
@@ -3556,8 +3589,9 @@ function broadcastProfile(username) {
        because an update was broadcast to everyone. */
     const showPhoto = canSee(viewer, user, 'profilePhoto');
     const showBio = canSee(viewer, user, 'bio');
-    const obj = (showPhoto && showBio) ? { type: 'profile-updated', username, user: base }
-      : { type: 'profile-updated', username, user: { ...base, avatar: showPhoto ? base.avatar : null, bio: showBio ? base.bio : '' } };
+    const showBday = canSee(viewer, user, 'birthday');
+    const obj = (showPhoto && showBio && showBday) ? { type: 'profile-updated', username, user: base }
+      : { type: 'profile-updated', username, user: { ...base, avatar: showPhoto ? base.avatar : null, bio: showBio ? base.bio : '', birthday: showBday ? base.birthday : '' } };
     wsSend(info.ws, obj);
   }
 }

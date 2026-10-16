@@ -657,6 +657,7 @@ button.set-cat.danger {
   gap: 8px; flex-wrap: wrap; text-align: center;
 }
 .profile-view .profile-actions { margin-top: 4px; }
+.profile-view .profile-emoji { font-size: 20px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
 .profile-view .profile-actions .btn { justify-content: center; }
 
 /* ── chat-list search: clear control + section heads ── */
@@ -913,6 +914,12 @@ button.set-action.primary { background: var(--primary); color: var(--on-primary)
 button.set-action .icon { width: 17px; height: 17px; }
 .set-row-btns { margin-inline-start: auto; display: flex; gap: 6px; align-items: center; }
 .set-row-btns .icon { width: 17px; height: 17px; }
+.set-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px; font-weight: 600; color: var(--outline);
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  direction: ltr;
+}
 
 a.settings-row.set-link {
   text-decoration: none; color: var(--on-surface);

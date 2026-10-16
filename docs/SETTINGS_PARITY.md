@@ -78,6 +78,16 @@ chat:          showTyping(E — gates outgoing typing), enterToSend(E — gates 
   gated outgoing typing, Enter-to-send and the translate action on their stored
   keys. Tests: settings 8/8 (incl. new tier + read-receipt tests). Remaining
   UI-ONLY: `data.autoDownloadPhotos/Videos` (deferred to Slice E — full matrix).
+- **2026-10-16 · Task T Slice A (batch 1 — profile fields):** added
+  `users.birthday` + `users.emoji_status` (migration `0006_user_profile_fields`,
+  up/down verified on Postgres; `repositories.js` push/load mapping incl. the
+  stub-user row), `POST /api/profile/birthday` (validated) and
+  `POST /api/profile/emoji-status` (emoji-validated), `privacy.birthday` tier
+  (default `contacts`), per-viewer gating in `broadcastProfile`, account rows
+  (birthday date input, emoji status, copyable profile link), profile-view
+  rendering, and settings-search entries. Tests: settings 9/9; `db.test.js`
+  8/8 on embedded Postgres. Still todo for full Slice A: multiple photos +
+  history, profile posts, business block, dedicated public profile page + QR.
 
 ---
 
@@ -90,11 +100,11 @@ chat:          showTyping(E — gates outgoing typing), enterToSend(E — gates 
 | **Multiple photos + history** | MISSING | single `avatar` field only |
 | Name / display name | DONE | `/api/profile` + `nameChanged` rules |
 | Bio | DONE | `publicUser.bio` |
-| Username + **public link** | MISSING | users log in by username; no `vortexgram…` share link/QR |
-| Birthday + who can see | MISSING | no field |
-| Phone + who can see | STORED/UI-ONLY | `phone` stored; shown unconditionally; no privacy tier |
-| Status / emoji status | MISSING | no field |
-| Profile color / cover | MISSING | only `profileBg`/`profileEffect` skins in `publicUser` |
+| Username + **public link** | PARTIAL | `@username` + copyable `/invite?ref=<user>` link in Account; a dedicated public profile page + QR is still todo |
+| Birthday + who can see | DONE | `POST /api/profile/birthday` (validated `YYYY-MM-DD`), `privacy.birthday` tier (default contacts), enforced via `canSee` |
+| Phone + who can see | DONE | `privacy.phone` tier (default nobody) enforced via `canSee` |
+| Status / emoji status | DONE | `POST /api/profile/emoji-status` (emoji-validated), shown next to the name, broadcast per-viewer |
+| Profile color / cover | PARTIAL | `profileBg` exists; a distinct `cover`/color field is still missing |
 | Profile **posts** (photos/videos, public/archived) | MISSING | — |
 | Personal channel link | MISSING | — |
 | Business profile (hours, location, quick replies, greeting/away) | MISSING | — |
@@ -160,7 +170,7 @@ chat:          showTyping(E — gates outgoing typing), enterToSend(E — gates 
 | lastSeen & online tier | DONE (server-enforced) | `exists` endpoint via `canSee` |
 | lastSeen "My contacts" tier | DONE | `relatesTo` = shared DM room or `user.contacts` |
 | Profile photos tier | DONE | `canSee` at `/api/user/:username`, search, `fromAvatar` |
-| Bio / Phone tiers | DONE | `privacy.bio` (default everybody), `privacy.phone` (default nobody); enforced server-side. Birthday still MISSING. |
+| Bio / Phone / Birthday tiers | DONE | `privacy.bio` (everybody), `privacy.phone` (nobody), `privacy.birthday` (contacts) — all enforced server-side via `canSee` |
 | Forwarded-messages link | MISSING | — |
 | Who can message me | MISSING | — |
 | Who can add me to groups/channels | MISSING | — |

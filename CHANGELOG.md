@@ -4,6 +4,25 @@ All notable UI work on the "Liquid Glass" redesign. Phases ship as small,
 tested slices; each slice keeps the existing test suites green and adds
 screenshot + DOM-metric evidence under `docs/screenshots/phase4/<slice>/`.
 
+## Task T (Slice A, batch 1) — Profile fields: birthday, emoji status, share link
+
+- **Birthday** — `users.birthday` (`YYYY-MM-DD`, validated server-side) via
+  `POST /api/profile/birthday`, with a **`privacy.birthday`** tier (default
+  *contacts*) enforced through `canSee` at every exposure point (profile fetch +
+  per-viewer `profile-updated` broadcast). Editable in Settings → Account
+  (date input) with a matching privacy select and search entry; shown on the
+  profile view.
+- **Emoji status** — `users.emoji_status` via `POST /api/profile/emoji-status`
+  (emoji-only validated), displayed next to the display name on the profile.
+- **Profile link** — Account shows a one-tap copy of
+  `origin/invite?ref=<username>` (reuses the existing invite route); a dedicated
+  public profile page + QR remains a follow-up.
+- **DB** — migration `0006_user_profile_fields` (up/down verified against real
+  Postgres, nullable columns so legacy NULL text inserts keep working) plus
+  `repositories.js` push/load mapping (including the stub-user row).
+- **Tests** — `tests/settings.test.js` +1 (birthday/emoji validation + privacy
+  tier matrix) → 9/9; `tests/db.test.js` 8/8 on the embedded-Postgres harness.
+
 ## Task T (batch 1) — Settings privacy becomes real (server-enforced)
 
 - **One privacy gate** — new `canSee(viewer, owner, key)` (plus

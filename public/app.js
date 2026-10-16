@@ -713,7 +713,7 @@ applyAppearance();
    (debounced) to /api/profile/settings. The server also broadcasts
    `settings-updated` over WS so a change on one device lands on the others. */
 const VX_SETTINGS_DEFAULTS = {
-  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', phone: 'nobody', readReceipts: true, presence: true },
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
   appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
@@ -6426,9 +6426,10 @@ function renderProfile(username) {
   h += '<div class="profile-top"><button class="btn sm ghost" data-act="back" aria-label="بازگشت">' + ic('chevron-right') + ' بازگشت</button></div>';
   h += '<div class="profile-hero">';
   h += '<div class="profile-av">' + avatarEl(u, 'xl').outerHTML + '</div>';
-  h += '<h2 class="profile-name" id="profile-title">' + esc(u.displayName || u.username) + badge + '</h2>';
+  h += '<h2 class="profile-name" id="profile-title">' + esc(u.displayName || u.username) + (u.emojiStatus ? ' <span class="profile-emoji" aria-hidden="true">' + esc(u.emojiStatus) + '</span>' : '') + badge + '</h2>';
   h += '<div class="profile-uname">@' + esc(u.username) + (online ? ' <span class="onl">● آنلاین</span>' : '') + '</div></div>';
   if (u.bio) h += '<div class="profile-bio">' + esc(u.bio) + '</div>';
+  if (u.birthday) h += '<div class="profile-row">🎂 ' + esc(formatBirthday(u.birthday)) + '</div>';
   if (u.phone && (state.me.isAdmin || u.username === state.me.username)) h += '<div class="profile-row">📱 ' + esc(u.phone) + '</div>';
   h += '<div class="profile-actions">';
   h += '<button class="btn primary" data-act="chat">شروع چت</button>';
@@ -6898,6 +6899,9 @@ const SET_SEARCH_INDEX = [
   { cat: 'account', title: 'نام نمایشی و بیو', sub: 'حساب کاربری', kw: 'display name bio biography username at نام بیو پروفایل شناسه', focus: '#acc-bio' },
   { cat: 'account', title: 'عکس پروفایل و پوشش', sub: 'حساب کاربری', kw: 'avatar photo cover profile عکس پروفایل تصویر', focus: '#acc-avatar' },
   { cat: 'account', title: 'دستگاه‌های متصل و نشست‌ها', sub: 'حساب کاربری', kw: 'devices sessions active login logout دستگاه نشست ورود خروج متصل', focus: '#acc-devices' },
+  { cat: 'account', title: 'تاریخ تولد', sub: 'حساب کاربری', kw: 'birthday birth date تولد تاریخ سالگرد', focus: '#acc-birthday' },
+  { cat: 'account', title: 'وضعیت ایموجی', sub: 'حساب کاربری', kw: 'emoji status mood وضعیت ایموجی حالت', focus: '#acc-emoji' },
+  { cat: 'account', title: 'لینک پروفایل', sub: 'حساب کاربری', kw: 'profile link share url qr لینک پروفایل اشتراک اشتراک‌گذاری', focus: '#acc-link' },
   { cat: 'appearance', title: 'تم و حالت شب', sub: 'نمایش و تم', kw: 'theme dark light amoled night mode تم تاریک روشن شب حالت', focus: '[data-theme]' },
   { cat: 'appearance', title: 'رنگ لهجه (Accent)', sub: 'نمایش و تم', kw: 'accent color palette رنگ لهجه تم اصلی', focus: '#app-accents' },
   { cat: 'appearance', title: 'گردی گوشه حباب', sub: 'نمایش و تم', kw: 'bubble radius corner round گردی گوشه حباب', focus: '[data-bradius]' },
@@ -6912,6 +6916,7 @@ const SET_SEARCH_INDEX = [
   { cat: 'privacy', title: 'چه کسی عکس پروفایل را ببیند', sub: 'حریم خصوصی', kw: 'profile photo privacy عکس پروفایل حریم', focus: '#priv-photo' },
   { cat: 'privacy', title: 'چه کسی بیوگرافی را ببیند', sub: 'حریم خصوصی', kw: 'bio about biography بیوگرافی درباره توضیحات حریم', focus: '#priv-bio' },
   { cat: 'privacy', title: 'چه کسی شمارهٔ تلفن را ببیند', sub: 'حریم خصوصی', kw: 'phone number شماره تلفن موبایل حریم', focus: '#priv-phone' },
+  { cat: 'privacy', title: 'چه کسی تاریخ تولد را ببیند', sub: 'حریم خصوصی', kw: 'birthday birthdate privacy تولد تاریخ حریم', focus: '#priv-birthday' },
   { cat: 'privacy', title: 'تیک خوانده‌شدن', sub: 'حریم خصوصی', kw: 'read receipts tick تیک خوانده شدن', focus: '#priv-read' },
   { cat: 'privacy', title: 'رمز عبور', sub: 'حریم خصوصی', kw: 'password passcode pin رمز عبور پین قفل', focus: '#pw-new' },
   { cat: 'language', title: 'زبان برنامه', sub: 'زبان و ترجمه', kw: 'language locale interface زبان برنامه رابط', focus: '#lang-code' },
@@ -7174,6 +7179,15 @@ function renderBgSub(body) {
   const bgi = body.querySelector('#set-bgimg'); if (bgi) bgi.onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { localStorage.setItem('vx_bgimg', rd.result); applyBackground(); toast('تصویر پس‌زمینه تنظیم شد'); }; rd.readAsDataURL(f); };
   const bgr = body.querySelector('#set-bg-reset'); if (bgr) bgr.onclick = () => { localStorage.removeItem('vx_bgimg'); applyBackground(); toast('تصویر حذف شد'); };
 }
+function publicProfileLink() {
+  return location.origin + '/invite?ref=' + encodeURIComponent((state.me && state.me.username) || '');
+}
+function formatBirthday(iso) {
+  /* Stored as YYYY-MM-DD; shown Gregorian (Jalali option is a Slice-F item). */
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  if (!m) return String(iso || '');
+  return m[1] + '/' + m[2] + '/' + m[3];
+}
 function renderAccSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('user') + ' اطلاعات حساب</h3>';
   t += '<div class="settings-row"><span>نام نمایشی</span><b>' + esc(state.me.displayName) + '</b><button class="btn sm" data-act="rename-display">تغییر</button></div>';
@@ -7181,6 +7195,9 @@ function renderAccSub(body) {
   t += '<div class="settings-row"><span>شناسه کاربری (UID)</span><b data-uid="' + esc(state.me.username) + '">' + (state.me.uid ? esc(state.me.uid) : '…') + '</b></div>';
   t += '<div class="settings-row"><span>شماره</span><b>' + esc(state.me.phone || '—') + '</b></div>';
   t += '<div class="settings-row"><span>بیو</span><input class="inp" id="acc-bio" aria-label="بیوی شما" maxlength="' + (state.me.isPremium ? 200 : 80) + '" placeholder="درباره خودت…" value="' + esc(state.me.bio || '') + '" style="max-width:220px"></div>';
+  t += '<div class="settings-row"><span>وضعیت ایموجی</span><input class="inp" id="acc-emoji" aria-label="وضعیت ایموجی" maxlength="8" placeholder="😀" value="' + esc(state.me.emojiStatus || '') + '" style="max-width:90px;text-align:center"></div>';
+  t += '<div class="settings-row"><span>تاریخ تولد</span><input class="inp" type="date" id="acc-birthday" aria-label="تاریخ تولد" value="' + esc(state.me.birthday || '') + '" style="max-width:170px"></div>';
+  t += '<div class="settings-row"><span>لینک پروفایل</span><b class="set-mono" id="acc-link">' + esc(publicProfileLink()) + '</b><button class="btn sm" data-act="copy-link">کپی</button></div>';
   t += '<div class="settings-row"><span>وضعیت</span><b>' + (state.me.isPremium ? 'پریمیوم' : 'رایگان') + (state.me.isAdmin ? ' • ادمین' : '') + '</b></div></div>';
   t += '<div class="settings-sec"><h3>' + ic('smartphone') + ' دستگاه‌های متصل</h3><div id="acc-devices" class="acc-devices">در حال بارگذاری…</div></div>';
   body.innerHTML = t;
@@ -7192,6 +7209,14 @@ function renderAccSub(body) {
     api('/api/profile/bio', { method: 'POST', body: JSON.stringify({ bio: v }) }).then((r) => r.json()).then((d) => { if (!d.ok) { toast(d.error || 'خطا'); return; } if (d.me) state.me = d.me; toast('بیو ذخیره شد'); }).catch(() => toast('خطا'));
   };
   const bio = body.querySelector('#acc-bio'); if (bio) bio.addEventListener('change', bioSave);
+  const emoji = body.querySelector('#acc-emoji'); if (emoji) emoji.addEventListener('change', () => {
+    const v = emoji.value.trim();
+    api('/api/profile/emoji-status', { method: 'POST', body: JSON.stringify({ emoji: v }) }).then((r) => r.json()).then((d) => { if (!d.ok) { toast(d.error || 'خطا'); emoji.value = state.me.emojiStatus || ''; return; } if (d.me) state.me = d.me; toast('وضعیت ذخیره شد'); if (state.nav === 'settings') renderSettingsSub('account'); }).catch(() => toast('خطا'));
+  });
+  const bday = body.querySelector('#acc-birthday'); if (bday) bday.addEventListener('change', () => {
+    api('/api/profile/birthday', { method: 'POST', body: JSON.stringify({ birthday: bday.value }) }).then((r) => r.json()).then((d) => { if (!d.ok) { toast(d.error || 'خطا'); return; } if (d.me) state.me = d.me; toast('تاریخ تولد ذخیره شد'); }).catch(() => toast('خطا'));
+  });
+  const copy = body.querySelector('[data-act="copy-link"]'); if (copy) copy.onclick = () => { const link = publicProfileLink(); if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => toast('لینک پروفایل کپی شد')).catch(() => toast(link)); else toast(link); };
   /* اگر نسخهٔ قدیمی سرور هنوز uid را برنگرداند، یک‌بار از /api/me می‌خوانیم */
   if (typeof state.me.uid !== 'number') {
     const cell = body.querySelector('[data-uid]');
@@ -7380,6 +7405,7 @@ function renderPrivSub(body) {
   t += setSelectRow('priv-photo', 'عکس پروفایل', AUD, S.get('privacy.profilePhoto'));
   t += setSelectRow('priv-bio', 'بیوگرافی', AUD, S.get('privacy.bio'));
   t += setSelectRow('priv-phone', 'شمارهٔ تلفن', AUD, S.get('privacy.phone'));
+  t += setSelectRow('priv-birthday', 'تاریخ تولد', AUD, S.get('privacy.birthday'));
   t += setSwitchRow('priv-read', 'تیک خوانده‌شدن', S.get('privacy.readReceipts'));
   t += setSwitchRow('priv-presence', 'نمایش وضعیت آنلاین', S.get('privacy.presence'));
   t += '<p class="settings-hint">این تنظیمات روی سرور ذخیره و همان‌جا اعمال می‌شود؛ دیگران واقعاً نمی‌توانند چیزی را که پنهان کرده‌ای ببینند. «مخاطبان» یعنی کسانی که با آن‌ها گفتگوی خصوصی یا گروه مشترک داری.</p></div>';
@@ -7396,6 +7422,7 @@ function renderPrivSub(body) {
   const photo = body.querySelector('#priv-photo'); if (photo) photo.onchange = () => { S.set('privacy.profilePhoto', photo.value); toast('حریم خصوصی ذخیره شد'); };
   const bio = body.querySelector('#priv-bio'); if (bio) bio.onchange = () => { S.set('privacy.bio', bio.value); toast('حریم خصوصی ذخیره شد'); };
   const phone = body.querySelector('#priv-phone'); if (phone) phone.onchange = () => { S.set('privacy.phone', phone.value); toast('حریم خصوصی ذخیره شد'); };
+  const bday = body.querySelector('#priv-birthday'); if (bday) bday.onchange = () => { S.set('privacy.birthday', bday.value); toast('حریم خصوصی ذخیره شد'); };
   const read = body.querySelector('#priv-read'); if (read) read.onchange = () => { S.set('privacy.readReceipts', read.checked); toast('حریم خصوصی ذخیره شد'); };
   const pres = body.querySelector('#priv-presence'); if (pres) pres.onchange = () => { S.set('privacy.presence', pres.checked); toast('حریم خصوصی ذخیره شد'); };
   const save = body.querySelector('#pw-save');

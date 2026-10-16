@@ -62,6 +62,7 @@ function buildAll(data) {
       Array.isArray(u.devices) && u.devices.length ? JSON.stringify(u.devices) : JSON.stringify([]),
       num(u.lastLogin), bool(u.isBot),
       (u.settings && typeof u.settings === 'object' && !Array.isArray(u.settings) && Object.keys(u.settings).length) ? JSON.stringify(u.settings) : JSON.stringify({}),
+      text(u.birthday), text(u.emojiStatus),
     ]);
   }
   const knownUsers = new Set(data.users.map((u) => u && u.username));
@@ -266,7 +267,7 @@ function buildAll(data) {
   for (const uname of referenced) {
     if (!uname || knownUsers.has(uname) || users.some((u) => u[0] === uname)) continue;
     stubs.push(uname);
-    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null, JSON.stringify([]), null, false, JSON.stringify({})]);
+    users.push([uname, null, uname, null, null, null, null, false, false, false, null, null, null, null, [], null, null, null, JSON.stringify([]), null, false, JSON.stringify({}), null, null]);
   }
 
   // --- kv (non-modeled top-level keys + internal bookkeeping) ---------------
@@ -319,7 +320,7 @@ async function truncateAll(exec) {
 
 async function insertAll(exec, b) {
   // FK-safe order
-  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login', 'is_bot', 'settings'], b.users);
+  await _insertRows(exec, 'users', ['username', 'phone', 'display_name', 'avatar', 'salt', 'pass_hash', 'bio', 'is_admin', 'is_premium', 'banned', 'active_skin', 'profile_effect', 'profile_effect_color', 'profile_bg', 'blocked', 'created_at', 'last_seen', 'updated_at', 'devices', 'last_login', 'is_bot', 'settings', 'birthday', 'emoji_status'], b.users);
   await _insertRows(exec, 'conversations', ['id', 'type', 'title', 'avatar', 'owner', 'invite_token', 'created_at', 'updated_at', 'category'], b.conversations);
   await _insertRows(exec, 'conversation_members', ['conversation_id', 'user_id', 'role', 'joined_at', 'last_read_message_id'], b.members);
   await _insertRows(exec, 'messages', ['id', 'conversation_id', 'from', 'from_name', 'from_avatar', 'from_premium', 'kind', 'content', 'silent', 'fwd_from', 'edited', 'reply_to_id', 'reply_to_message_id', 'reply_to_name', 'reply_to_snippet', 'poll', 'checklist', 'album', 'time', 'updated_at', 'deleted_at'], b.messages);
@@ -355,7 +356,7 @@ async function loadAll(exec) {
   const emptyChatUsers = new Set(JSON.parse(kvMap.get('__chat_empty__') || '[]'));
 
   // --- users (stub handles excluded from the runtime list) -----------------
-  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at, devices, last_login, is_bot, settings FROM users')).rows;
+  const userRows = (await exec.query('SELECT username, phone, display_name, avatar, salt, pass_hash, bio, is_admin, is_premium, banned, active_skin, profile_effect, profile_effect_color, profile_bg, blocked, created_at, last_seen, updated_at, devices, last_login, is_bot, settings, birthday, emoji_status FROM users')).rows;
   const usersById = new Map();
   for (const r of userRows) {
     if (stubUsers.has(r.username)) continue;
@@ -363,6 +364,7 @@ async function loadAll(exec) {
     setIf(u, 'avatar', r.avatar); setIf(u, 'salt', r.salt); setIf(u, 'passHash', r.pass_hash);
     setIf(u, 'bio', r.bio); setIf(u, 'activeSkin', r.active_skin); setIf(u, 'profileEffect', r.profile_effect);
     setIf(u, 'profileEffectColor', r.profile_effect_color); setIf(u, 'profileBg', r.profile_bg);
+    setIf(u, 'birthday', r.birthday); setIf(u, 'emojiStatus', r.emoji_status);
     u.isAdmin = !!r.is_admin; u.isPremium = !!r.is_premium;
     if (r.banned) u.banned = true;
     if (Array.isArray(r.blocked) && r.blocked.length) u.blocked = r.blocked;

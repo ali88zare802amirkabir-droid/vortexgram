@@ -253,6 +253,43 @@ test('settings: privacy tiers (profilePhoto/bio/phone/lastSeen-contacts) enforce
   });
 });
 
+test('settings: birthday + emoji status stored, validated, and birthday privacy tier enforced', async (t) => {
+  await withServer(t, async ({ base }) => {
+    // Birthday round-trips and is validated.
+    let r = await api(base, 'POST', '/api/profile/birthday', 'tokenAlice', { birthday: '2000-01-15' });
+    assert.strictEqual(r.status, 200, 'valid birthday accepted');
+    assert.strictEqual(r.d.me.birthday, '2000-01-15', 'birthday stored');
+    r = await api(base, 'POST', '/api/profile/birthday', 'tokenAlice', { birthday: '2000-13-40' });
+    assert.strictEqual(r.status, 400, 'impossible date rejected');
+    r = await api(base, 'POST', '/api/profile/birthday', 'tokenAlice', { birthday: 'not-a-date' });
+    assert.strictEqual(r.status, 400, 'free-form date rejected');
+    r = await api(base, 'POST', '/api/profile/birthday', 'tokenAlice', { birthday: '2999-01-01' });
+    assert.strictEqual(r.status, 400, 'future date rejected');
+
+    // Emoji status: emoji yes, letters no.
+    r = await api(base, 'POST', '/api/profile/emoji-status', 'tokenAlice', { emoji: '😀' });
+    assert.strictEqual(r.status, 200, 'emoji accepted');
+    assert.strictEqual(r.d.me.emojiStatus, '😀', 'emoji stored');
+    r = await api(base, 'POST', '/api/profile/emoji-status', 'tokenAlice', { emoji: 'hello' });
+    assert.strictEqual(r.status, 400, 'text rejected as emoji status');
+
+    // Birthday privacy: default 'contacts' → contact (shared DM) sees it, stranger does not.
+    r = await api(base, 'GET', '/api/user/alice', 'tokenBob');
+    assert.strictEqual(r.d.u.birthday, '2000-01-15', 'contact sees contact-tier birthday');
+    r = await api(base, 'GET', '/api/user/alice', 'tokenCarol');
+    assert.strictEqual(r.d.u.birthday, '', 'stranger cannot see contact-tier birthday');
+
+    // Open it to everybody → the stranger sees it too; then lock to nobody.
+    r = await api(base, 'POST', '/api/profile/settings', 'tokenAlice', { settings: { privacy: { birthday: 'everybody' } } });
+    assert.strictEqual(r.status, 200);
+    r = await api(base, 'GET', '/api/user/alice', 'tokenCarol');
+    assert.strictEqual(r.d.u.birthday, '2000-01-15', 'everybody tier exposes birthday');
+    await api(base, 'POST', '/api/profile/settings', 'tokenAlice', { settings: { privacy: { birthday: 'nobody' } } });
+    r = await api(base, 'GET', '/api/user/alice', 'tokenBob');
+    assert.strictEqual(r.d.u.birthday, '', 'nobody tier hides birthday even from contacts');
+  });
+});
+
 test('settings: read-receipts off suppresses the server room-read broadcast', async (t) => {
   await withServer(t, async ({ base }) => {
     const alice = await wsOpen('tokenAlice');
