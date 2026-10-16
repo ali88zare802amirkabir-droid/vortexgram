@@ -816,6 +816,59 @@ function canAccess(roomId, username) {
   }
   return false;
 }
+/* ── privacy: single source of truth ──────────────────────────────────────
+   Every API/WS point that exposes another user's data must go through canSee().
+   A "contact" relationship is defined server-side (no client trust):
+     * either side lists the other in their explicit contacts array, or
+     * they already share a DM conversation.
+   Tiers: everybody (default) | contacts | nobody. */
+function dmRoomBetween(a, b) {
+  if (!a || !b) return null;
+  for (const rid of Object.keys(db.messages || {})) {
+    if (!rid.startsWith('dm:')) continue;
+    const parts = rid.slice(3).split('|');
+    if (parts.includes(a) && parts.includes(b)) return rid;
+  }
+  return null;
+}
+function hasContact(u, name) { return !!(u && Array.isArray(u.contacts) && u.contacts.includes(name)); }
+function relatesTo(a, b) {
+  if (!a || !b || a === b) return false;
+  const ua = db.users.find((u) => u.username === a);
+  const ub = db.users.find((u) => u.username === b);
+  if (hasContact(ua, b) || hasContact(ub, a)) return true;
+  return !!dmRoomBetween(a, b);
+}
+/* key ∈ {'lastSeen','profilePhoto','bio','phone','birthday','forwardLink', ...}.
+   viewerName is the requester ('' / null = anonymous → treated as a stranger). */
+function canSee(viewerName, owner, key) {
+  if (!owner) return false;
+  if (viewerName && viewerName === owner.username) return true;
+  const priv = (owner.settings && owner.settings.privacy) || {};
+  let tier = priv[key];
+  if (tier === undefined) tier = SETTINGS_DEFAULTS.privacy[key]; /* unset → documented default (e.g. phone=nobody) */
+  if (tier === 'nobody') return false;
+  if (tier === 'contacts') return relatesTo(viewerName, owner.username);
+  return true; /* 'everybody' or unset default */
+}
+/* Read receipts are per-reader: a viewer may not see a reader's receipt when the
+   reader turned read receipts off. Returns a filtered copy of a read-state map. */
+function readReceiptsEnabled(username) {
+  const u = db.users.find((x) => x.username === username);
+  const p = (u && u.settings && u.settings.privacy) || {};
+  return p.readReceipts !== false;
+}
+function filterReadStateFor(viewerName, rs) {
+  const out = {};
+  for (const [rid, readers] of Object.entries(rs || {})) {
+    const kept = {};
+    for (const [reader, time] of Object.entries(readers || {})) {
+      if (reader === viewerName || readReceiptsEnabled(reader)) kept[reader] = time;
+    }
+    if (Object.keys(kept).length) out[rid] = kept;
+  }
+  return out;
+}
 function canPost(roomId, username) {
   if (typeof roomId !== 'string') return false;
   if (roomId.startsWith('group:')) {
@@ -1170,7 +1223,7 @@ app.post('/api/profile/bio', auth, (req, res) => {
    یک لیست سفید (enum/bool/accent) رد می‌شود، پس هیچ کلید یا رشتهٔ آزادی
    ذخیره نمی‌شود. */
 const SETTINGS_DEFAULTS = {
-  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', readReceipts: true, presence: true },
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', phone: 'nobody', readReceipts: true, presence: true },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
   appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
@@ -1180,6 +1233,8 @@ const SETTINGS_DEFAULTS = {
 const SETTINGS_ENUMS = {
   'privacy.lastSeen': ['everybody', 'contacts', 'nobody'],
   'privacy.profilePhoto': ['everybody', 'contacts', 'nobody'],
+  'privacy.bio': ['everybody', 'contacts', 'nobody'],
+  'privacy.phone': ['everybody', 'contacts', 'nobody'],
   'appearance.theme': ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
   'appearance.bubbleRadius': ['sharp', 'compact', 'round', 'pill'],
   'language.code': ['fa', 'en', 'ar', 'tr', 'ru'],
@@ -1585,7 +1640,10 @@ app.post('/api/contacts/match', auth, (req, res) => {
   const out = db.users
     .filter((u) => u.username !== req.user.username && u.phone && wanted.has(normalizePhone(u.phone)) && !u.banned)
     .slice(0, 200)
-    .map((u) => ({ username: u.username, displayName: u.displayName || u.username, avatar: u.avatar || null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, online: !!u.online }));
+    .map((u) => {
+      const pres = (u.settings && u.settings.privacy) || {};
+      return { username: u.username, displayName: u.displayName || u.username, avatar: canSee(req.user.username, u, 'profilePhoto') ? (u.avatar || null) : null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, online: pres.presence === false ? false : !!u.online };
+    });
   res.json({ users: out });
 });
 
@@ -1598,7 +1656,11 @@ app.get('/api/users/search', auth, (req, res) => {
   const out = db.users
     .filter((u) => (isAdmin || !u.banned) && (u.username.toLowerCase().includes(q) || (u.displayName || '').toLowerCase().includes(q)))
     .slice(0, 25)
-    .map((u) => ({ username: u.username, displayName: u.displayName || u.username, avatar: u.avatar || null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, online: !!u.online, ...(isAdmin ? { banned: !!u.banned } : {}) }));
+    .map((u) => {
+      const canPhoto = canSee(req.user.username, u, 'profilePhoto');
+      const pres = (u.settings && u.settings.privacy) || {};
+      return { username: u.username, displayName: u.displayName || u.username, avatar: canPhoto ? (u.avatar || null) : null, isPremium: !!u.isPremium, isAdmin: !!u.isAdmin, online: pres.presence === false ? false : !!u.online, ...(isAdmin ? { banned: !!u.banned } : {}) };
+    });
   res.json({ users: out });
 });
 
@@ -1611,9 +1673,12 @@ app.get('/api/user/:username', auth, (req, res) => {
   const isSelfOrAdmin = req.user.username === target.username || req.user.isAdmin;
   const pu = publicUser(target);
   if (!isSelfOrAdmin) {
-    delete pu.phone;
     delete pu.blocked;
     delete pu.hasPassword;
+    /* privacy tiers enforced here, not just hidden in the client */
+    if (!canSee(req.user.username, target, 'phone')) delete pu.phone;
+    if (!canSee(req.user.username, target, 'profilePhoto')) pu.avatar = null;
+    if (!canSee(req.user.username, target, 'bio')) pu.bio = '';
   }
   res.json({ u: pu });
 });
@@ -1943,7 +2008,7 @@ app.get('/api/reactions/:msgId', auth, (req, res) => {
     if (!list.length) continue;
     out[emojiKey] = list.map((uname) => {
       const u = db.users.find((x) => x.username === uname);
-      return { username: uname, displayName: (u && u.displayName) || uname, avatar: (u && u.avatar) || null };
+      return { username: uname, displayName: (u && u.displayName) || uname, avatar: (u && canSee(req.user.username, u, 'profilePhoto')) ? (u.avatar || null) : null };
     });
   }
   res.json({ reactions: out });
@@ -2437,14 +2502,14 @@ app.get('/api/users/exists/:username', auth, (req, res) => {
   const uname = String(req.params.username || '').trim().replace(/^@/, '');
   const u = db.users.find((x) => x.username.toLowerCase() === uname.toLowerCase());
   if (!u) return res.status(404).json({ error: 'کاربری با این آیدی ثبت نشده' });
-  // حریم خصوصی سمت سرور: انتخاب کاربر در «آخرین بازدید/حضور» اینجا اعمال می‌شود
-  // (نه مخفی‌کردن در کلاینت). برای بینندهٔ غیرِ خود: nobody → همیشه پنهان؛
-  // contacts → فعلاً پنهان (گراف مخاطبان تعریف نشده)؛ everyone → نمایش.
+  // حریم خصوصی سمت سرور از طریق canSee() اعمال می‌شود (نه پنهان‌سازی در کلاینت):
+  // lastSeen/profilePhoto با گراف مخاطبان سروری (پیام مستقیم مشترک یا لیست مخاطبان).
   const priv = (u.settings && u.settings.privacy) || {};
   const isSelf = req.user.username === u.username;
-  const hideSeen = !isSelf && (priv.lastSeen === 'nobody' || priv.lastSeen === 'contacts');
+  const hideSeen = !canSee(req.user.username, u, 'lastSeen');
   const hidePresence = !isSelf && priv.presence === false;
-  res.json({ username: u.username, displayName: u.displayName, avatar: u.avatar || null, isPremium: !!u.isPremium, online: !hidePresence && online.has(u.username), lastSeen: hideSeen ? null : (u.lastSeen || null) });
+  const showPhoto = canSee(req.user.username, u, 'profilePhoto');
+  res.json({ username: u.username, displayName: u.displayName, avatar: showPhoto ? (u.avatar || null) : null, isPremium: !!u.isPremium, online: !hidePresence && online.has(u.username), lastSeen: hideSeen ? null : (u.lastSeen || null) });
 });
 
 // تکمیل مشخصات فرستنده در پیام‌های قدیمی که آواتار/پرمیوم ندارند
@@ -2491,7 +2556,7 @@ function enrichMsg(m, forWhom) {
   return {
     ...pub,
     reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
-    fromAvatar: m.fromAvatar || (u && u.avatar) || null,
+    fromAvatar: (u && !canSee(forWhom, u, 'profilePhoto')) ? null : (m.fromAvatar || (u && u.avatar) || null),
     fromPremium: m.fromPremium || !!(u && u.isPremium),
     fromBot: !!(m.fromBot || (u && u.isBot)),
   };
@@ -2509,7 +2574,7 @@ function enrichMsgBatch(messages, forWhom) {
     return {
       ...pub,
       reactions: (m.reactions && typeof m.reactions === 'object' && !Array.isArray(m.reactions)) ? m.reactions : {},
-      fromAvatar: m.fromAvatar || (u && u.avatar) || null,
+      fromAvatar: (u && !canSee(forWhom, u, 'profilePhoto')) ? null : (m.fromAvatar || (u && u.avatar) || null),
       fromPremium: m.fromPremium || !!(u && u.isPremium),
       fromBot: !!(m.fromBot || (u && u.isBot)),
     };
@@ -2919,7 +2984,10 @@ app.get('/api/groups/:id/members', auth, (req, res) => {
   if (!memberOf(g, req.user.username)) return res.status(403).json({ error: 'عضو نیستی' });
   res.json({
     group: { id: g.id, name: g.name, type: g.type, owner: g.owner },
-    members: g.members.map((m) => ({ ...m, displayName: (db.users.find((u) => u.username === m.username) || {}).displayName || m.username, avatar: (db.users.find((u) => u.username === m.username) || {}).avatar || null })),
+    members: g.members.map((m) => {
+      const mu = db.users.find((u) => u.username === m.username);
+      return { ...m, displayName: (mu && mu.displayName) || m.username, avatar: (mu && canSee(req.user.username, mu, 'profilePhoto')) ? (mu.avatar || null) : null };
+    }),
     allUsers: req.user.isAdmin || g.owner === req.user.username ? db.users.map((u) => ({ username: u.username, displayName: u.displayName })) : undefined,
   });
 });
@@ -3380,7 +3448,7 @@ app.post('/api/chats/read', auth, (req, res) => {
   if (!rs[roomId]) rs[roomId] = {};
   rs[roomId][req.user.username] = Date.now();
   saveDB();
-  broadcast({ type: 'room-read', roomId, username: req.user.username, time: rs[roomId][req.user.username] });
+  if (readReceiptsEnabled(req.user.username)) broadcast({ type: 'room-read', roomId, username: req.user.username, time: rs[roomId][req.user.username] });
   res.json({ ok: true });
 });
 
@@ -3482,8 +3550,16 @@ function pushUsers() {
 function broadcastProfile(username) {
   const user = db.users.find((u) => u.username === username);
   if (!user) return;
-  const obj = { type: 'profile-updated', username, user: publicSafe(user) };
-  for (const [, info] of online) wsSend(info.ws, obj);
+  const base = publicSafe(user);
+  for (const [viewer, info] of online) {
+    /* per-viewer gating: a stranger must not receive a locked avatar/bio just
+       because an update was broadcast to everyone. */
+    const showPhoto = canSee(viewer, user, 'profilePhoto');
+    const showBio = canSee(viewer, user, 'bio');
+    const obj = (showPhoto && showBio) ? { type: 'profile-updated', username, user: base }
+      : { type: 'profile-updated', username, user: { ...base, avatar: showPhoto ? base.avatar : null, bio: showBio ? base.bio : '' } };
+    wsSend(info.ws, obj);
+  }
 }
 function kickUser(username) {
   const info = online.get(username);
@@ -3521,7 +3597,9 @@ wss.on('connection', (ws, req) => {
       const myReadState = {};
       const rsAll = readStateOf();
       for (const [rid, readers] of Object.entries(rsAll)) {
-        if (canAccess(rid, username)) myReadState[rid] = readers;
+        if (!canAccess(rid, username)) continue;
+        const visible = filterReadStateFor(username, { [rid]: readers })[rid];
+        if (visible) myReadState[rid] = visible;
       }
       const myPinned = {};
       for (const [rid, ids] of Object.entries(db.pinned || {})) {
@@ -3570,7 +3648,7 @@ wss.on('connection', (ws, req) => {
       if (!rs[roomId]) rs[roomId] = {};
       rs[roomId][username] = Date.now();
       saveDB();
-      broadcast({ type: 'room-read', roomId, username, time: rs[roomId][username] });
+      if (readReceiptsEnabled(username)) broadcast({ type: 'room-read', roomId, username, time: rs[roomId][username] });
       return;
     }
 

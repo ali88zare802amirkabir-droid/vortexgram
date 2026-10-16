@@ -33,11 +33,13 @@ function legacyHash(pw, salt) {
 function seedDb(dir) {
   const db = {
     users: [
-      { username: 'alice', displayName: 'Alice', salt: 'aa', passHash: legacyHash('alicepw', 'aa'), lastSeen: 111111 },
-      { username: 'bob', displayName: 'Bob', salt: 'bb', passHash: legacyHash('bobpw', 'bb'), lastSeen: 222222 },
+      { username: 'alice', displayName: 'Alice', salt: 'aa', passHash: legacyHash('alicepw', 'aa'), lastSeen: 111111, avatar: '/uploads/alice.png', bio: 'سلام من آلیس هستم', phone: '+989120000001' },
+      { username: 'bob', displayName: 'Bob', salt: 'bb', passHash: legacyHash('bobpw', 'bb'), lastSeen: 222222, avatar: '/uploads/bob.png', bio: 'bob here', phone: '+989120000002' },
+      { username: 'carol', displayName: 'Carol', salt: 'cc', passHash: legacyHash('carolpw', 'cc'), lastSeen: 333333, avatar: '/uploads/carol.png', bio: 'carol bio', phone: '+989120000003' },
     ],
     groups: [],
-    messages: {},
+    // alice & bob share a DM room (carol does not) → "contacts" tier resolvable.
+    messages: { 'dm:alice|bob': [] },
     pinned: {},
     scheduled: [],
     renameRequests: [],
@@ -45,6 +47,7 @@ function seedDb(dir) {
     sessions: {
       tokenAlice: { username: 'alice', exp: Date.now() + 3600000 },
       tokenBob: { username: 'bob', exp: Date.now() + 3600000 },
+      tokenCarol: { username: 'carol', exp: Date.now() + 3600000 },
     },
   };
   const file = path.join(dir, 'db.json');
@@ -208,9 +211,77 @@ test('settings: privacy.lastSeen / presence enforced server-side', async (t) => 
   });
 });
 
+test('settings: privacy tiers (profilePhoto/bio/phone/lastSeen-contacts) enforced server-side', async (t) => {
+  await withServer(t, async ({ base }) => {
+    // Defaults: photo + bio are "everybody"; phone defaults to "nobody".
+    let r = await api(base, 'GET', '/api/user/alice', 'tokenBob');
+    assert.strictEqual(r.status, 200, 'profile readable');
+    assert.strictEqual(r.d.u.avatar, '/uploads/alice.png', 'public avatar visible by default');
+    assert.strictEqual(r.d.u.bio, 'سلام من آلیس هستم', 'public bio visible by default');
+    assert.ok(!r.d.u.phone, 'phone hidden by default (nobody tier)');
+
+    // Alice opens phone up → a stranger can read it.
+    r = await api(base, 'POST', '/api/profile/settings', 'tokenAlice', { settings: { privacy: { phone: 'everybody' } } });
+    assert.strictEqual(r.status, 200);
+    r = await api(base, 'GET', '/api/user/alice', 'tokenBob');
+    assert.strictEqual(r.d.u.phone, '+989120000001', 'phone visible after opting in');
+
+    // Alice locks photo + bio down to nobody.
+    r = await api(base, 'POST', '/api/profile/settings', 'tokenAlice', { settings: { privacy: { profilePhoto: 'nobody', bio: 'nobody' } } });
+    assert.strictEqual(r.status, 200);
+    r = await api(base, 'GET', '/api/user/alice', 'tokenBob');
+    assert.strictEqual(r.d.u.avatar, null, 'locked avatar not leaked');
+    assert.strictEqual(r.d.u.bio, '', 'locked bio not leaked');
+
+    // Owner still sees their own profile in full.
+    r = await api(base, 'GET', '/api/user/alice', 'tokenAlice');
+    assert.strictEqual(r.d.u.avatar, '/uploads/alice.png', 'owner sees own avatar');
+    assert.strictEqual(r.d.u.bio, 'سلام من آلیس هستم', 'owner sees own bio');
+    assert.strictEqual(r.d.u.phone, '+989120000001', 'owner sees own phone');
+
+    // "contacts" tier = shared DM graph: bob is a contact (shares dm:alice|bob), carol is not.
+    r = await api(base, 'POST', '/api/profile/settings', 'tokenAlice', { settings: { privacy: { profilePhoto: 'contacts', lastSeen: 'contacts' } } });
+    assert.strictEqual(r.status, 200);
+    r = await api(base, 'GET', '/api/user/alice', 'tokenBob');
+    assert.strictEqual(r.d.u.avatar, '/uploads/alice.png', 'contact (shared DM) sees contact-tier photo');
+    r = await api(base, 'GET', '/api/user/alice', 'tokenCarol');
+    assert.strictEqual(r.d.u.avatar, null, 'non-contact sees nothing for contact-tier photo');
+    r = await api(base, 'GET', '/api/users/exists/alice', 'tokenBob');
+    assert.strictEqual(r.d.lastSeen, 111111, 'contact sees contact-tier lastSeen');
+    r = await api(base, 'GET', '/api/users/exists/alice', 'tokenCarol');
+    assert.strictEqual(r.d.lastSeen, null, 'non-contact cannot see contact-tier lastSeen');
+  });
+});
+
+test('settings: read-receipts off suppresses the server room-read broadcast', async (t) => {
+  await withServer(t, async ({ base }) => {
+    const alice = await wsOpen('tokenAlice');
+    const bob = await wsOpen('tokenBob');
+    try {
+      await alice.waitFor((d) => d.type === 'ready');
+      await bob.waitFor((d) => d.type === 'ready');
+      const roomId = 'dm:alice|bob';
+
+      // Baseline: with receipts on, bob is told alice read the room.
+      alice.ws.send(JSON.stringify({ type: 'read', roomId }));
+      let ev = await bob.waitFor((d) => d.type === 'room-read' && d.username === 'alice');
+      assert.strictEqual(ev.roomId, roomId, 'receipt broadcast while enabled');
+
+      // Alice turns receipts off → server must NOT broadcast her reads anymore.
+      let r = await api(base, 'POST', '/api/profile/settings', 'tokenAlice', { settings: { privacy: { readReceipts: false } } });
+      assert.strictEqual(r.status, 200);
+      alice.ws.send(JSON.stringify({ type: 'read', roomId }));
+      let leaked = false;
+      await bob.waitFor((d) => { if (d.type === 'room-read' && d.username === 'alice') leaked = true; return false; }, 800).catch(() => {});
+      assert.strictEqual(leaked, false, 'no room-read broadcast after opting out');
+    } finally {
+      alice.ws.terminate(); bob.ws.terminate();
+    }
+  });
+});
+
 test('settings: active sessions list + per-device revoke', async (t) => {
   await withServer(t, async ({ base }) => {
-    // new account on two different clients
     let r = await api(base, 'POST', '/api/register', null, { username: 'duser', password: 'sekret123' }, { 'User-Agent': UA_A });
     assert.strictEqual(r.status, 200, 'register ok');
     const tokenA = r.d.token;

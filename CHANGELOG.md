@@ -4,6 +4,30 @@ All notable UI work on the "Liquid Glass" redesign. Phases ship as small,
 tested slices; each slice keeps the existing test suites green and adds
 screenshot + DOM-metric evidence under `docs/screenshots/phase4/<slice>/`.
 
+## Task T (batch 1) — Settings privacy becomes real (server-enforced)
+
+- **One privacy gate** — new `canSee(viewer, owner, key)` (plus
+  `relatesTo`/`dmRoomBetween`/`hasContact`) applies the
+  `everybody`/`contacts`/`nobody` tiers at *every* place another user's data is
+  exposed: `GET /api/user/:username`, `GET /api/users/search`,
+  `GET /api/users/exists/:username`, `enrichMsg`/`enrichMsgBatch` (`fromAvatar`)
+  and the WS `ready` read-state snapshot. Unset keys fall back to the documented
+  default, so `phone` stays private for accounts that never opened Settings.
+- **Contacts graph** — the `contacts` tier now resolves from real relationships
+  (either side's `user.contacts`, or a shared DM room) instead of silently
+  degrading to Nobody.
+- **Read receipts** — when `privacy.readReceipts` is off the server no longer
+  broadcasts `room-read`, and the `ready` snapshot hides that reader's receipts
+  from others (`filterReadStateFor`).
+- **New tiers** — `privacy.bio` (default everybody) and `privacy.phone`
+  (default nobody) with their own selects + settings-search entries.
+- **Client effects** — outgoing typing honours `chat.showTyping`; the composer
+  honours `chat.enterToSend` (off → send with Ctrl/⌘+Enter); the message
+  translate action only appears when `language.translateEnabled` is on.
+- **Tests** — `tests/settings.test.js` +2 cases (privacy-tier matrix incl.
+  contacts tier; read-receipt suppression) → 8/8. `data.autoDownload*` remains
+  UI-ONLY pending the Slice-E matrix (tracked in `docs/SETTINGS_PARITY.md`).
+
 ## Phase 5G — Live delivery hardening (instant display for the other party)
 
 - **Root cause**: the server already pushed a message to the other party in

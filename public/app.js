@@ -713,7 +713,7 @@ applyAppearance();
    (debounced) to /api/profile/settings. The server also broadcasts
    `settings-updated` over WS so a change on one device lands on the others. */
 const VX_SETTINGS_DEFAULTS = {
-  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', readReceipts: true, presence: true },
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', phone: 'nobody', readReceipts: true, presence: true },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
   appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
@@ -2900,9 +2900,18 @@ function syncComposerState() {
   box.classList.toggle('has-text', !!inp.value.trim());
 }
 $('composer-send').onclick = sendMessage;
-$('composer-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } if (e.key === 'Escape') setReply(null); });
+$('composer-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { setReply(null); return; }
+  if (e.key !== 'Enter') return;
+  /* Phase T-B: send key is a real, stored preference (default: Enter sends). */
+  const enterSends = VXSettings.get('chat.enterToSend') !== false;
+  if (enterSends && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  else if (!enterSends && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendMessage(); }
+});
 let lastTypingSentAt = 0;
 function sendTyping(on) {
+  /* Phase T-B: honour the stored preference — never broadcast my typing if off. */
+  if (on && VXSettings.get('chat.showTyping') === false) return;
   if (state.ws && state.ws.readyState === 1 && state.room) state.ws.send(JSON.stringify({ type: 'typing', roomId: state.room, on }));
 }
 $('composer-input').addEventListener('input', () => {
@@ -5104,7 +5113,7 @@ function openMsgCtx(m, anchor, pos) {
      حباب باید همین‌جا گرفته شود، چون هنگام اجرای هندلر closeMsgCtx() اجرا
      شده و _ctxMsgEl دیگر null است. */
   var ctxBubble = _ctxMsgEl ? (_ctxMsgEl.querySelector('.bubble') || _ctxMsgEl) : null;
-  if (m.kind === 'text' && AI_CAP.enabled) {
+  if (m.kind === 'text' && AI_CAP.enabled && VXSettings.get('language.translateEnabled')) {
     mk('ترجمهٔ ماشینی', 'languages', function() { aiTranslateMessage(m, ctxBubble); });
   }
   if (m.kind === 'voice' && AI_CAP.whisper) {
@@ -6901,6 +6910,8 @@ const SET_SEARCH_INDEX = [
   { cat: 'chat', title: 'ارسال با کلید Enter', sub: 'پیام‌رسانی', kw: 'enter send key ارسال اینتر کلید', focus: '#chat-enter' },
   { cat: 'privacy', title: 'آخرین بازدید و آنلاین', sub: 'حریم خصوصی', kw: 'last seen online presence آخرین بازدید آنلاین حضور', focus: '#priv-lastseen' },
   { cat: 'privacy', title: 'چه کسی عکس پروفایل را ببیند', sub: 'حریم خصوصی', kw: 'profile photo privacy عکس پروفایل حریم', focus: '#priv-photo' },
+  { cat: 'privacy', title: 'چه کسی بیوگرافی را ببیند', sub: 'حریم خصوصی', kw: 'bio about biography بیوگرافی درباره توضیحات حریم', focus: '#priv-bio' },
+  { cat: 'privacy', title: 'چه کسی شمارهٔ تلفن را ببیند', sub: 'حریم خصوصی', kw: 'phone number شماره تلفن موبایل حریم', focus: '#priv-phone' },
   { cat: 'privacy', title: 'تیک خوانده‌شدن', sub: 'حریم خصوصی', kw: 'read receipts tick تیک خوانده شدن', focus: '#priv-read' },
   { cat: 'privacy', title: 'رمز عبور', sub: 'حریم خصوصی', kw: 'password passcode pin رمز عبور پین قفل', focus: '#pw-new' },
   { cat: 'language', title: 'زبان برنامه', sub: 'زبان و ترجمه', kw: 'language locale interface زبان برنامه رابط', focus: '#lang-code' },
@@ -7367,9 +7378,11 @@ function renderPrivSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('lock') + ' حریم خصوصی</h3>';
   t += setSelectRow('priv-lastseen', 'آخرین بازدید', AUD, S.get('privacy.lastSeen'));
   t += setSelectRow('priv-photo', 'عکس پروفایل', AUD, S.get('privacy.profilePhoto'));
+  t += setSelectRow('priv-bio', 'بیوگرافی', AUD, S.get('privacy.bio'));
+  t += setSelectRow('priv-phone', 'شمارهٔ تلفن', AUD, S.get('privacy.phone'));
   t += setSwitchRow('priv-read', 'تیک خوانده‌شدن', S.get('privacy.readReceipts'));
   t += setSwitchRow('priv-presence', 'نمایش وضعیت آنلاین', S.get('privacy.presence'));
-  t += '<p class="settings-hint">این تنظیمات روی سرور ذخیره و همان‌جا اعمال می‌شود؛ دیگران واقعاً نمی‌توانند چیزی را که پنهان کرده‌ای ببینند.</p></div>';
+  t += '<p class="settings-hint">این تنظیمات روی سرور ذخیره و همان‌جا اعمال می‌شود؛ دیگران واقعاً نمی‌توانند چیزی را که پنهان کرده‌ای ببینند. «مخاطبان» یعنی کسانی که با آن‌ها گفتگوی خصوصی یا گروه مشترک داری.</p></div>';
   t += '<div class="settings-sec"><h3>' + ic('key') + ' رمز عبور</h3>';
   t += '<div class="settings-row"><span>وضعیت رمز</span><b>' + (hasPw ? 'فعال' : 'غیرفعال — حساب با پیامک ساخته شده') + '</b></div>';
   t += '<div class="settings-row' + (hasPw ? '' : ' hidden') + '"><span>رمز فعلی</span><input type="password" id="pw-current" class="inp" autocomplete="current-password" placeholder="••••••" style="max-width:150px"></div>';
@@ -7381,6 +7394,8 @@ function renderPrivSub(body) {
   body.innerHTML = t;
   const seen = body.querySelector('#priv-lastseen'); if (seen) seen.onchange = () => { S.set('privacy.lastSeen', seen.value); toast('حریم خصوصی ذخیره شد'); };
   const photo = body.querySelector('#priv-photo'); if (photo) photo.onchange = () => { S.set('privacy.profilePhoto', photo.value); toast('حریم خصوصی ذخیره شد'); };
+  const bio = body.querySelector('#priv-bio'); if (bio) bio.onchange = () => { S.set('privacy.bio', bio.value); toast('حریم خصوصی ذخیره شد'); };
+  const phone = body.querySelector('#priv-phone'); if (phone) phone.onchange = () => { S.set('privacy.phone', phone.value); toast('حریم خصوصی ذخیره شد'); };
   const read = body.querySelector('#priv-read'); if (read) read.onchange = () => { S.set('privacy.readReceipts', read.checked); toast('حریم خصوصی ذخیره شد'); };
   const pres = body.querySelector('#priv-presence'); if (pres) pres.onchange = () => { S.set('privacy.presence', pres.checked); toast('حریم خصوصی ذخیره شد'); };
   const save = body.querySelector('#pw-save');

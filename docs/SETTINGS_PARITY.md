@@ -34,8 +34,20 @@ VORTEX's own icons, Persian copy and glass visual language.
   - Persistence: `users.settings` JSONB (migration `0005_user_settings`), sparse,
     plus JSON-file fallback parity.
   - Sync: WS `settings-updated` → client `VXSettings.adopt`.
-  - Server enforcement today: **only** `privacy.lastSeen` and `privacy.presence`,
-    at `GET /api/users/exists/:username` (`server.js:2443-2447`).
+  - Server enforcement today: a single `canSee(viewer, owner, key)` helper
+    (`server.js`, right after `canAccess`) applies the privacy tiers
+    (`everybody`/`contacts`/`nobody`) at **every** exposure point:
+    `GET /api/user/:username` (photo/bio/phone), `GET /api/users/search`
+    (photo + presence), `GET /api/users/exists/:username` (lastSeen + presence),
+    `enrichMsg`/`enrichMsgBatch` (`fromAvatar`), and the WS `ready` read-state
+    snapshot (`filterReadStateFor`). `room-read` is not broadcast when the
+    reader has `privacy.readReceipts=false`.
+  - **Contacts graph (interim)**: `relatesTo(a,b)` = either user lists the other
+    in `user.contacts`, **or** they share a DM room (`db.messages['dm:a|b']`).
+    This already makes the `contacts` tier trustworthy without a client-trusted
+    list; a first-class `user_contacts` model + management UI is still Slice D.
+  - Unset keys fall back to the documented default (so `phone` stays hidden for
+    accounts that never touched settings).
 - **Client**: `VXSettings` (defaults mirror + debounced POST), `SETCATS` (12
   sections: account, appearance, background, skins, notifications, chat,
   privacy, language, storage, folders, help, logout) with fa/en settings search.
@@ -48,14 +60,24 @@ VORTEX's own icons, Persian copy and glass visual language.
 ## Existing server settings keys (today)
 
 ```
-privacy:       lastSeen(E), profilePhoto(STORED, not enforced), readReceipts(UI-ONLY), presence(E)
+privacy:       lastSeen(E), profilePhoto(E), bio(E), phone(E, default nobody), readReceipts(E), presence(E)
 notifications: enabled, sound, preview            (client effects exist)
 data:          autoDownloadPhotos(UI-ONLY), autoDownloadVideos(UI-ONLY), saveData(DONE — power-saver)
 appearance:    theme, accent, bubbleRadius, reduceGlass, aurora   (real effects)
-language:      code, translateEnabled(UI-ONLY)
-chat:          showTyping(UI-ONLY), enterToSend(UI-ONLY)
+language:      code, translateEnabled(E — gates the translate action)
+chat:          showTyping(E — gates outgoing typing), enterToSend(E — gates Enter)
 ```
-(E = enforced server-side.)
+(E = enforced / real effect.)
+
+## Progress log
+
+- **2026-10-16 · Task T batch 1 (privacy enforcement + UI-ONLY 1–3,5–7):**
+  added `canSee`/`relatesTo`/`dmRoomBetween`/`hasContact`/`readReceiptsEnabled`/
+  `filterReadStateFor`; wired them through every profile/message exposure point;
+  added `privacy.bio` + `privacy.phone` tiers (client selects + search entries);
+  gated outgoing typing, Enter-to-send and the translate action on their stored
+  keys. Tests: settings 8/8 (incl. new tier + read-receipt tests). Remaining
+  UI-ONLY: `data.autoDownloadPhotos/Videos` (deferred to Slice E — full matrix).
 
 ---
 
@@ -103,7 +125,7 @@ chat:          showTyping(UI-ONLY), enterToSend(UI-ONLY)
 | Emoji style / size | MISSING | — |
 | Link previews on/off | MISSING | link-preview endpoint exists, no toggle |
 | In-app browser | MISSING | — |
-| Send with Enter vs Ctrl+Enter | UI-ONLY | `chat.enterToSend` stored, keydown ignores it |
+| Send with Enter vs Ctrl+Enter | DONE | `chat.enterToSend` gates the composer keydown |
 | Raise-to-speak off | MISSING | — |
 | Autoplay GIFs/videos | MISSING | — |
 | Large emoji | MISSING | emoji-effect layer exists (not a size option) |
@@ -135,16 +157,16 @@ chat:          showTyping(UI-ONLY), enterToSend(UI-ONLY)
 
 | Option | Status | Notes |
 | --- | --- | --- |
-| lastSeen & online tier | DONE (server-enforced) | `exists` endpoint |
-| lastSeen "My contacts" tier | UI-ONLY | no contacts graph → treated as Nobody |
-| Profile photos tier | UI-ONLY | `profilePhoto` never read by the server |
-| Bio / Birthday / Phone tiers | MISSING | no fields/enforcement |
+| lastSeen & online tier | DONE (server-enforced) | `exists` endpoint via `canSee` |
+| lastSeen "My contacts" tier | DONE | `relatesTo` = shared DM room or `user.contacts` |
+| Profile photos tier | DONE | `canSee` at `/api/user/:username`, search, `fromAvatar` |
+| Bio / Phone tiers | DONE | `privacy.bio` (default everybody), `privacy.phone` (default nobody); enforced server-side. Birthday still MISSING. |
 | Forwarded-messages link | MISSING | — |
 | Who can message me | MISSING | — |
 | Who can add me to groups/channels | MISSING | — |
 | Voice messages permission | MISSING | — |
-| Read receipts | UI-ONLY | server broadcasts `room-read` regardless |
-| Typing indicator (send) | UI-ONLY | `chat.showTyping` unused |
+| Read receipts | DONE (server-enforced) | `room-read` suppressed when reader opts out; `ready` filters others' receipts |
+| Typing indicator (send) | DONE | `sendTyping` honours `chat.showTyping` |
 | Always/Never share-with lists | MISSING | — |
 | Blocked users screen | PARTIAL | block enforced; no management UI |
 | App passcode lock + auto-lock + fingerprint/WebAuthn | MISSING | needs keystore/WebAuthn |
@@ -213,6 +235,7 @@ chat:          showTyping(UI-ONLY), enterToSend(UI-ONLY)
 | Jalali/Gregorian | PARTIAL | Jalali used in separators, not configurable |
 | 12/24h clock | MISSING | — |
 | RTL/LTR auto per chat | DONE | global RTL + `dir="ltr"` where needed |
+| Translate button enabled | DONE | `language.translateEnabled` gates the message action |
 
 ## 11. Help
 
@@ -245,17 +268,23 @@ chat:          showTyping(UI-ONLY), enterToSend(UI-ONLY)
 These are rendered/stored today but do nothing — the exact thing the brief
 forbids:
 
-1. `privacy.profilePhoto` — never read by the server; avatars leak everywhere.
-2. `privacy.readReceipts` — `room-read` is broadcast to everyone regardless.
-3. `privacy.lastSeen = contacts` — silently downgraded to Nobody (no graph).
-4. `data.autoDownloadPhotos` / `data.autoDownloadVideos` — ignored by rendering.
-5. `language.translateEnabled` — button always shown.
-6. `chat.showTyping` — outgoing typing indicator always sent.
-7. `chat.enterToSend` — Enter always sends; setting ignored.
+1. ~~`privacy.profilePhoto`~~ — **FIXED** (Task T batch 1): enforced at every
+   avatar exposure point via `canSee`.
+2. ~~`privacy.readReceipts`~~ — **FIXED**: `room-read` is suppressed when the
+   reader opts out; the `ready` snapshot filters other readers' receipts.
+3. ~~`privacy.lastSeen = contacts`~~ — **FIXED**: `relatesTo` resolves contacts
+   from a shared DM room or `user.contacts` (no client trust).
+4. `data.autoDownloadPhotos` / `data.autoDownloadVideos` — **still ignored by
+   rendering** (deferred to Slice E for the full network × type × size matrix).
+5. ~~`language.translateEnabled`~~ — **FIXED**: the translate action is only
+   offered when the key is on.
+6. ~~`chat.showTyping`~~ — **FIXED**: `sendTyping` never broadcasts when off.
+7. ~~`chat.enterToSend`~~ — **FIXED**: composer keydown honours the key
+   (off → Ctrl/⌘+Enter sends).
 
-Fix approach: introduce **one** `canSee(viewer, owner, key)` helper on the
-server (fed by a proper server-side relationship graph) and route *every*
-API/WS exposure of gated data through it; then wire the client effects for 4–7.
+Fix approach used: **one** `canSee(viewer, owner, key)` helper on the server
+(fed by a server-side relationship graph) routed through *every* API/WS exposure
+of gated data; client effects wired for 2,5,6,7.
 
 ## Not implemented, and why
 
