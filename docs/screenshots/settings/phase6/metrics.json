@@ -1,0 +1,451 @@
+{
+  "at": "2026-10-21T13:24:58.458Z",
+  "categories": {
+    "mobile:appearance": {
+      "metrics": {
+        "controls": 63,
+        "unlabelled": [],
+        "sections": 10,
+        "switches": 5,
+        "selects": 0,
+        "sliders": 2,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "تم بازنشانی حالت نمایش روشن تیره مشکی (AMOLED) تم خودکار خاموش هماهنگ با سیستم زمان‌بندی «هماهنگ با سیستم» یعنی وقتی سی"
+      },
+      "errors": []
+    },
+    "mobile:chat": {
+      "metrics": {
+        "controls": 25,
+        "unlabelled": [
+          "SELECT#chat-swipe",
+          "SELECT#chat-folders",
+          "SELECT#chat-shortcut-read",
+          "SELECT#chat-spacing"
+        ],
+        "sections": 6,
+        "switches": 17,
+        "selects": 4,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "ارسال پیام کلید ارسال Enter Ctrl + Enter با «Enter» کلید Enter پیام را می‌فرستد و Shift+Enter خط جدید می‌سازد؛ با «Ctrl"
+      },
+      "errors": []
+    },
+    "mobile:security": {
+      "metrics": {
+        "controls": 25,
+        "unlabelled": [
+          "SELECT#sec-lastseen",
+          "SELECT#sec-photo",
+          "SELECT#sec-bio",
+          "SELECT#sec-phone",
+          "SELECT#sec-birthday",
+          "SELECT#sec-calls",
+          "SELECT#sec-forwards",
+          "SELECT#sec-groups",
+          "SELECT#sec-voice",
+          "INPUT#pw-current"
+        ],
+        "sections": 8,
+        "switches": 3,
+        "selects": 12,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "چه کسی چه چیزی را ببیند آخرین بازدید و وضعیت آنلاین همه مخاطبان هیچ‌کس عکس پروفایل همه مخاطبان هیچ‌کس بیوگرافی همه مخاطب"
+      },
+      "errors": []
+    },
+    "mobile:notifications": {
+      "metrics": {
+        "controls": 12,
+        "unlabelled": [],
+        "sections": 3,
+        "switches": 11,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "اعلان‌ها اعلان‌ها فعال صدای اعلان نمایش پیش‌نمایش پیام اعلان پیام‌های خصوصی اعلان گروه‌ها و کانال‌ها اعلان کانال‌ها اعلا"
+      },
+      "errors": []
+    },
+    "mobile:storage": {
+      "metrics": {
+        "controls": 11,
+        "unlabelled": [
+          "INPUT#data-proxy"
+        ],
+        "sections": 4,
+        "switches": 7,
+        "selects": 0,
+        "sliders": 1,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "دانلود خودکار دانلود خودکار عکس‌ها دانلود خودکار ویدیوها دانلود خودکار روی دادهٔ موبایل دانلود خودکار روی وای‌فای حداکثر"
+      },
+      "errors": []
+    },
+    "mobile:calls": {
+      "metrics": {
+        "controls": 7,
+        "unlabelled": [
+          "SELECT#calls-mic",
+          "SELECT#calls-speaker",
+          "SELECT#calls-camera",
+          "SELECT#calls-ringtone",
+          "SELECT#calls-quality"
+        ],
+        "sections": 3,
+        "switches": 2,
+        "selects": 5,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "صدا ورودی میکروفون پیش‌فرض سیستم میکروفون سیستم میکروفون داخلی دستگاه خروجی بلندگو پیش‌فرض سیستم بلندگوی سیستم بلندگوی د"
+      },
+      "errors": []
+    },
+    "mobile:language": {
+      "metrics": {
+        "controls": 15,
+        "unlabelled": [],
+        "sections": 2,
+        "switches": 2,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "زبان رابط جست‌وجوی زبان فارسی FA راست‌به‌چپ English EN چپ‌به‌راست العربية AR راست‌به‌چپ Türkçe TR چپ‌به‌راست Русский RU "
+      },
+      "errors": []
+    },
+    "mobile:premium": {
+      "metrics": {
+        "controls": 4,
+        "unlabelled": [],
+        "sections": 1,
+        "switches": 4,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "ویژگی‌های ویژه این گزینه‌ها روی حساب پریمیوم فعال می‌شوند. استیکر و ریکشن اختصاصی ریکشن‌های اختصاصی حجم فایل بیشتر رنگ"
+      },
+      "errors": []
+    },
+    "mobile:account": {
+      "metrics": {
+        "controls": 14,
+        "unlabelled": [
+          "INPUT#acc-av-file"
+        ],
+        "sections": 4,
+        "switches": 0,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "عکس و ویدیوی پروفایل تصویر فعلی انتخاب تصویر حذف فرمت‌های مجاز: JPG، PNG و WebP تا ۵ مگابایت. اطلاعات حساب نام نمایشی "
+      },
+      "errors": []
+    },
+    "mobile:background": {
+      "metrics": {
+        "controls": 14,
+        "unlabelled": [],
+        "sections": 3,
+        "switches": 1,
+        "selects": 0,
+        "sliders": 2,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "پس‌زمینه‌های آماده ساده شفق قطبی غروب اقیانوس نعنا تک‌رنگ نقطه‌ای شبکه‌ای موج‌دار تصویر دلخواه انتخاب تصویر از دستگاه حذ"
+      },
+      "errors": []
+    },
+    "mobile:folders": {
+      "metrics": {
+        "controls": 1,
+        "unlabelled": [],
+        "sections": 1,
+        "switches": 0,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "پوشه‌های گفتگو ساخت پوشه جدید هنوز پوشه‌ای نساخته‌ای. پوشه‌ها به تو کمک می‌کنند چت‌های کاری، خانوادگی و … را جدا نگه دار"
+      },
+      "errors": []
+    },
+    "mobile:help": {
+      "metrics": {
+        "controls": 1,
+        "unlabelled": [],
+        "sections": 3,
+        "switches": 0,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 390,
+        "clientW": 390,
+        "text": "راهنما و درباره نسخهٔ برنامه v1.0.0 وضعیت سرویس آنلاین قوانین و اسناد سیاست حریم خصوصی شرایط استفاده پرسش‌های متداول پیا"
+      },
+      "errors": []
+    },
+    "desktop:appearance": {
+      "metrics": {
+        "controls": 79,
+        "unlabelled": [],
+        "sections": 10,
+        "switches": 5,
+        "selects": 0,
+        "sliders": 2,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:chat": {
+      "metrics": {
+        "controls": 41,
+        "unlabelled": [
+          "SELECT#chat-swipe",
+          "SELECT#chat-folders",
+          "SELECT#chat-shortcut-read",
+          "SELECT#chat-spacing"
+        ],
+        "sections": 6,
+        "switches": 17,
+        "selects": 4,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:security": {
+      "metrics": {
+        "controls": 41,
+        "unlabelled": [
+          "SELECT#sec-lastseen",
+          "SELECT#sec-photo",
+          "SELECT#sec-bio",
+          "SELECT#sec-phone",
+          "SELECT#sec-birthday",
+          "SELECT#sec-calls",
+          "SELECT#sec-forwards",
+          "SELECT#sec-groups",
+          "SELECT#sec-voice",
+          "INPUT#pw-current"
+        ],
+        "sections": 8,
+        "switches": 3,
+        "selects": 12,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:notifications": {
+      "metrics": {
+        "controls": 28,
+        "unlabelled": [],
+        "sections": 3,
+        "switches": 11,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:storage": {
+      "metrics": {
+        "controls": 27,
+        "unlabelled": [
+          "INPUT#data-proxy"
+        ],
+        "sections": 4,
+        "switches": 7,
+        "selects": 0,
+        "sliders": 1,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:calls": {
+      "metrics": {
+        "controls": 23,
+        "unlabelled": [
+          "SELECT#calls-mic",
+          "SELECT#calls-speaker",
+          "SELECT#calls-camera",
+          "SELECT#calls-ringtone",
+          "SELECT#calls-quality"
+        ],
+        "sections": 3,
+        "switches": 2,
+        "selects": 5,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:language": {
+      "metrics": {
+        "controls": 31,
+        "unlabelled": [],
+        "sections": 2,
+        "switches": 2,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:premium": {
+      "metrics": {
+        "controls": 20,
+        "unlabelled": [],
+        "sections": 1,
+        "switches": 4,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:account": {
+      "metrics": {
+        "controls": 30,
+        "unlabelled": [
+          "INPUT#acc-av-file"
+        ],
+        "sections": 4,
+        "switches": 0,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:background": {
+      "metrics": {
+        "controls": 30,
+        "unlabelled": [],
+        "sections": 3,
+        "switches": 1,
+        "selects": 0,
+        "sliders": 2,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:folders": {
+      "metrics": {
+        "controls": 17,
+        "unlabelled": [],
+        "sections": 1,
+        "switches": 0,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    },
+    "desktop:help": {
+      "metrics": {
+        "controls": 17,
+        "unlabelled": [],
+        "sections": 3,
+        "switches": 0,
+        "selects": 0,
+        "sliders": 0,
+        "overflowX": false,
+        "scrollW": 1364,
+        "clientW": 1364,
+        "text": "ت تنظیم‌گر @setter حساب پروفایل من نام، بیو، تولد، اکسنت و لینک حریم خصوصی و امنیت سطح دسترسی، قفل برنامه و نشست‌ها پیام"
+      },
+      "errors": []
+    }
+  },
+  "theme": {
+    "day": {
+      "attr": "day",
+      "surface": "#ffffff",
+      "bg": "#ffffff",
+      "text": "#0f1419",
+      "primary": "#3390ec",
+      "bodyBg": "rgba(0, 0, 0, 0)",
+      "bodyColor": "rgb(15, 20, 25)"
+    },
+    "night": {
+      "attr": "night",
+      "surface": "#17212b",
+      "bg": "#17212b",
+      "text": "#f5f5f5",
+      "primary": "#3390ec",
+      "bodyBg": "rgba(0, 0, 0, 0)",
+      "bodyColor": "rgb(245, 245, 245)"
+    },
+    "dark": {
+      "attr": "dark",
+      "surface": "#000000",
+      "bg": "#000000",
+      "text": "#f2f2f2",
+      "primary": "#3390ec",
+      "bodyBg": "rgba(0, 0, 0, 0)",
+      "bodyColor": "rgb(242, 242, 242)"
+    },
+    "accent": {
+      "accent": "rose",
+      "primary": "#f43f5e",
+      "ls": "rose"
+    }
+  }
+}
