@@ -6432,12 +6432,6 @@ function renderProfile(username) {
   setMode('view');
   const online = !!u.online;
   const skin = SKINS.find((s) => s.id === (u.activeSkin || 'default'));
-  const effId = ''; // Effects disabled — backup in _effects-backup.css
-  const eff = null;
-  const premium = false;
-  const mood = '';
-  const colHex = '#3b82f6';
-  const isCanvasEffect = false;
   const sa = ' data-uid="' + esc(username) + '"';
   const badge = (u.isPremium ? ' <span class="badge prem">پرمیوم</span>' : '') + (u.isAdmin ? ' <span class="badge adm">ادمین</span>' : '') + (u.banned ? ' <span class="badge ban">مسدود</span>' : '');
   let h = '<div class="profile-view"' + sa + ' role="region" aria-labelledby="profile-title">';

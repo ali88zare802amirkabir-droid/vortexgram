@@ -340,3 +340,54 @@
   -webkit-backdrop-filter: var(--vx-glass-filter);
   backdrop-filter: var(--vx-glass-filter);
 }
+/* ───────── Stage 1 neutral/content constants (single source) ─────────
+   Consumed by component rules in style.css and shell.css. Values stay here. */
+:root {
+  --pure-white: #ffffff;
+  --black-rgb: 0, 0, 0;
+  --white-rgb: 255, 255, 255;
+  /* Text color that stays readable on the success/warning fills */
+  --on-success: #04231a;
+  --on-warning: #3a2600;
+  /* Decorative aurora + map glow hues (component rules only reference these) */
+  --aurora-2-rgb: 139, 92, 246;
+  --aurora-3-rgb: 34, 211, 238;
+  --aurora-4-rgb: 236, 72, 153;
+  --map-glow-rgb: 120, 180, 255;
+  --media-bar: rgba(12, 12, 12, .92);
+  /* Media/mask constants — backgrounds that are always dark by design */
+  --media-bg: #000000;
+  --mask-opaque: #000000;
+  --scrim-strong: rgba(3, 20, 39, .78);
+  /* Decorative avatar gradient presets (data palette, components read only) */
+  --av-grad-0: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  --av-grad-1: linear-gradient(135deg, #f472b6, #f97316);
+  --av-grad-2: linear-gradient(135deg, #34d399, #0ea5e9);
+  --av-grad-3: linear-gradient(135deg, #fbbf24, #f43f5e);
+  --av-grad-4: linear-gradient(135deg, #a78bfa, #ec4899);
+  --av-grad-5: linear-gradient(135deg, #22d3ee, #818cf8);
+  --av-grad-6: linear-gradient(135deg, #fb923c, #f43f5e);
+  --av-grad-7: linear-gradient(135deg, #2dd4bf, #3b82f6);
+  --media-scrim-top: rgba(10, 10, 10, .82);
+  --media-scrim-bar: rgba(10, 10, 10, .85);
+  --media-panel: rgba(24, 24, 24, .94);
+  --media-panel-2: rgba(24, 24, 24, .96);
+  --media-text: #e8e8e8;
+  --media-text-dim: #cfcfcf;
+  --map-bg: #0f1720;
+  --map-plane-dark: #0e1116;
+  --map-cbtn: rgba(20, 24, 32, .82);
+  --map-me-rgb: 26, 115, 232;
+  --map-pin: #d92d20;
+  --map-pin-rgb: 217, 45, 32;
+  --map-attrib: #cbd5e1;
+  --map-glow-rgb: 120, 180, 255;
+  --vxmp-scrim: rgba(4, 7, 12, .86);
+  --vxmp-sheet-scrim: rgba(4, 7, 12, .6);
+  --map-brand-neshan: #0f9d58;
+  --map-brand-google: #ea4335;
+  --map-brand-waze: #1c8eea;
+  --map-brand-osm: #6b8f3c;
+  --mut: var(--text-muted);
+  --map-glow-rgb-extra: 120, 170, 255;
+}

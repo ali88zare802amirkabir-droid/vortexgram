@@ -11,9 +11,9 @@
 /* ───────────────────────── A. TOKENS ───────────────────────── */
 :root {
   /* Layered depth: three elevations used by cards, sheets and the pill. */
-  --vx-elev-1: 0 1px 2px rgba(0,0,0,.18);
-  --vx-elev-2: 0 4px 16px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.16);
-  --vx-elev-3: 0 12px 40px rgba(0,0,0,.32), 0 2px 8px rgba(0,0,0,.20);
+  --vx-elev-1: 0 1px 2px rgba(var(--black-rgb),.18);
+  --vx-elev-2: 0 4px 16px rgba(var(--black-rgb),.22), 0 1px 3px rgba(var(--black-rgb),.16);
+  --vx-elev-3: 0 12px 40px rgba(var(--black-rgb),.32), 0 2px 8px rgba(var(--black-rgb),.20);
 
   /* Glass recipe — one definition, consumed everywhere. The source values live
      in tokens.css; these aliases keep the legacy names working. */
@@ -136,7 +136,7 @@
   border-radius: calc(var(--vx-pill-h) / 2 - 6px);
   background: rgba(var(--primary-rgb), .16);
   border: 1px solid rgba(var(--primary-rgb), .22);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb),.10);
   transform: translateX(0);
   will-change: transform, width;
   transition: transform 320ms var(--vx-spring), width 320ms var(--vx-spring);
@@ -180,7 +180,7 @@
   inset-inline-end: calc(50% - 20px);
   min-width: 16px; height: 16px; padding: 0 4px;
   border-radius: 8px;
-  background: var(--danger); color: #fff;
+  background: var(--danger); color: var(--pure-white);
   font-size: 9.5px; font-weight: 800; line-height: 16px;
   text-align: center;
   box-shadow: 0 0 0 2px var(--surface-container-high);
@@ -236,7 +236,7 @@
 /* off / active states — colour is not the only cue: the label text changes too */
 .nav-foot-btn.is-off .icon { color: var(--outline); opacity: .6; }
 .nav-foot-btn.is-on .icon { color: var(--success); }
-.nav-foot-btn.is-on { color: var(--on-surface); background: rgba(16,185,129,.10); }
+.nav-foot-btn.is-on { color: var(--on-surface); background: rgba(var(--success-rgb),.10); }
 
 @media (min-width: 900px) {
   #nav-sidebar:not(.expanded) .nav-foot-btn { justify-content: center; padding: 8px 0; gap: 0; }
@@ -368,7 +368,7 @@
   min-width: 17px; height: 17px; padding: 0 5px;
   border-radius: 9px;
   background: var(--danger);
-  color: #fff;
+  color: var(--pure-white);
   font-size: 10px; font-weight: 800; line-height: 17px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -447,7 +447,7 @@
   vertical-align: 1px;
 }
 .ci-tag.bot { background: rgba(var(--primary-rgb), .16); color: var(--primary); }
-.ci-tag.verified { background: rgba(68,226,205,.16); color: var(--secondary); }
+.ci-tag.verified { background: color-mix(in srgb, var(--secondary) 16%, transparent); color: var(--secondary); }
 
 /* type marker docked on the avatar corner */
 .ci-type {
@@ -506,10 +506,10 @@
 }
 .ci-act .icon { width: 19px; height: 19px; }
 .ci-act:active { filter: brightness(1.15); }
-.ci-act.read { background: rgba(16,185,129,.92); color: #fff; }
+.ci-act.read { background: rgba(var(--success-rgb),.92); color: var(--pure-white); }
 .ci-act.archive { background: rgba(var(--primary-rgb), .95); color: var(--on-primary); }
-.ci-act.mute { background: rgba(251,191,36,.92); color: #3a2600; }
-.ci-act:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+.ci-act.mute { background: rgba(var(--warning-rgb),.92); color: var(--on-warning); }
+.ci-act:focus-visible { outline: 2px solid var(--pure-white); outline-offset: -3px; }
 /* rows without swipe keep a plain surface */
 .chat-item:not(.swipe) .ci-actions { display: none; }
 
@@ -665,7 +665,7 @@ button.set-cat.danger {
   gap: 8px; flex-wrap: wrap; text-align: center;
 }
 .profile-view .profile-actions { margin-top: 4px; }
-.profile-view .profile-emoji { font-size: 20px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+.profile-view .profile-emoji { font-size: 20px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(var(--black-rgb),.35)); }
 .profile-view .profile-actions .btn { justify-content: center; }
 
 /* ── chat-list search: clear control + section heads ── */
@@ -795,7 +795,7 @@ body, #app, #chat-list-column, #conversation {
    keyboard-navigable list. No inline handlers — every event is bound in JS. */
 .vx-palette { position: fixed; inset: 0; z-index: var(--vx-z-palette); display: flex; align-items: flex-start; justify-content: center; }
 .vx-palette.hidden { display: none; }
-.vx-palette-scrim { position: absolute; inset: 0; background: rgba(2, 8, 20, .52); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.vx-palette-scrim { position: absolute; inset: 0; background: var(--scrim); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .vx-palette-box {
   position: relative;
   margin-top: clamp(48px, 12vh, 140px);
