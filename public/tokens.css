@@ -171,16 +171,8 @@
 }
 
 /* ───────────────────────── 9. ACCENTS ─────────────────────────
-   Four additional presets so the picker ships 12 named accents. Each mirrors
-   the shape of the existing style.css blocks (primary + derived + gradient). */
-[data-accent="indigo"] { --primary:#6366f1;--primary-rgb:99,102,241;--primary-container:rgba(99,102,241,.15);--primary-muted:rgba(99,102,241,.08);--accent:#6366f1;--accent-glow:rgba(99,102,241,.20);--glow:rgba(99,102,241,.35);--gradient-start:#4f46e5;--gradient-end:#818cf8;--msg-out:#6366f1; }
-[data-accent="teal"]   { --primary:#14b8a6;--primary-rgb:20,184,166;--primary-container:rgba(20,184,166,.15);--primary-muted:rgba(20,184,166,.08);--accent:#14b8a6;--accent-glow:rgba(20,184,166,.20);--glow:rgba(20,184,166,.35);--gradient-start:#0d9488;--gradient-end:#2dd4bf;--msg-out:#14b8a6; }
-[data-accent="amber"]  { --primary:#f59e0b;--primary-rgb:245,158,11;--primary-container:rgba(245,158,11,.15);--primary-muted:rgba(245,158,11,.08);--accent:#f59e0b;--accent-glow:rgba(245,158,11,.20);--glow:rgba(245,158,11,.35);--gradient-start:#d97706;--gradient-end:#fbbf24;--msg-out:#f59e0b; }
-[data-accent="rose"]   { --primary:#f43f5e;--primary-rgb:244,63,94;--primary-container:rgba(244,63,94,.15);--primary-muted:rgba(244,63,94,.08);--accent:#f43f5e;--accent-glow:rgba(244,63,94,.20);--glow:rgba(244,63,94,.35);--gradient-start:#e11d48;--gradient-end:#fb7185;--msg-out:#f43f5e; }
-[data-accent="violet"] { --primary:#a855f7;--primary-rgb:168,85,247;--primary-container:rgba(168,85,247,.15);--primary-muted:rgba(168,85,247,.08);--accent:#a855f7;--accent-glow:rgba(168,85,247,.20);--glow:rgba(168,85,247,.35);--gradient-start:#9333ea;--gradient-end:#c084fc;--msg-out:#a855f7; }
-[data-accent="sky"]    { --primary:#0ea5e9;--primary-rgb:14,165,233;--primary-container:rgba(14,165,233,.15);--primary-muted:rgba(14,165,233,.08);--accent:#0ea5e9;--accent-glow:rgba(14,165,233,.20);--glow:rgba(14,165,233,.35);--gradient-start:#0284c7;--gradient-end:#38bdf8;--msg-out:#0ea5e9; }
-[data-accent="lime"]   { --primary:#84cc16;--primary-rgb:132,204,22;--primary-container:rgba(132,204,22,.15);--primary-muted:rgba(132,204,22,.08);--accent:#84cc16;--accent-glow:rgba(132,204,22,.20);--glow:rgba(132,204,22,.35);--gradient-start:#65a30d;--gradient-end:#a3e635;--msg-out:#84cc16; }
-
+   Preset palettes live in style.css (single source of truth).
+   Only the custom-accent derived values belong here. */
 /* Custom accent: JS writes --primary / --primary-rgb / --on-primary inline.
    This block only supplies the derived values so the rest of the UI follows. */
 [data-accent="custom"] {
@@ -389,5 +381,20 @@
   --map-brand-waze: #1c8eea;
   --map-brand-osm: #6b8f3c;
   --mut: var(--text-muted);
+  /* Accent swatches - single source for picker chips + design tests. */
+  --a-blue: #3390EC;
+  --a-cyan: #22D3EE;
+  --a-green: #10B981;
+  --a-pink: #EC4899;
+  --a-orange: #F97316;
+  --a-red: #EF4444;
+  --a-ios: #0A84FF;
+  --a-indigo: #6366F1;
+  --a-teal: #14B8A6;
+  --a-amber: #F59E0B;
+  --a-rose: #F43F5E;
+  --a-violet: #8B5CF6;
+  --a-sky: #0EA5E9;
+  --a-lime: #84CC16;
   --map-glow-rgb-extra: 120, 170, 255;
 }

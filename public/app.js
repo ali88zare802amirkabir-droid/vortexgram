@@ -690,18 +690,19 @@ function applyAppearance() {
   if (D) {
     /* VXDesign is the single writer for theme, accent (incl. custom accent
        variables), aurora, bubble radius and the reduce-glass fallback. */
-    D.setTheme(localStorage.getItem('vx_theme') || 'cyber');
+    D.setTheme(localStorage.getItem('vx_theme') || 'night');
     D.setAccent(localStorage.getItem('vx_accent') || 'blue', localStorage.getItem('vx_accent_custom') || '');
+    D.setFont(localStorage.getItem('vx_font') || 'default');
   } else {
-    const th = localStorage.getItem('vx_theme') || 'cyber';
-    if (th === 'cyber' || !th) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', th);
+    const th = localStorage.getItem('vx_theme') || 'night';
+    if (th === 'night' || th === 'cyber' || !th) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', th);
     document.documentElement.setAttribute('data-accent', localStorage.getItem('vx_accent') || 'blue');
   }
   const fs = state.fontScale || 14;
   document.documentElement.style.fontSize = fs + 'px';
   applyBackground();
   const fontKey = localStorage.getItem('vx_font') || 'default';
-  const FONT_MAP = { default: '', messenger: '"Vazirmatn","Segoe UI",Tahoma,sans-serif', classic: 'Tahoma,"Segoe UI",sans-serif', modern: 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif' };
+  const FONT_MAP = { default: '', mono: '"JetBrains Mono","Vazirmatn",ui-monospace,monospace', round: '"Nunito","Vazirmatn",system-ui,sans-serif', vazir: '"Vazirmatn","Inter",system-ui,sans-serif' };
   document.body.style.fontFamily = FONT_MAP[fontKey] || '';
 }
 applyAppearance();
@@ -716,7 +717,7 @@ const VX_SETTINGS_DEFAULTS = {
   privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
-  appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
+  appearance: { theme: 'night', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
   language: { code: 'fa', translateEnabled: false },
   chat: { showTyping: true, enterToSend: true },
 };
@@ -753,7 +754,7 @@ const VXSettings = {
          picked a theme in an older client isn't silently reset to the default
          just because the server hasn't seen that choice yet. */
       const cap = {
-        theme: localStorage.getItem('vx_theme') || 'cyber',
+        theme: localStorage.getItem('vx_theme') || 'night',
         accent: localStorage.getItem('vx_accent') || 'blue',
         bubbleRadius: (window.VXDesign && window.VXDesign.bubbleRadius) || 'round',
         aurora: window.VXDesign ? !!window.VXDesign.aurora : true,
@@ -6686,7 +6687,7 @@ async function startGroup(isChannel) {
 }
 
 /* THEME */
-function cycleTheme() { const themes = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios']; const cur = localStorage.getItem('vx_theme') || 'cyber'; const idx = (themes.indexOf(cur) + 1) % themes.length; localStorage.setItem('vx_theme', themes[idx]); applyAppearance(); toast('تم: ' + themes[idx]); }
+function cycleTheme() { const themes = ['day', 'night', 'dark']; const cur = localStorage.getItem('vx_theme') || 'night'; const idx = (themes.indexOf(cur) + 1) % themes.length; localStorage.setItem('vx_theme', themes[idx]); applyAppearance(); toast('تم: ' + themes[idx]); }
 function applyVX() { $('app').classList.add('vx'); document.documentElement.style.setProperty('--radius', localStorage.getItem('vx_radius') || '18px'); }
 
 /* FONT SIZE (settings) */
@@ -6881,7 +6882,7 @@ function renderCalendar(wrap) {
 }
 function applyBackground() { document.documentElement.style.setProperty('--chat-bg', localStorage.getItem('vx_bg') || ''); if (localStorage.getItem('vx_bgimg')) document.documentElement.style.setProperty('--chat-bg-img', "url('" + localStorage.getItem('vx_bgimg') + "')"); else document.documentElement.style.removeProperty('--chat-bg-img'); if (window.VXDesign && window.VXDesign.syncWallpaper) window.VXDesign.syncWallpaper(); }
 function persistActiveSkin() {
-  const th = localStorage.getItem('vx_theme') || 'cyber';
+  const th = localStorage.getItem('vx_theme') || 'night';
   const ac = localStorage.getItem('vx_accent') || 'blue';
   const s = SKINS.find((x) => x.theme === th && x.accent === ac);
   const id = s ? s.id : 'default';
@@ -7142,13 +7143,18 @@ function setSelectRow(id, label, opts, value) {
 }
 function renderAppSub(body) {
   const D = window.VXDesign;
-  const themes = D ? D.themes : ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'];
-  const accents = D ? D.accents : ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red', 'ios'];
-  const THEME_LABEL = { cyber: 'سایبر', midnight: 'نیمه‌شب', 'midnight-rose': 'رز شبانه', matrix: 'ماتریکس', synthwave: 'سینث‌ویو', sunset: 'غروب', forest: 'جنگل', light: 'روشن', ios: 'آی‌اواس', amoled: 'مشکی AMOLED' };
-  const ACCENT_LABEL = { blue: 'آبی', purple: 'بنفش', cyan: 'فیروزه‌ای', green: 'سبز', pink: 'صورتی', orange: 'نارنجی', red: 'قرمز', ios: 'آبی iOS', indigo: 'نیلی', teal: 'سبزآبی', amber: 'کهربایی', rose: 'گل‌بهی', violet: 'بنفش روشن', sky: 'آسمانی', lime: 'لیمویی' };
+  const themes = D ? D.themes : ['day', 'night', 'dark'];
+  const accents = D ? D.accents : ['blue', 'cyan', 'green', 'pink', 'orange', 'red', 'ios'];
+  const THEME_LABEL = { day: 'روشن', night: 'شب', dark: 'مشکی AMOLED' };
+  const ACCENT_LABEL = { blue: 'آبی', cyan: 'فیروزه‌ای', green: 'سبز', pink: 'صورتی', orange: 'نارنجی', red: 'قرمز', ios: 'آبی iOS', indigo: 'نیلی', teal: 'سبزآبی', amber: 'کهربایی', rose: 'گل‌بهی', violet: 'بنفش', sky: 'آسمانی', lime: 'لیمویی' };
   const RADIUS_LABEL = { sharp: 'تیز', compact: 'کم', round: 'گرد', pill: 'قرصی' };
   const AUTO_LABEL = { off: 'خاموش', system: 'هماهنگ با سیستم', schedule: 'زمان‌بندی' };
-  const curTheme = localStorage.getItem('vx_theme') || 'cyber';
+  const DENSITY_LABEL = { compact: 'فشرده', comfortable: 'راحت', spacious: 'باز' };
+  const TEXT_LABEL = { small: 'کوچک', normal: 'معمولی', large: 'بزرگ', xlarge: 'خیلی بزرگ' };
+  const BUBBLE_STYLE_LABEL = { classic: 'کلاسیک', accent: 'هم‌رنگ اکسنت', glass: 'شیشه‌ای' };
+  const FONT_LABEL = { default: 'پیش‌فرض', mono: 'مونو', round: 'گرد', vazir: 'وزیرمتن' };
+  const WALLPAPER_LABEL = { none: 'بدون', 'grad-ocean': 'اقیانوس', 'grad-sunset': 'غروب', 'grad-aurora': 'شفق', 'grad-forest': 'جنگل', 'pattern-dots': 'نقطه‌ای', 'pattern-grid': 'شبکه‌ای', 'pattern-bubbles': 'حبابی' };
+  const curTheme = localStorage.getItem('vx_theme') || 'night';
   const curAccent = localStorage.getItem('vx_accent') || 'blue';
   const curRadius = D ? D.bubbleRadius : 'round';
   const curAurora = D ? D.aurora : true;
@@ -7157,15 +7163,22 @@ function renderAppSub(body) {
 
   let t = '<div class="settings-sec"><h3>' + ic('palette') + ' تم</h3>' + setChipRow('theme-btn', themes, curTheme, (x) => THEME_LABEL[x] || x) + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('droplet') + ' رنگ اکسنت</h3>' + setChipRow('accent-btn', accents, curAccent, (x) => ACCENT_LABEL[x] || x);
-  t += '<div class="set-custom-accent"><label for="set-accent-custom">رنگ سفارشی</label><input type="color" id="set-accent-custom" value="' + escAttr(localStorage.getItem('vx_accent_custom') || '#6ea8fe') + '" aria-label="انتخاب رنگ اکسنت سفارشی"></div></div>';
+  t += '<div class="set-custom-accent"><label for="set-accent-custom">رنگ سفارشی</label><input type="color" id="set-accent-custom" value="' + escAttr(localStorage.getItem('vx_accent_custom') || '#6AB2F2') + '" aria-label="انتخاب رنگ اکسنت سفارشی"></div></div>';
   t += '<div class="settings-sec"><h3>' + ic('moon') + ' حالت شب خودکار</h3>' + setChipRow('themeauto', ['off', 'system', 'schedule'], curAuto, (x) => AUTO_LABEL[x] || x) + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('sparkles') + ' پس‌زمینه متحرک</h3>' + setChipRow('aurora', ['on', 'off'], curAurora ? 'on' : 'off', (x) => (x === 'on' ? 'روشن' : 'خاموش')) + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی حباب پیام</h3>' + setChipRow('radius', ['sharp', 'compact', 'round', 'pill'], curRadius, (x) => RADIUS_LABEL[x] || x) + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('layers') + ' کیفیت شیشه</h3>' + setChipRow('glassmode', ['full', 'reduce'], curReduce ? 'reduce' : 'full', (x) => (x === 'full' ? 'کامل (بلور)' : 'سبک (بدون بلور)')) + '<p class="settings-hint">حالت سبک برای دستگاه‌های ضعیف: بدون بلور، با رنگ‌های نیمه‌شفاف.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('align-justify') + ' چگالی لیست</h3>' + setChipRow('density', ['compact', 'comfortable', 'spacious'], D ? D.density : 'comfortable', (x) => DENSITY_LABEL[x] || x) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('type') + ' مقیاس متن</h3>' + setChipRow('textscale', ['small', 'normal', 'large', 'xlarge'], D ? D.textScale : 'normal', (x) => TEXT_LABEL[x] || x) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('message-circle') + ' سبک حباب خروجی</h3>' + setChipRow('bubblestyle', ['classic', 'accent', 'glass'], D ? D.bubbleStyle : 'classic', (x) => BUBBLE_STYLE_LABEL[x] || x) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('image') + ' پس‌زمینه چت</h3>' + setChipRow('wallpaper', ['none', 'grad-ocean', 'grad-sunset', 'grad-aurora', 'grad-forest', 'pattern-dots', 'pattern-grid', 'pattern-bubbles'], D ? D.wallpaper : 'none', (x) => WALLPAPER_LABEL[x] || x)
+    + '<div class="settings-row"><span>بلور پس‌زمینه</span><input type="range" id="set-wall-blur" min="0" max="40" step="1" value="' + (D ? D.wallBlur : 0) + '" aria-label="بلور پس‌زمینه"></div>'
+    + '<div class="settings-row"><span>روشنایی پس‌زمینه</span><input type="range" id="set-wall-bright" min="0.2" max="1.5" step="0.05" value="' + (D ? D.wallBright : 1) + '" aria-label="روشنایی پس‌زمینه"></div>'
+    + setSwitchRow('set-wall-motion', 'حرکت آرام پس‌زمینه', D ? D.wallMotion : true) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('sparkles') + ' انیمیشن‌ها</h3>' + setChipRow('animations', ['on', 'off'], (D ? D.animations : true) ? 'on' : 'off', (x) => (x === 'on' ? 'روشن' : 'خاموش')) + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('type') + ' اندازه فونت</h3><div class="stepper"><button type="button" id="set-font-dec" aria-label="کوچک‌تر">−</button><span id="fs-val" aria-live="polite">' + (state.fontScale) + '</span><button type="button" id="set-font-inc" aria-label="بزرگ‌تر">+</button></div></div>';
-  const fonts = [['default', 'پیش‌فرض'], ['messenger', 'پیام‌رسان'], ['classic', 'کلاسیک'], ['modern', 'مدرن']];
   const curFont = localStorage.getItem('vx_font') || 'default';
-  t += '<div class="settings-sec"><h3>' + ic('type') + ' فونت</h3>' + setChipRow('font', fonts.map((f) => f[0]), curFont, (k) => (fonts.find((f) => f[0] === k) || [])[1]) + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('type') + ' فونت</h3>' + setChipRow('font', ['default', 'mono', 'round', 'vazir'], curFont, (k) => FONT_LABEL[k] || k) + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '" aria-label="گردی گوشه‌ها"></div>';
   body.innerHTML = t;
 
@@ -7177,10 +7190,18 @@ function renderAppSub(body) {
   body.querySelectorAll('[data-aurora]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setAurora(b.dataset.aurora === 'on'); VXSettings.set('appearance.aurora', b.dataset.aurora === 'on'); renderAppSub(body); });
   body.querySelectorAll('[data-radius]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setBubbleRadius(b.dataset.radius); VXSettings.set('appearance.bubbleRadius', b.dataset.radius); renderAppSub(body); });
   body.querySelectorAll('[data-glassmode]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2) D2.setReduceGlass(b.dataset.glassmode === 'reduce'); VXSettings.set('appearance.reduceGlass', b.dataset.glassmode === 'reduce'); renderAppSub(body); });
+  body.querySelectorAll('[data-density]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2 && D2.setDensity) D2.setDensity(b.dataset.density); renderAppSub(body); });
+  body.querySelectorAll('[data-textscale]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2 && D2.setTextScale) D2.setTextScale(b.dataset.textscale); renderAppSub(body); });
+  body.querySelectorAll('[data-bubblestyle]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2 && D2.setBubbleStyle) D2.setBubbleStyle(b.dataset.bubblestyle); renderAppSub(body); });
+  body.querySelectorAll('[data-wallpaper]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2 && D2.setWallpaper) D2.setWallpaper(b.dataset.wallpaper); applyBackground(); renderAppSub(body); });
+  body.querySelectorAll('[data-animations]').forEach((b) => b.onclick = () => { const D2 = window.VXDesign; if (D2 && D2.setAnimations) D2.setAnimations(b.dataset.animations === 'on'); renderAppSub(body); });
+  const wbEl = body.querySelector('#set-wall-blur'); if (wbEl) wbEl.oninput = (e) => { const D2 = window.VXDesign; if (D2 && D2.setWallBlur) D2.setWallBlur(e.target.value); };
+  const wbrEl = body.querySelector('#set-wall-bright'); if (wbrEl) wbrEl.oninput = (e) => { const D2 = window.VXDesign; if (D2 && D2.setWallBright) D2.setWallBright(e.target.value); };
+  const wmEl = body.querySelector('#set-wall-motion'); if (wmEl) wmEl.onchange = (e) => { const D2 = window.VXDesign; if (D2 && D2.setWallMotion) D2.setWallMotion(e.target.checked); };
   body.querySelector('#set-font-dec').onclick = () => setFont(-1);
   body.querySelector('#set-font-inc').onclick = () => setFont(1);
   body.querySelector('#set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
-  body.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_font', b.dataset.font); applyAppearance(); renderAppSub(body); });
+  body.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_font', b.dataset.font); const D2 = window.VXDesign; if (D2 && D2.setFont) D2.setFont(b.dataset.font); applyAppearance(); renderAppSub(body); });
   applyIcons(body);
 }
 function renderBgSub(body) {
@@ -7455,15 +7476,15 @@ function renderPrivSub(body) {
   };
 }
 const SKINS = [
-  { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'cyber', accent: 'blue', mood: 'happy', desc: 'تم پیش‌فرض ورتیکس' },
-  { id: 'dark-rose', name: 'میدنايت رز', price: 50000, theme: 'midnight-rose', accent: 'pink', mood: 'sad', desc: 'تم تاریک با آکسنت صورتی' },
-  { id: 'matrix', name: 'متریکس', price: 120000, theme: 'matrix', accent: 'green', mood: 'scary', desc: 'سبزهای کلاسیک متریکس' },
-  { id: 'synth', name: 'سنتویو', price: 250000, theme: 'synthwave', accent: 'purple', mood: 'happy', desc: 'نئونی رنگارنگ ۸۰‌ها' },
-  { id: 'sunset', name: 'سنست', price: 400000, theme: 'sunset', accent: 'orange', mood: 'happy', desc: 'گرماهای غروب آفتاب' },
-  { id: 'forest', name: 'جنگل', price: 600000, theme: 'forest', accent: 'green', mood: 'calm', desc: 'سبزهای طبیعی و آرام‌بخش' },
-  { id: 'light', name: 'نور', price: 800000, theme: 'light', accent: 'blue', mood: 'calm', desc: 'تم روشن و مینیمال' },
-  { id: 'ios', name: 'آی‌او‌اس', price: 0, theme: 'ios', accent: 'ios', mood: 'calm', desc: 'ظاهر مینیمال و تمیز آی‌او‌اس با شیشه‌مات' },
-  { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'midnight', accent: 'cyan', mood: 'scary', desc: 'فاخرترین تم — طلایی و سیاهی' }
+  { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'night', accent: 'blue', mood: 'happy', desc: 'تم پیش‌فرض ورتیکس' },
+  { id: 'dark-rose', name: 'میدنايت رز', price: 50000, theme: 'dark', accent: 'pink', mood: 'sad', desc: 'تم تاریک با آکسنت صورتی' },
+  { id: 'matrix', name: 'متریکس', price: 120000, theme: 'dark', accent: 'green', mood: 'scary', desc: 'سبزهای کلاسیک متریکس' },
+  { id: 'synth', name: 'سنتویو', price: 250000, theme: 'night', accent: 'purple', mood: 'happy', desc: 'نئونی رنگارنگ ۸۰‌ها' },
+  { id: 'sunset', name: 'سنست', price: 400000, theme: 'night', accent: 'orange', mood: 'happy', desc: 'گرماهای غروب آفتاب' },
+  { id: 'forest', name: 'جنگل', price: 600000, theme: 'night', accent: 'green', mood: 'calm', desc: 'سبزهای طبیعی و آرام‌بخش' },
+  { id: 'light', name: 'نور', price: 800000, theme: 'day', accent: 'blue', mood: 'calm', desc: 'تم روشن و مینیمال' },
+  { id: 'ios', name: 'آی‌او‌اس', price: 0, theme: 'day', accent: 'ios', mood: 'calm', desc: 'ظاهر مینیمال و تمیز آی‌او‌اس با شیشه‌مات' },
+  { id: 'premium-black', name: 'ولولت', price: 1000000, theme: 'dark', accent: 'cyan', mood: 'scary', desc: 'فاخرترین تم — طلایی و سیاهی' }
 ];
 const EFFECT_PALETTES = {
   red: '#ff3b5c', pink: '#ff5bd1', purple: '#a855f7', blue: '#3b82f6',
@@ -7528,7 +7549,7 @@ function renderSkinsSub(body) {
   SKINS.forEach((s) => {
     const isOwned = owned.includes(s.id);
     const isActive = localStorage.getItem('vx_theme') === s.theme && localStorage.getItem('vx_accent') === s.accent;
-    const prevBg = s.theme === 'midnight-rose' ? '#120e18' : s.theme === 'matrix' ? '#03080a' : s.theme === 'synthwave' ? '#130a1f' : s.theme === 'sunset' ? '#160c0c' : s.theme === 'forest' ? '#0a1611' : s.theme === 'light' ? '#e4eaf6' : s.theme === 'ios' ? '#f2f2f7' : s.theme === 'midnight' ? '#070b16' : '#0a0e1a';
+    const prevBg = s.theme === 'day' ? '#F4F4F5' : s.theme === 'dark' ? '#000000' : '#17212B';
     t += '<div class="skin-card' + (isActive ? ' active' : '') + (isOwned ? ' owned' : '') + '" data-id="'+s.id+'">';
     t += '<div class="skin-preview" style="background:'+prevBg+';border:2px solid '+(s.accent==='ios'?'#0a84ff':'var(--'+s.accent+', #888)')+'"></div>';
     t += '<div class="skin-info"><b>'+esc(s.name)+'</b><span>'+esc(s.desc)+'</span>';
@@ -8829,8 +8850,7 @@ function vxInitResize() {
 
 /* ── command palette ── */
 const VX_PALETTE_THEMES = [
-  ['cyber', 'تیره'], ['light', 'روشن'], ['amoled', 'AMOLED'],
-  ['midnight', 'نیمه‌شب'], ['sunset', 'غروب'], ['forest', 'جنگل'], ['synthwave', 'سینث‌ویو'],
+  ['night', 'تیره'], ['day', 'روشن'], ['dark', 'AMOLED'],
 ];
 const VX_ADMIN_NAV = ['users', 'signups', 'stats', 'reports', 'audit'];
 let vxPalette = { open: false, items: [], active: 0, lastFocus: null };

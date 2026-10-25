@@ -1,4 +1,4 @@
-﻿const path = require('path');
+const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
@@ -1257,7 +1257,7 @@ const SETTINGS_DEFAULTS = {
   privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
-  appearance: { theme: 'cyber', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
+  appearance: { theme: 'night', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
   language: { code: 'fa', translateEnabled: false },
   chat: { showTyping: true, enterToSend: true },
 };
@@ -1267,9 +1267,15 @@ const SETTINGS_ENUMS = {
   'privacy.bio': ['everybody', 'contacts', 'nobody'],
   'privacy.birthday': ['everybody', 'contacts', 'nobody'],
   'privacy.phone': ['everybody', 'contacts', 'nobody'],
-  'appearance.theme': ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
+  /* Canonical themes + legacy names (normalized to canonical on write). */
+  'appearance.theme': ['day', 'night', 'dark', 'cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
   'appearance.bubbleRadius': ['sharp', 'compact', 'round', 'pill'],
   'language.code': ['fa', 'en', 'ar', 'tr', 'ru'],
+};
+/* Legacy theme names are accepted from older clients but stored canonically. */
+const THEME_MIGRATE = {
+  cyber: 'night', midnight: 'dark', 'midnight-rose': 'dark', matrix: 'dark',
+  synthwave: 'night', sunset: 'night', forest: 'night', light: 'day', ios: 'day', amoled: 'dark',
 };
 const SETTINGS_BOOLS = [
   'privacy.readReceipts', 'privacy.presence',
@@ -1313,6 +1319,8 @@ function sanitizeSettingsPatch(patch) {
     if (v === undefined) continue;
     if (typeof v === 'boolean') setPath(out, key, v); else errors.push(key);
   }
+  const tv = getPath(out, 'appearance.theme');
+  if (typeof tv === 'string' && THEME_MIGRATE[tv]) setPath(out, 'appearance.theme', THEME_MIGRATE[tv]);
   const ac = getPath(patch, 'appearance.accent');
   if (ac !== undefined) {
     const s = String(ac).trim().slice(0, 30);

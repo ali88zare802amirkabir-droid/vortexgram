@@ -4,7 +4,7 @@
  *
  *   1. POWER SAVING  — `data-power="full|saver"`; saver kills blur + long anims.
  *   2. GLASS         — `data-glass="on|off"`; off = opaque, no blur pass.
- *   3. THEME         — `data-theme` (cyber/midnight/…/amoled) + auto day/night.
+ *   3. THEME         - `data-theme` (day/night/dark-AMOLED) + auto day/night.
  *   4. ACCENT        — `data-accent` preset or custom hex, with contrast-safe
  *                      `--on-primary` computed from luminance.
  *   5. AURORA        — animated mesh background (`data-aurora`), transform-only.
@@ -31,14 +31,41 @@
   var LS_THEME_AUTO = 'vx_theme_auto';
   var LS_NIGHT_START = 'vx_night_start';
   var LS_NIGHT_END = 'vx_night_end';
+  var LS_DENSITY = 'vx_density';
+  var LS_TEXT = 'vx_text_scale';
+  var LS_FONT = 'vx_font_face';
+  var LS_UI_RADIUS = 'vx_ui_radius';
+  var LS_BUBBLE_STYLE = 'vx_bubble_style';
+  var LS_WALLPAPER = 'vx_wallpaper';
+  var LS_WALL_BLUR = 'vx_wall_blur';
+  var LS_WALL_BRIGHT = 'vx_wall_bright';
+  var LS_WALL_MOTION = 'vx_wall_motion';
+  var LS_ANIM = 'vx_animations';
 
   var root = document.documentElement;
 
   /* Named themes the picker offers (kept in sync with style.css + tokens.css). */
-  var THEMES = ['cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'];
+  var THEMES = ['day', 'night', 'dark'];
+  /* Stage-2 theme system: three canonical palettes (day / night / dark-AMOLED).
+     Old mood themes are folded into the nearest canonical palette on read so
+     existing users keep a coherent look and localStorage is rewritten. */
+  var THEME_MIGRATE = {
+    cyber: 'night', midnight: 'dark', 'midnight-rose': 'dark', matrix: 'dark',
+    synthwave: 'night', sunset: 'night', forest: 'night', light: 'day', ios: 'day', amoled: 'dark'
+  };
+  function migrateTheme(name) { return THEME_MIGRATE[name] || name; }
   /* Named accents: the 8 from style.css plus 7 more from tokens.css. */
-  var ACCENTS = ['blue', 'purple', 'cyan', 'green', 'pink', 'orange', 'red', 'ios', 'indigo', 'teal', 'amber', 'rose', 'violet', 'sky', 'lime'];
+  var ACCENTS = ['blue', 'cyan', 'green', 'pink', 'orange', 'red', 'ios', 'indigo', 'teal', 'amber', 'rose', 'violet', 'sky', 'lime'];
   var RADII = ['sharp', 'compact', 'round', 'pill'];
+  /* Stage-2 appearance presets (selectors live in style.css). */
+  var DENSITIES = ['compact', 'comfortable', 'spacious'];
+  var TEXT_SCALES = ['small', 'normal', 'large', 'xlarge'];
+  var FONTS = ['default', 'mono', 'round', 'vazir'];
+  var UI_RADII = ['sharp', 'round', 'soft'];
+  var BUBBLE_STYLES = ['classic', 'accent', 'glass'];
+  var WALLPAPERS = ['none', 'grad-ocean', 'grad-sunset', 'grad-aurora', 'grad-forest', 'pattern-dots', 'pattern-grid', 'pattern-bubbles'];
+  var ACCENT_MIGRATE = { purple: 'violet' };
+  function migrateAccent(name) { return ACCENT_MIGRATE[name] || name; }
 
   var state = {
     glass: true,
@@ -46,7 +73,7 @@
     lowEnd: false,
     reasons: [],
     reducedMotion: false,
-    theme: 'cyber',
+    theme: 'night',
     accent: 'blue',
     accentCustom: '',
     aurora: true,
@@ -55,6 +82,16 @@
     themeAuto: 'off',
     nightStart: 20,
     nightEnd: 7,
+    density: 'comfortable',
+    textScale: 'normal',
+    font: 'default',
+    uiRadius: 'round',
+    bubbleStyle: 'classic',
+    wallpaper: 'none',
+    wallBlur: 0,
+    wallBright: 1,
+    wallMotion: true,
+    animations: true,
   };
 
   /* ---------- storage (never throws) ---------- */
@@ -119,7 +156,7 @@
   }
 
   /* ---------- theme resolution (auto day/night) ---------- */
-  function darkBase() { return state.theme === 'light' ? 'cyber' : state.theme; }
+  function darkBase() { return state.theme === 'day' ? 'night' : state.theme; }
   function inNightWindow() {
     var h = new Date().getHours();
     var s = state.nightStart, e = state.nightEnd;
@@ -127,7 +164,7 @@
   }
   function effectiveTheme() {
     if (state.themeAuto === 'system') {
-      return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : darkBase();
+      return matchMedia('(prefers-color-scheme: light)').matches ? 'day' : darkBase();
     }
     if (state.themeAuto === 'schedule') {
       return inNightWindow() ? darkBase() : 'light';
@@ -146,7 +183,7 @@
       var rgb = parseHex(state.accentCustom);
       if (rgb) {
         var lum = luminance(rgb.r, rgb.g, rgb.b);
-        var onPrimary = lum > 0.45 ? '#0a0a0a' : '#ffffff';
+        var onPrimary = lum > 0.45 ? '#111111' : '#ffffff';
         var css = rgb.r + ',' + rgb.g + ',' + rgb.b;
         root.style.setProperty('--primary', state.accentCustom);
         root.style.setProperty('--primary-rgb', css);
@@ -174,13 +211,24 @@
     root.setAttribute('data-reduce-glass', state.reduceGlass ? 'on' : 'off');
 
     var th = effectiveTheme();
-    if (th === 'cyber' || !th) root.removeAttribute('data-theme');
-    else root.setAttribute('data-theme', th);
+    root.setAttribute('data-theme', th === 'cyber' ? 'night' : (th || 'night'));
 
     applyAccent();
 
     root.setAttribute('data-aurora', state.aurora ? 'on' : 'off');
     root.setAttribute('data-bubble-radius', RADII.indexOf(state.bubbleRadius) >= 0 ? state.bubbleRadius : 'round');
+    root.setAttribute('data-density', state.density);
+    root.setAttribute('data-text-scale', state.textScale);
+    root.setAttribute('data-font', state.font);
+    root.setAttribute('data-ui-radius', state.uiRadius);
+    root.setAttribute('data-bubble-style', state.bubbleStyle);
+    root.setAttribute('data-animations', state.animations ? 'on' : 'off');
+    root.setAttribute('data-wall-motion', state.wallMotion ? 'on' : 'off');
+    root.setAttribute('data-wallpaper', wallpaperName());
+    try {
+      root.style.setProperty('--wall-blur', state.wallBlur + 'px');
+      root.style.setProperty('--wall-bright', String(state.wallBright));
+    } catch (e) {}
 
     syncThemeColor(th);
   }
@@ -188,8 +236,8 @@
   function syncThemeColor(th) {
     var meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) return;
-    var map = { amoled: '#000000', light: '#f5f7fb' };
-    meta.setAttribute('content', map[th] || '#031427');
+    var map = { day: '#FFFFFF', dark: '#000000', amoled: '#000000', light: '#FFFFFF' };
+    meta.setAttribute('content', map[th] || '#17212B');
   }
 
   /* ---------- aurora element ---------- */
@@ -204,11 +252,17 @@
   }
 
   /* ---------- wallpaper awareness ---------- */
+  function legacyWallpaper() {
+    try { return !!(localStorage.getItem('vx_bgimg') || localStorage.getItem('vx_bg')); } catch (e) { return false; }
+  }
+  function wallpaperName() {
+    if (state.wallpaper !== 'none') return state.wallpaper;
+    return legacyWallpaper() ? 'custom' : 'none';
+  }
   function syncWallpaper() {
-    var has = false;
-    try { has = !!(localStorage.getItem('vx_bgimg') || localStorage.getItem('vx_bg')); } catch (e) {}
-    root.setAttribute('data-wallpaper', has ? 'set' : 'none');
-    return has;
+    var name = wallpaperName();
+    root.setAttribute('data-wallpaper', name);
+    return name !== 'none';
   }
 
   var api = {
@@ -228,6 +282,16 @@
     get aurora() { return state.aurora; },
     get bubbleRadius() { return state.bubbleRadius; },
     get reduceGlass() { return state.reduceGlass; },
+    get density() { return state.density; },
+    get textScale() { return state.textScale; },
+    get font() { return state.font; },
+    get uiRadius() { return state.uiRadius; },
+    get bubbleStyle() { return state.bubbleStyle; },
+    get wallpaper() { return state.wallpaper; },
+    get wallBlur() { return state.wallBlur; },
+    get wallBright() { return state.wallBright; },
+    get wallMotion() { return state.wallMotion; },
+    get animations() { return state.animations; },
     themes: THEMES.slice(),
     accents: ACCENTS.slice(),
     radii: RADII.slice(),
@@ -252,6 +316,7 @@
     },
 
     setTheme(name) {
+      name = migrateTheme(name);
       if (THEMES.indexOf(name) < 0) return state.theme;
       state.theme = name;
       write(LS_THEME, name);
@@ -269,9 +334,9 @@
         state.accentCustom = '#' + hex.trim().replace(/^#/, '');
         write(LS_ACCENT_CUSTOM, state.accentCustom);
         write(LS_ACCENT, 'custom');
-      } else if (ACCENTS.indexOf(name) >= 0) {
-        state.accent = name;
-        write(LS_ACCENT, name);
+      } else if (ACCENTS.indexOf(migrateAccent(name)) >= 0) {
+        state.accent = migrateAccent(name);
+        write(LS_ACCENT, state.accent);
       } else {
         return state.accent;
       }
@@ -325,6 +390,87 @@
       api._emit('night', { start: state.nightStart, end: state.nightEnd });
     },
 
+    setDensity(name) {
+      if (DENSITIES.indexOf(name) < 0) return state.density;
+      state.density = name;
+      write(LS_DENSITY, name);
+      apply();
+      api._emit('density', name);
+      return name;
+    },
+    setTextScale(name) {
+      if (TEXT_SCALES.indexOf(name) < 0) return state.textScale;
+      state.textScale = name;
+      write(LS_TEXT, name);
+      apply();
+      api._emit('textScale', name);
+      return name;
+    },
+    setFont(name) {
+      if (FONTS.indexOf(name) < 0) return state.font;
+      state.font = name;
+      write(LS_FONT, name);
+      apply();
+      api._emit('font', name);
+      return name;
+    },
+    setUiRadius(name) {
+      if (UI_RADII.indexOf(name) < 0) return state.uiRadius;
+      state.uiRadius = name;
+      write(LS_UI_RADIUS, name);
+      apply();
+      api._emit('uiRadius', name);
+      return name;
+    },
+    setBubbleStyle(name) {
+      if (BUBBLE_STYLES.indexOf(name) < 0) return state.bubbleStyle;
+      state.bubbleStyle = name;
+      write(LS_BUBBLE_STYLE, name);
+      apply();
+      api._emit('bubbleStyle', name);
+      return name;
+    },
+    setWallpaper(name) {
+      if (WALLPAPERS.indexOf(name) < 0) return state.wallpaper;
+      state.wallpaper = name;
+      write(LS_WALLPAPER, name);
+      apply();
+      api._emit('wallpaper', name);
+      return name;
+    },
+    setWallBlur(px) {
+      var n = Number(px);
+      if (!Number.isFinite(n)) return state.wallBlur;
+      state.wallBlur = Math.max(0, Math.min(40, Math.round(n)));
+      write(LS_WALL_BLUR, String(state.wallBlur));
+      apply();
+      api._emit('wallBlur', state.wallBlur);
+      return state.wallBlur;
+    },
+    setWallBright(v) {
+      var n = Number(v);
+      if (!Number.isFinite(n)) return state.wallBright;
+      state.wallBright = Math.max(0.2, Math.min(1.5, Math.round(n * 100) / 100));
+      write(LS_WALL_BRIGHT, String(state.wallBright));
+      apply();
+      api._emit('wallBright', state.wallBright);
+      return state.wallBright;
+    },
+    setWallMotion(on) {
+      state.wallMotion = !!on;
+      write(LS_WALL_MOTION, state.wallMotion ? '1' : '0');
+      apply();
+      api._emit('wallMotion', state.wallMotion);
+      return state.wallMotion;
+    },
+    setAnimations(on) {
+      state.animations = !!on;
+      write(LS_ANIM, state.animations ? '1' : '0');
+      apply();
+      api._emit('animations', state.animations);
+      return state.animations;
+    },
+
     syncWallpaper: syncWallpaper,
 
     /** Called after the frame probe: downgrade once if the device is clearly slow. */
@@ -354,21 +500,34 @@
         glass: state.glass, power: state.power, theme: state.theme, accent: state.accent,
         accentCustom: state.accentCustom, aurora: state.aurora, bubbleRadius: state.bubbleRadius,
         reduceGlass: state.reduceGlass, themeAuto: state.themeAuto,
+        density: state.density, textScale: state.textScale, font: state.font, uiRadius: state.uiRadius,
+        bubbleStyle: state.bubbleStyle, wallpaper: state.wallpaper, wallBlur: state.wallBlur,
+        wallBright: state.wallBright, wallMotion: state.wallMotion, animations: state.animations,
       };
     },
     applySnapshot(s) {
       if (!s || typeof s !== 'object') return;
       if (typeof s.glass === 'boolean') state.glass = s.glass;
       if (s.power) state.power = (s.power === 'full' || s.power === 'saver') ? s.power : 'auto';
-      if (typeof s.theme === 'string' && THEMES.indexOf(s.theme) >= 0) state.theme = s.theme;
+      if (typeof s.theme === 'string') { var mt = migrateTheme(s.theme); if (THEMES.indexOf(mt) >= 0) state.theme = mt; }
       if (typeof s.accent === 'string') {
         if (s.accent === 'custom' && parseHex(s.accentCustom)) { state.accent = 'custom'; state.accentCustom = s.accentCustom; }
-        else if (ACCENTS.indexOf(s.accent) >= 0) state.accent = s.accent;
+        else if (ACCENTS.indexOf(migrateAccent(s.accent)) >= 0) state.accent = migrateAccent(s.accent);
       }
       if (typeof s.aurora === 'boolean') state.aurora = s.aurora;
       if (typeof s.bubbleRadius === 'string' && RADII.indexOf(s.bubbleRadius) >= 0) state.bubbleRadius = s.bubbleRadius;
       if (typeof s.reduceGlass === 'boolean') state.reduceGlass = s.reduceGlass;
       if (typeof s.themeAuto === 'string') state.themeAuto = s.themeAuto;
+      if (typeof s.density === 'string' && DENSITIES.indexOf(s.density) >= 0) state.density = s.density;
+      if (typeof s.textScale === 'string' && TEXT_SCALES.indexOf(s.textScale) >= 0) state.textScale = s.textScale;
+      if (typeof s.font === 'string' && FONTS.indexOf(s.font) >= 0) state.font = s.font;
+      if (typeof s.uiRadius === 'string' && UI_RADII.indexOf(s.uiRadius) >= 0) state.uiRadius = s.uiRadius;
+      if (typeof s.bubbleStyle === 'string' && BUBBLE_STYLES.indexOf(s.bubbleStyle) >= 0) state.bubbleStyle = s.bubbleStyle;
+      if (typeof s.wallpaper === 'string' && WALLPAPERS.indexOf(s.wallpaper) >= 0) state.wallpaper = s.wallpaper;
+      if (Number.isFinite(Number(s.wallBlur))) state.wallBlur = Math.max(0, Math.min(40, Math.round(Number(s.wallBlur))));
+      if (Number.isFinite(Number(s.wallBright))) state.wallBright = Math.max(0.2, Math.min(1.5, Math.round(Number(s.wallBright) * 100) / 100));
+      if (typeof s.wallMotion === 'boolean') state.wallMotion = s.wallMotion;
+      if (typeof s.animations === 'boolean') state.animations = s.animations;
       write(LS_GLASS, state.glass ? '1' : '0');
       write(LS_POWER, state.power);
       write(LS_THEME, state.theme);
@@ -378,15 +537,31 @@
       write(LS_RADIUS, state.bubbleRadius);
       write(LS_REDUCE, state.reduceGlass ? '1' : '0');
       write(LS_THEME_AUTO, state.themeAuto);
+      write(LS_DENSITY, state.density);
+      write(LS_TEXT, state.textScale);
+      write(LS_FONT, state.font);
+      write(LS_UI_RADIUS, state.uiRadius);
+      write(LS_BUBBLE_STYLE, state.bubbleStyle);
+      write(LS_WALLPAPER, state.wallpaper);
+      write(LS_WALL_BLUR, String(state.wallBlur));
+      write(LS_WALL_BRIGHT, String(state.wallBright));
+      write(LS_WALL_MOTION, state.wallMotion ? '1' : '0');
+      write(LS_ANIM, state.animations ? '1' : '0');
       apply();
     },
     reset() {
-      state.glass = true; state.power = 'auto'; state.theme = 'cyber'; state.accent = 'blue';
+      state.glass = true; state.power = 'auto'; state.theme = 'night'; state.accent = 'blue';
       state.accentCustom = ''; state.aurora = true; state.bubbleRadius = 'round';
       state.reduceGlass = false; state.themeAuto = 'off';
-      write(LS_GLASS, '1'); write(LS_POWER, 'auto'); write(LS_THEME, 'cyber');
+      state.density = 'comfortable'; state.textScale = 'normal'; state.font = 'default';
+      state.uiRadius = 'round'; state.bubbleStyle = 'classic'; state.wallpaper = 'none';
+      state.wallBlur = 0; state.wallBright = 1; state.wallMotion = true; state.animations = true;
+      write(LS_GLASS, '1'); write(LS_POWER, 'auto'); write(LS_THEME, 'night');
       write(LS_ACCENT, 'blue'); write(LS_ACCENT_CUSTOM, ''); write(LS_AURORA, '1');
       write(LS_RADIUS, 'round'); write(LS_REDUCE, '0'); write(LS_THEME_AUTO, 'off');
+      write(LS_DENSITY, 'comfortable'); write(LS_TEXT, 'normal'); write(LS_FONT, 'default');
+      write(LS_UI_RADIUS, 'round'); write(LS_BUBBLE_STYLE, 'classic'); write(LS_WALLPAPER, 'none');
+      write(LS_WALL_BLUR, '0'); write(LS_WALL_BRIGHT, '1'); write(LS_WALL_MOTION, '1'); write(LS_ANIM, '1');
       api.reevaluate();
     },
   };
@@ -395,9 +570,9 @@
   detectLowEnd();
   state.glass = read(LS_GLASS, '1') === '1';
   state.power = (function () { var v = read(LS_POWER, 'auto'); return (v === 'full' || v === 'saver') ? v : 'auto'; })();
-  var th0 = read(LS_THEME, 'cyber');
-  state.theme = THEMES.indexOf(th0) >= 0 ? th0 : 'cyber';
-  var ac0 = read(LS_ACCENT, 'blue');
+  var th0 = migrateTheme(read(LS_THEME, 'night'));
+  state.theme = THEMES.indexOf(th0) >= 0 ? th0 : 'night';
+  var ac0 = migrateAccent(read(LS_ACCENT, 'blue'));
   state.accent = (ac0 === 'custom' || ACCENTS.indexOf(ac0) >= 0) ? ac0 : 'blue';
   state.accentCustom = read(LS_ACCENT_CUSTOM, '');
   if (state.accent === 'custom' && !parseHex(state.accentCustom)) state.accent = 'blue';
@@ -409,8 +584,34 @@
   state.themeAuto = (auto0 === 'system' || auto0 === 'schedule') ? auto0 : 'off';
   state.nightStart = parseInt(read(LS_NIGHT_START, '20'), 10) || 20;
   state.nightEnd = parseInt(read(LS_NIGHT_END, '7'), 10) || 7;
+  var d0 = read(LS_DENSITY, 'comfortable');
+  state.density = DENSITIES.indexOf(d0) >= 0 ? d0 : 'comfortable';
+  var ts0 = read(LS_TEXT, 'normal');
+  state.textScale = TEXT_SCALES.indexOf(ts0) >= 0 ? ts0 : 'normal';
+  var fnt0 = read(LS_FONT, 'default');
+  state.font = FONTS.indexOf(fnt0) >= 0 ? fnt0 : 'default';
+  var ur0 = read(LS_UI_RADIUS, 'round');
+  state.uiRadius = UI_RADII.indexOf(ur0) >= 0 ? ur0 : 'round';
+  var bs0 = read(LS_BUBBLE_STYLE, 'classic');
+  state.bubbleStyle = BUBBLE_STYLES.indexOf(bs0) >= 0 ? bs0 : 'classic';
+  var wp0 = read(LS_WALLPAPER, 'none');
+  state.wallpaper = WALLPAPERS.indexOf(wp0) >= 0 ? wp0 : 'none';
+  var wb0 = parseFloat(read(LS_WALL_BLUR, '0'));
+  state.wallBlur = Number.isFinite(wb0) ? Math.max(0, Math.min(40, Math.round(wb0))) : 0;
+  var br0 = parseFloat(read(LS_WALL_BRIGHT, '1'));
+  state.wallBright = Number.isFinite(br0) ? Math.max(0.2, Math.min(1.5, br0)) : 1;
+  state.wallMotion = read(LS_WALL_MOTION, '1') === '1';
+  state.animations = read(LS_ANIM, '1') === '1';
 
   apply();
+  write(LS_THEME, state.theme);
+  write(LS_ACCENT, state.accent);
+  write(LS_DENSITY, state.density);
+  write(LS_TEXT, state.textScale);
+  write(LS_FONT, state.font);
+  write(LS_UI_RADIUS, state.uiRadius);
+  write(LS_BUBBLE_STYLE, state.bubbleStyle);
+  write(LS_WALLPAPER, state.wallpaper);
 
   /* Aurura + wallpaper need the body, so do it once the DOM is ready. */
   function boot2() { ensureAurora(); syncWallpaper(); }
