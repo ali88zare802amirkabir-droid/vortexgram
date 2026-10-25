@@ -1363,6 +1363,7 @@ function handleWS(d) {
         else renderSelectBar();
       }
       const el = document.querySelector('[data-id="' + d.id + '"]'); if (el) el.remove();
+      if (d.roomId === state.room) updateMessagesEmpty();
       const rr = state.rooms[d.roomId]; if (rr) { rr.messages = rr.messages.filter((m) => m.id !== d.id); rr.last = rr.messages[rr.messages.length - 1] || null; scheduleChatListRefresh(120); scheduleRoomsPersist(); }
       refreshDeletedRefs(d.id);
       if (d.roomId === state.room) renderReplyCounts(d.roomId);
@@ -2085,6 +2086,7 @@ function openRoom(rid, opts) {
   } else {
     $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
   }
+  updateMessagesEmpty();
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
@@ -2274,8 +2276,46 @@ function provenanceEl(m) {
   row.innerHTML = html;
   return row.childNodes.length ? row : null;
 }
+/* Stage 3 — placeholder shown while a room has no messages (before history
+   arrives or when the room is simply empty). Text-only DOM (textContent),
+   token-driven CSS, aria-live for screen readers. */
+function updateMessagesEmpty() {
+  const box = $('messages');
+  if (!box || !state.room) return;
+  let p = box.querySelector('.msgs-empty');
+  if (box.children.length) { if (p) p.remove(); return; }
+  const rid = state.room;
+  const isGroup = rid.startsWith('group:');
+  let avSrc = null, title = '', other = null;
+  if (isGroup) {
+    const g = state.groups.find((x) => 'group:' + x.id === rid);
+    title = g ? g.name : rid;
+    avSrc = g && g.avatar ? g.avatar : null;
+  } else {
+    other = rid.slice(3).split('|').find((u) => u !== state.me.username) || rid;
+    title = roomTitle(rid);
+    const u = state.users.find((x) => x.username === other);
+    avSrc = u && u.avatar ? u.avatar : null;
+  }
+  if (!p) {
+    p = document.createElement('div');
+    p.className = 'msgs-empty';
+    p.setAttribute('role', 'status');
+    p.setAttribute('aria-live', 'polite');
+    const wrap = document.createElement('div'); wrap.className = 'me-wrap';
+    wrap.appendChild(avatarEl(avSrc ? { avatar: avSrc, displayName: title } : { displayName: title }, 'lg'));
+    const h = document.createElement('h3'); h.textContent = title;
+    const sub = document.createElement('p');
+    sub.textContent = (isGroup ? 'اولین پیام این گفت‌وگو را بفرست.' : 'هنوز پیامی نیست. اولین پیام را بفرست.');
+    wrap.append(h, sub);
+    p.appendChild(wrap);
+  }
+  box.appendChild(p);
+}
 function renderMessagesBatch(messages) {
-  if (!messages.length) return;
+  const box0 = $('messages');
+  if (box0) { const ph0 = box0.querySelector('.msgs-empty'); if (ph0) ph0.remove(); }
+  if (!messages.length) { updateMessagesEmpty(); return; }
   const msgs = $('messages');
   const frag = document.createDocumentFragment();
   const rmap = replyCountMap(messages);
