@@ -1,5 +1,5 @@
-var CACHE = 'vortex-v206';
-var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=8', '/landing-theme.js?v=1', '/landing.js?v=8', '/privacy.html', '/terms.html', '/font-face.css?v=1', '/fonts/Vazirmatn-var.woff2', '/style.css?v=162', '/tokens.css?v=2', '/shell.css?v=9', '/app.js?v=193', '/sanitize.js?v=1', '/emoji-effect.js?v=6', '/icons.js?v=91', '/effects.js?v=78', '/design.js?v=2', '/landing-theme.js?v=1', '/pwa.js?v=4', '/map-picker.js?v=6'];
+var CACHE = 'vortex-v209';
+var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=8', '/landing-theme.js?v=1', '/landing.js?v=8', '/privacy.html', '/terms.html', '/font-face.css?v=1', '/fonts/Vazirmatn-var.woff2', '/style.css?v=164', '/tokens.css?v=4', '/shell.css?v=10', '/app.js?v=195', '/sanitize.js?v=1', '/emoji-effect.js?v=6', '/icons.js?v=91', '/effects.js?v=78', '/design.js?v=3', '/landing-theme.js?v=1', '/pwa.js?v=4', '/map-picker.js?v=6'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));

@@ -171,16 +171,8 @@
 }
 
 /* ───────────────────────── 9. ACCENTS ─────────────────────────
-   Four additional presets so the picker ships 12 named accents. Each mirrors
-   the shape of the existing style.css blocks (primary + derived + gradient). */
-[data-accent="indigo"] { --primary:#6366f1;--primary-rgb:99,102,241;--primary-container:rgba(99,102,241,.15);--primary-muted:rgba(99,102,241,.08);--accent:#6366f1;--accent-glow:rgba(99,102,241,.20);--glow:rgba(99,102,241,.35);--gradient-start:#4f46e5;--gradient-end:#818cf8;--msg-out:#6366f1; }
-[data-accent="teal"]   { --primary:#14b8a6;--primary-rgb:20,184,166;--primary-container:rgba(20,184,166,.15);--primary-muted:rgba(20,184,166,.08);--accent:#14b8a6;--accent-glow:rgba(20,184,166,.20);--glow:rgba(20,184,166,.35);--gradient-start:#0d9488;--gradient-end:#2dd4bf;--msg-out:#14b8a6; }
-[data-accent="amber"]  { --primary:#f59e0b;--primary-rgb:245,158,11;--primary-container:rgba(245,158,11,.15);--primary-muted:rgba(245,158,11,.08);--accent:#f59e0b;--accent-glow:rgba(245,158,11,.20);--glow:rgba(245,158,11,.35);--gradient-start:#d97706;--gradient-end:#fbbf24;--msg-out:#f59e0b; }
-[data-accent="rose"]   { --primary:#f43f5e;--primary-rgb:244,63,94;--primary-container:rgba(244,63,94,.15);--primary-muted:rgba(244,63,94,.08);--accent:#f43f5e;--accent-glow:rgba(244,63,94,.20);--glow:rgba(244,63,94,.35);--gradient-start:#e11d48;--gradient-end:#fb7185;--msg-out:#f43f5e; }
-[data-accent="violet"] { --primary:#a855f7;--primary-rgb:168,85,247;--primary-container:rgba(168,85,247,.15);--primary-muted:rgba(168,85,247,.08);--accent:#a855f7;--accent-glow:rgba(168,85,247,.20);--glow:rgba(168,85,247,.35);--gradient-start:#9333ea;--gradient-end:#c084fc;--msg-out:#a855f7; }
-[data-accent="sky"]    { --primary:#0ea5e9;--primary-rgb:14,165,233;--primary-container:rgba(14,165,233,.15);--primary-muted:rgba(14,165,233,.08);--accent:#0ea5e9;--accent-glow:rgba(14,165,233,.20);--glow:rgba(14,165,233,.35);--gradient-start:#0284c7;--gradient-end:#38bdf8;--msg-out:#0ea5e9; }
-[data-accent="lime"]   { --primary:#84cc16;--primary-rgb:132,204,22;--primary-container:rgba(132,204,22,.15);--primary-muted:rgba(132,204,22,.08);--accent:#84cc16;--accent-glow:rgba(132,204,22,.20);--glow:rgba(132,204,22,.35);--gradient-start:#65a30d;--gradient-end:#a3e635;--msg-out:#84cc16; }
-
+   Preset palettes live in style.css (single source of truth).
+   Only the custom-accent derived values belong here. */
 /* Custom accent: JS writes --primary / --primary-rgb / --on-primary inline.
    This block only supplies the derived values so the rest of the UI follows. */
 [data-accent="custom"] {
@@ -339,4 +331,70 @@
   background: var(--vx-glass-fill-soft);
   -webkit-backdrop-filter: var(--vx-glass-filter);
   backdrop-filter: var(--vx-glass-filter);
+}
+/* ───────── Stage 1 neutral/content constants (single source) ─────────
+   Consumed by component rules in style.css and shell.css. Values stay here. */
+:root {
+  --pure-white: #ffffff;
+  --black-rgb: 0, 0, 0;
+  --white-rgb: 255, 255, 255;
+  /* Text color that stays readable on the success/warning fills */
+  --on-success: #04231a;
+  --on-warning: #3a2600;
+  /* Decorative aurora + map glow hues (component rules only reference these) */
+  --aurora-2-rgb: 139, 92, 246;
+  --aurora-3-rgb: 34, 211, 238;
+  --aurora-4-rgb: 236, 72, 153;
+  --map-glow-rgb: 120, 180, 255;
+  --media-bar: rgba(12, 12, 12, .92);
+  /* Media/mask constants — backgrounds that are always dark by design */
+  --media-bg: #000000;
+  --mask-opaque: #000000;
+  --scrim-strong: rgba(3, 20, 39, .78);
+  /* Decorative avatar gradient presets (data palette, components read only) */
+  --av-grad-0: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  --av-grad-1: linear-gradient(135deg, #f472b6, #f97316);
+  --av-grad-2: linear-gradient(135deg, #34d399, #0ea5e9);
+  --av-grad-3: linear-gradient(135deg, #fbbf24, #f43f5e);
+  --av-grad-4: linear-gradient(135deg, #a78bfa, #ec4899);
+  --av-grad-5: linear-gradient(135deg, #22d3ee, #818cf8);
+  --av-grad-6: linear-gradient(135deg, #fb923c, #f43f5e);
+  --av-grad-7: linear-gradient(135deg, #2dd4bf, #3b82f6);
+  --media-scrim-top: rgba(10, 10, 10, .82);
+  --media-scrim-bar: rgba(10, 10, 10, .85);
+  --media-panel: rgba(24, 24, 24, .94);
+  --media-panel-2: rgba(24, 24, 24, .96);
+  --media-text: #e8e8e8;
+  --media-text-dim: #cfcfcf;
+  --map-bg: #0f1720;
+  --map-plane-dark: #0e1116;
+  --map-cbtn: rgba(20, 24, 32, .82);
+  --map-me-rgb: 26, 115, 232;
+  --map-pin: #d92d20;
+  --map-pin-rgb: 217, 45, 32;
+  --map-attrib: #cbd5e1;
+  --map-glow-rgb: 120, 180, 255;
+  --vxmp-scrim: rgba(4, 7, 12, .86);
+  --vxmp-sheet-scrim: rgba(4, 7, 12, .6);
+  --map-brand-neshan: #0f9d58;
+  --map-brand-google: #ea4335;
+  --map-brand-waze: #1c8eea;
+  --map-brand-osm: #6b8f3c;
+  --mut: var(--text-muted);
+  /* Accent swatches - single source for picker chips + design tests. */
+  --a-blue: #3390EC;
+  --a-cyan: #22D3EE;
+  --a-green: #10B981;
+  --a-pink: #EC4899;
+  --a-orange: #F97316;
+  --a-red: #EF4444;
+  --a-ios: #0A84FF;
+  --a-indigo: #6366F1;
+  --a-teal: #14B8A6;
+  --a-amber: #F59E0B;
+  --a-rose: #F43F5E;
+  --a-violet: #8B5CF6;
+  --a-sky: #0EA5E9;
+  --a-lime: #84CC16;
+  --map-glow-rgb-extra: 120, 170, 255;
 }
