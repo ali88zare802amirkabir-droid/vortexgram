@@ -824,7 +824,7 @@ function enterApp() {
   wireDesignControls(); renderDesignControls();
   state.userFolders = null; // reload per-account folders now that state.me is known
   renderFolderBar();
-  renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); connectWS(); applyVX();
+  renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); renderConvEmpty(); connectWS(); applyVX();
   VXSettings.load();
   showImpersonateBanner();
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
@@ -972,6 +972,36 @@ const NAV = [
   { id: 'bookmarks', label: 'نشان‌ها', icon: 'bookmark' },
   { id: 'settings', label: 'تنظیمات', icon: 'settings' },
 ];
+/* Stage 3 — Telegram-style empty state for the conversation column.
+   Built once per login and re-shown whenever no room is open. Every node is
+   created explicitly (no innerHTML with user data) and icons go through ic(). */
+function renderConvEmpty() {
+  const host = $('conv-empty');
+  if (!host || host.dataset.built) return;
+  host.dataset.built = '1';
+  const wrap = document.createElement('div'); wrap.className = 'ce-wrap';
+  const mark = document.createElement('div'); mark.className = 'ce-mark';
+  mark.setAttribute('aria-hidden', 'true'); mark.textContent = 'V';
+  const h = document.createElement('h2'); h.textContent = 'به VORTEX خوش آمدید';
+  const p = document.createElement('p'); p.textContent = 'پیام‌رسان سریع و امن — گفت‌وگو، فایل، ویس و ری‌اکشن، همه در یک‌جا. برای شروع یک گفت‌وگو را انتخاب کنید.';
+  const cta = document.createElement('div'); cta.className = 'ce-cta';
+  const b1 = document.createElement('button'); b1.className = 'btn primary'; b1.type = 'button';
+  b1.innerHTML = ic('square-pen') + '<span>شروع چت جدید</span>';
+  b1.onclick = (e) => { e.stopPropagation(); openPencilMenu(e.currentTarget); };
+  const b2 = document.createElement('button'); b2.className = 'btn ghost'; b2.type = 'button';
+  b2.innerHTML = ic('megaphone') + '<span>کشف کانال‌ها</span>';
+  b2.onclick = () => switchNav('discover');
+  cta.append(b1, b2);
+  const hints = document.createElement('div'); hints.className = 'ce-hints';
+  hints.innerHTML = '<span>' + ic('search') + 'جست‌وجوی سریع Ctrl+K</span>'
+    + '<span>' + ic('pin') + 'سنجاق گفت‌وگوی مهم</span>'
+    + '<span>' + ic('lock') + 'گفت‌وگوی خصوصی و امن</span>';
+  wrap.append(mark, h, p, cta, hints);
+  host.appendChild(wrap);
+  host.setAttribute('role', 'status');
+  applyIcons(host);
+}
+
 function renderNav() {
   const sc = $('nav-scroll'); sc.innerHTML = '';
   const nav = $('nav-profile');
@@ -1035,6 +1065,7 @@ function setMode(mode) {
   const chat = mode === 'chats';
   if (chat) { viewHost.dataset.view = ''; viewHost.innerHTML = ''; }
   $('conv-empty').classList.toggle('hidden', chat ? !!state.room : true);
+  if (chat && !state.room) renderConvEmpty();
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
   if (chat) { $('chat-list-column').classList.remove('hidden'); }
