@@ -1332,13 +1332,13 @@ function handleWS(d) {
       if (d.incremental && state.rooms[hrid] && state.rooms[hrid].messages && state.rooms[hrid].messages.length && !state.rooms[hrid].previewOnly) {
         mergeHistory(state.rooms[hrid], d.messages || []);
         if (hrid !== state.room) { scheduleChatListRefresh(); scheduleRoomsPersist(); break; }
-        if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((state.rooms[hrid].messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); }
+        if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((state.rooms[hrid].messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); insertUnreadDivider(hrid); }
         scheduleRoomsPersist();
         break;
       }
       if (hrid !== state.room) { cachePreview(hrid, d.messages); scheduleChatListRefresh(); break; }
       if (hrid) cachePreview(hrid, d.messages);
-      if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((d.messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); }
+      if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((d.messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); insertUnreadDivider(hrid); }
       scheduleRoomsPersist();
       break;
     }
@@ -2065,6 +2065,9 @@ function openRoom(rid, opts) {
   syncUrl(rid, { replace: !!(opts && opts.fromHistory) });
   if (isMobile()) { $('conversation').classList.add('chat-open'); showScrim(false); if (!(opts && opts.fromHistory) && isCapacitor) _vxStack.push({ vx: 1, nav: 'chats', room: rid, view: null }); }
   /* «سین» بعد از باز شدن واقعی پنل گفت‌وگو ثبت می‌شود (نه قبل از آن) */
+  /* شمارش نخوانده‌ها با تراشهٔ زمانِ خواندنِ «قبل از باز شدن» (کش نشده در صفحه) */
+  var _preOpenRead = ((state.readState[rid] || {})[state.me.username] || 0);
+  state._unreadHint = { rid, count: computeUnread(rid, state.rooms[rid] || {}), mark: _preOpenRead };
   markRead(rid);
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
@@ -2087,6 +2090,7 @@ function openRoom(rid, opts) {
     $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
   }
   updateMessagesEmpty();
+  insertUnreadDivider(rid);
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
@@ -2279,6 +2283,30 @@ function provenanceEl(m) {
 /* Stage 3 — placeholder shown while a room has no messages (before history
    arrives or when the room is simply empty). Text-only DOM (textContent),
    token-driven CSS, aria-live for screen readers. */
+/* Stage 3 — unread divider: Telegram-style «پیام‌های نخوانده» marker.
+   Captured at open time (before markRead consumes the counter) and
+   inserted before the first unread incoming message once the history
+   batch renders. DOM-only: disappearing on reload matches Telegram. */
+function insertUnreadDivider(rid) {
+  const hint = state._unreadHint;
+  if (!hint || hint.rid !== rid || hint.count <= 0) return;
+  const r = state.rooms[rid];
+  const box = $('messages');
+  if (!r || !r.messages || !box) return;
+  const first = r.messages.find((m) => m.time > hint.mark && m.from !== state.me.username);
+  if (!first) return;
+  const old = box.querySelector('.unread-sep'); if (old) old.remove();
+  let target = null;
+  for (const n of box.querySelectorAll('.msg')) { if (n.dataset.id === first.id) { target = n; break; } }
+  if (!target) return;
+  const sep = document.createElement('div');
+  sep.className = 'unread-sep';
+  sep.setAttribute('role', 'separator');
+  sep.innerHTML = '<span>' + ic('mail') + 'پیام‌های نخوانده</span>';
+  target.parentElement.insertBefore(sep, target);
+  delete state._unreadHint;
+}
+
 function updateMessagesEmpty() {
   const box = $('messages');
   if (!box || !state.room) return;

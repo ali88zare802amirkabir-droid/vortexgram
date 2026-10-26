@@ -395,6 +395,10 @@ a{color:var(--primary);text-decoration:none;}
 .msgs-empty h3{margin:8px 0 0;font-size:16.5px;font-weight:800;color:var(--on-surface);}
 .msgs-empty p{margin:2px 0 0;color:var(--on-surface-variant);font-size:13px;line-height:1.7;}
 .day-sep{align-self:center;margin:12px 0 6px;font-size:11px;color:var(--outline);background:var(--surface-container-high);padding:4px 12px;border-radius:20px;}
+/* Stage 3: unread-messages divider (telegram parity) */
+.unread-sep{align-self:center;display:flex;align-items:center;gap:6px;margin:10px 0 4px;font-size:11px;font-weight:700;color:var(--primary);padding:4px 12px;border-radius:12px;background:rgba(var(--primary-rgb),.12);border:1px solid rgba(var(--primary-rgb),.25);}
+.unread-sep .icon{width:13px;height:13px;}
+.unread-sep::before,.unread-sep::after{content:"";width:26px;height:1px;background:rgba(var(--primary-rgb),.35);border-radius:1px;}
 
 /* Selection toolbar (replaces header while selecting) */
 .sel-toolbar{position:absolute;inset:0;display:flex;align-items:center;gap:10px;padding:calc(11px + env(safe-area-inset-top)) 16px 11px;background:var(--surface-container-low);border-bottom:1px solid var(--border);z-index:13;}
