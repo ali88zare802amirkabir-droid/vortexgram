@@ -862,7 +862,17 @@ body, #app, #chat-list-column, #conversation {
 .msg.grp-mid, .msg.grp-last { margin-top: -6px; }
 .msg.grp-first > .bubble, .msg.grp-mid > .bubble { border-radius: var(--vx-r-bubble); }
 .msg.grp-first > .bubble::after, .msg.grp-mid > .bubble::after { display: none; }
-.msg.grp-first > .msg-av, .msg.grp-mid > .msg-av { visibility: hidden; }
+/* Telegram parity: the avatar only lives on the last bubble of a cluster;
+   the reserved row collapses entirely. */
+.msg.grp-first > .msg-av, .msg.grp-mid > .msg-av { display: none; }
+/* Defensively: own messages must never reserve avatar space either. */
+.msg.mine > .msg-av { display: none; }
+/* Incoming sender avatar: Telegram mirror layout - bottom-aligned to the
+   last bubble, floating on the outer (inline-start) side of the cluster.
+   The cluster shifts inward so the avatar owns real space instead of
+   overflowing the scroll container. DMs (no avatar node) are untouched. */
+.msg:not(.mine) > .msg-av { position: absolute; inset-block-end: 2px; inset-inline-start: 0; margin: 0; }
+.msg:where(.grp-only, .grp-last):not(.mine):has(> .msg-av) { padding-inline-start: 30px; }
 
 /* Composer morph — the round button settles to a muted mic look while the
    field is empty and springs to the accent send button once text exists. */

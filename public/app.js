@@ -793,6 +793,7 @@ const VXSettings = {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { if (d.error) toast(d.error); this.load(); return; }
       if (d.settings) this._cache = vxDeepMerge(VX_SETTINGS_DEFAULTS, d.settings);
+      this.lastFlushAt = Date.now();
     } catch (e) {}
   },
   /* Appearance settings win over localStorage; the rest of the app still reads
@@ -824,7 +825,7 @@ function enterApp() {
   wireDesignControls(); renderDesignControls();
   state.userFolders = null; // reload per-account folders now that state.me is known
   renderFolderBar();
-  renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); connectWS(); applyVX();
+  renderNav(); renderDock(); buildChatList(); hydrateRooms().then(() => buildChatList()); renderConvEmpty(); connectWS(); applyVX();
   VXSettings.load();
   showImpersonateBanner();
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
@@ -972,6 +973,36 @@ const NAV = [
   { id: 'bookmarks', label: 'نشان‌ها', icon: 'bookmark' },
   { id: 'settings', label: 'تنظیمات', icon: 'settings' },
 ];
+/* Stage 3 — Telegram-style empty state for the conversation column.
+   Built once per login and re-shown whenever no room is open. Every node is
+   created explicitly (no innerHTML with user data) and icons go through ic(). */
+function renderConvEmpty() {
+  const host = $('conv-empty');
+  if (!host || host.dataset.built) return;
+  host.dataset.built = '1';
+  const wrap = document.createElement('div'); wrap.className = 'ce-wrap';
+  const mark = document.createElement('div'); mark.className = 'ce-mark';
+  mark.setAttribute('aria-hidden', 'true'); mark.textContent = 'V';
+  const h = document.createElement('h2'); h.textContent = 'به VORTEX خوش آمدید';
+  const p = document.createElement('p'); p.textContent = 'پیام‌رسان سریع و امن — گفت‌وگو، فایل، ویس و ری‌اکشن، همه در یک‌جا. برای شروع یک گفت‌وگو را انتخاب کنید.';
+  const cta = document.createElement('div'); cta.className = 'ce-cta';
+  const b1 = document.createElement('button'); b1.className = 'btn primary'; b1.type = 'button';
+  b1.innerHTML = ic('square-pen') + '<span>شروع چت جدید</span>';
+  b1.onclick = (e) => { e.stopPropagation(); openPencilMenu(e.currentTarget); };
+  const b2 = document.createElement('button'); b2.className = 'btn ghost'; b2.type = 'button';
+  b2.innerHTML = ic('megaphone') + '<span>کشف کانال‌ها</span>';
+  b2.onclick = () => switchNav('discover');
+  cta.append(b1, b2);
+  const hints = document.createElement('div'); hints.className = 'ce-hints';
+  hints.innerHTML = '<span>' + ic('search') + 'جست‌وجوی سریع Ctrl+K</span>'
+    + '<span>' + ic('pin') + 'سنجاق گفت‌وگوی مهم</span>'
+    + '<span>' + ic('lock') + 'گفت‌وگوی خصوصی و امن</span>';
+  wrap.append(mark, h, p, cta, hints);
+  host.appendChild(wrap);
+  host.setAttribute('role', 'status');
+  applyIcons(host);
+}
+
 function renderNav() {
   const sc = $('nav-scroll'); sc.innerHTML = '';
   const nav = $('nav-profile');
@@ -1035,6 +1066,7 @@ function setMode(mode) {
   const chat = mode === 'chats';
   if (chat) { viewHost.dataset.view = ''; viewHost.innerHTML = ''; }
   $('conv-empty').classList.toggle('hidden', chat ? !!state.room : true);
+  if (chat && !state.room) renderConvEmpty();
   $('conv-main').classList.toggle('hidden', chat ? !state.room : true);
   viewHost.classList.toggle('hidden', chat);
   if (chat) { $('chat-list-column').classList.remove('hidden'); }
@@ -1301,13 +1333,13 @@ function handleWS(d) {
       if (d.incremental && state.rooms[hrid] && state.rooms[hrid].messages && state.rooms[hrid].messages.length && !state.rooms[hrid].previewOnly) {
         mergeHistory(state.rooms[hrid], d.messages || []);
         if (hrid !== state.room) { scheduleChatListRefresh(); scheduleRoomsPersist(); break; }
-        if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((state.rooms[hrid].messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); }
+        if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((state.rooms[hrid].messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); insertUnreadDivider(hrid); }
         scheduleRoomsPersist();
         break;
       }
       if (hrid !== state.room) { cachePreview(hrid, d.messages); scheduleChatListRefresh(); break; }
       if (hrid) cachePreview(hrid, d.messages);
-      if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((d.messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); }
+      if (!state.renderedRooms.has(hrid)) { $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch((d.messages || []).slice(-MSG_RENDER_LIMIT)); renderReplyCounts(hrid); state.renderedRooms.add(hrid); insertUnreadDivider(hrid); }
       scheduleRoomsPersist();
       break;
     }
@@ -1332,6 +1364,7 @@ function handleWS(d) {
         else renderSelectBar();
       }
       const el = document.querySelector('[data-id="' + d.id + '"]'); if (el) el.remove();
+      if (d.roomId === state.room) updateMessagesEmpty();
       const rr = state.rooms[d.roomId]; if (rr) { rr.messages = rr.messages.filter((m) => m.id !== d.id); rr.last = rr.messages[rr.messages.length - 1] || null; scheduleChatListRefresh(120); scheduleRoomsPersist(); }
       refreshDeletedRefs(d.id);
       if (d.roomId === state.room) renderReplyCounts(d.roomId);
@@ -1359,7 +1392,7 @@ function handleWS(d) {
     case 'auth-failed': logout(true); break;
     case 'kicked': toast('حساب شما مسدود شد'); logout(true); break;
     case 'premium-changed': if (state.me) { state.me.isPremium = d.isPremium; renderNav(); } break;
-    case 'settings-updated': if (d.settings) { VXSettings.adopt(d.settings); } break;
+    case 'settings-updated': if (d.settings) { VXSettings.adopt(d.settings, { silent: (Date.now() - (VXSettings.lastFlushAt || 0)) < 4000 }); } break;
     case 'rename-result': if (state.me) { if (d.approved) { state.me.displayName = d.displayName; toast('نام نمایشی شما تایید شد'); } else toast('درخواست تغییر نام شما رد شد'); renderNav(); } break;
   }
 }
@@ -2033,6 +2066,9 @@ function openRoom(rid, opts) {
   syncUrl(rid, { replace: !!(opts && opts.fromHistory) });
   if (isMobile()) { $('conversation').classList.add('chat-open'); showScrim(false); if (!(opts && opts.fromHistory) && isCapacitor) _vxStack.push({ vx: 1, nav: 'chats', room: rid, view: null }); }
   /* «سین» بعد از باز شدن واقعی پنل گفت‌وگو ثبت می‌شود (نه قبل از آن) */
+  /* شمارش نخوانده‌ها با تراشهٔ زمانِ خواندنِ «قبل از باز شدن» (کش نشده در صفحه) */
+  var _preOpenRead = ((state.readState[rid] || {})[state.me.username] || 0);
+  state._unreadHint = { rid, count: computeUnread(rid, state.rooms[rid] || {}), mark: _preOpenRead };
   markRead(rid);
   const roomCache = state.rooms[rid] || {};
   const cachedMsgs = roomCache.messages || [];
@@ -2054,6 +2090,8 @@ function openRoom(rid, opts) {
   } else {
     $('messages').innerHTML = ''; state.lastDay = null; renderMessagesBatch(cachedMsgs.slice(-MSG_RENDER_LIMIT)); state.renderedRooms.add(rid);
   }
+  updateMessagesEmpty();
+  insertUnreadDivider(rid);
 }
 function roomTitle(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.name : rid; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return BOT_NAME; const u = state.users.find((x) => x.username === other); return u ? (u.displayName || other) : (getContacts()[other] || other); }
 function roomOnline(rid) { if (rid.startsWith('group:')) { const g = state.groups.find((x) => 'group:' + x.id === rid); return g ? g.members.length + ' عضو' : ''; } const other = rid.slice(3).split('|').find((p) => p !== state.me.username); if (other === BOT_USERNAME) return 'آنلاین'; const u = state.users.find((x) => x.username === other); if (state.me.isAdmin) return u ? (u.online && !u.banned ? 'آنلاین' : 'آفلاین') : ''; return ''; }
@@ -2243,8 +2281,70 @@ function provenanceEl(m) {
   row.innerHTML = html;
   return row.childNodes.length ? row : null;
 }
+/* Stage 3 — placeholder shown while a room has no messages (before history
+   arrives or when the room is simply empty). Text-only DOM (textContent),
+   token-driven CSS, aria-live for screen readers. */
+/* Stage 3 — unread divider: Telegram-style «پیام‌های نخوانده» marker.
+   Captured at open time (before markRead consumes the counter) and
+   inserted before the first unread incoming message once the history
+   batch renders. DOM-only: disappearing on reload matches Telegram. */
+function insertUnreadDivider(rid) {
+  const hint = state._unreadHint;
+  if (!hint || hint.rid !== rid || hint.count <= 0) return;
+  const r = state.rooms[rid];
+  const box = $('messages');
+  if (!r || !r.messages || !box) return;
+  const first = r.messages.find((m) => m.time > hint.mark && m.from !== state.me.username);
+  if (!first) return;
+  const old = box.querySelector('.unread-sep'); if (old) old.remove();
+  let target = null;
+  for (const n of box.querySelectorAll('.msg')) { if (n.dataset.id === first.id) { target = n; break; } }
+  if (!target) return;
+  const sep = document.createElement('div');
+  sep.className = 'unread-sep';
+  sep.setAttribute('role', 'separator');
+  sep.innerHTML = '<span>' + ic('mail') + 'پیام‌های نخوانده</span>';
+  target.parentElement.insertBefore(sep, target);
+  delete state._unreadHint;
+}
+
+function updateMessagesEmpty() {
+  const box = $('messages');
+  if (!box || !state.room) return;
+  let p = box.querySelector('.msgs-empty');
+  if (box.children.length) { if (p) p.remove(); return; }
+  const rid = state.room;
+  const isGroup = rid.startsWith('group:');
+  let avSrc = null, title = '', other = null;
+  if (isGroup) {
+    const g = state.groups.find((x) => 'group:' + x.id === rid);
+    title = g ? g.name : rid;
+    avSrc = g && g.avatar ? g.avatar : null;
+  } else {
+    other = rid.slice(3).split('|').find((u) => u !== state.me.username) || rid;
+    title = roomTitle(rid);
+    const u = state.users.find((x) => x.username === other);
+    avSrc = u && u.avatar ? u.avatar : null;
+  }
+  if (!p) {
+    p = document.createElement('div');
+    p.className = 'msgs-empty';
+    p.setAttribute('role', 'status');
+    p.setAttribute('aria-live', 'polite');
+    const wrap = document.createElement('div'); wrap.className = 'me-wrap';
+    wrap.appendChild(avatarEl(avSrc ? { avatar: avSrc, displayName: title } : { displayName: title }, 'lg'));
+    const h = document.createElement('h3'); h.textContent = title;
+    const sub = document.createElement('p');
+    sub.textContent = (isGroup ? 'اولین پیام این گفت‌وگو را بفرست.' : 'هنوز پیامی نیست. اولین پیام را بفرست.');
+    wrap.append(h, sub);
+    p.appendChild(wrap);
+  }
+  box.appendChild(p);
+}
 function renderMessagesBatch(messages) {
-  if (!messages.length) return;
+  const box0 = $('messages');
+  if (box0) { const ph0 = box0.querySelector('.msgs-empty'); if (ph0) ph0.remove(); }
+  if (!messages.length) { updateMessagesEmpty(); return; }
   const msgs = $('messages');
   const frag = document.createDocumentFragment();
   const rmap = replyCountMap(messages);
@@ -2260,8 +2360,9 @@ function renderMessagesBatch(messages) {
     }
     const mine = m.from === state.me.username;
     const wrap = document.createElement('div'); wrap.className = 'msg ' + (mine ? 'mine' : ''); wrap.dataset.id = m.id; wrap.dataset.from = m.from || '';
-    if (showMsgAvatar()) {
-      const av = mine ? avatarEl(state.me, 'xs') : avatarEl(state.users.find((u) => u.username === m.from) || { displayName: m.from }, 'xs');
+    /* Telegram parity: پیام‌های خروجی هرگز آواتار فرستنده ندارند */
+    if (showMsgAvatar() && !mine) {
+      const av = avatarEl(state.users.find((u) => u.username === m.from) || { displayName: m.from }, 'xs');
       wrap.innerHTML = '<div class="msg-av">' + av.outerHTML + '</div>';
     } else {
       wrap.classList.add('no-av');
@@ -3489,7 +3590,7 @@ function addUploadBubble(kind, blob, name) {
   const msgs = $('messages');
   const wrap = document.createElement('div');
   wrap.className = 'msg mine'; wrap.dataset.tempId = 'u' + Date.now() + '-' + Math.floor(Math.random() * 9999);
-  const av = showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '';
+  const av = '';
   const prevUrl = URL.createObjectURL(blob);
   let inner;
   if (kind === 'image') inner = '<div class="media dl-loading"><img src="' + prevUrl + '" alt=""></div>';
@@ -4347,7 +4448,7 @@ function addVoicePlaceholder() {
   const wrap = document.createElement('div');
   wrap.className = 'msg mine voice-sending';
   wrap.dataset.tempId = 'v' + Date.now();
-  wrap.innerHTML = (showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '')
+  wrap.innerHTML = ''
     + '<div class="bubble"><div class="msg-body"><div class="voice-cap voice-loading">'
     + '<div class="voice-play" style="pointer-events:none">' + ic('loader') + '</div>'
     + '<div class="voice-wave sending-wave">' + Array.from({length:30}, (_,i) => '<i style="animation-delay:' + (i * 50) + 'ms;height:20%"></i>').join('') + '</div>'
@@ -4369,7 +4470,7 @@ function showVoiceFailed(el, blob, dur, w) {
   const msgs = $('messages');
   const wrap = document.createElement('div');
   wrap.className = 'msg mine voice-failed';
-  wrap.innerHTML = (showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '')
+  wrap.innerHTML = ''
     + '<div class="bubble"><div class="msg-body"><div class="voice-cap voice-error">'
     + '<button class="voice-play" title="ارسال مجدد" aria-label="ارسال مجدد پیام صوتی">' + ic('refresh-cw') + '</button>'
     + '<span class="voice-time">خطا</span></div></div>'
@@ -7180,6 +7281,24 @@ function renderAppSub(body) {
   const curFont = localStorage.getItem('vx_font') || 'default';
   t += '<div class="settings-sec"><h3>' + ic('type') + ' فونت</h3>' + setChipRow('font', ['default', 'mono', 'round', 'vazir'], curFont, (k) => FONT_LABEL[k] || k) + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی گوشه‌ها</h3><input type="range" id="set-radius" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || '18', 10)) + '" aria-label="گردی گوشه‌ها"></div>';
+  /* ── Stage 4: profiles / share code / backup / reset ── */
+  const _profiles = readDesignProfiles();
+  const _profRows = Object.keys(_profiles).map((n) => '<div class="settings-row"><span>' + esc(n) + '</span><span class="set-row-btns">'
+    + '<button type="button" class="btn sm" data-prof-apply="' + escAttr(n) + '">اعمال</button>'
+    + '<button type="button" class="btn sm ghost danger" data-prof-del="' + escAttr(n) + '" aria-label="حذف ' + escAttr(n) + '">' + ic('trash-2') + '</button></span></div>').join('');
+  t += '<div class="settings-sec"><h3>' + ic('layers') + ' پروفایل‌های نمایش</h3>'
+    + '<div class="settings-row"><span>نام</span><input class="inp" id="prof-name" maxlength="24" placeholder="مثلاً کاری" aria-label="نام پروفایل" style="max-width:200px"><button type="button" class="btn sm" id="prof-save">ذخیره</button></div>'
+    + (_profRows || '<div class="placeholder" style="margin-top:8px;">هنوز پروفایلی ذخیره نشده.</div>')
+    + '<p class="settings-hint">هر پروفایل کل ظاهر (تم، رنگ، فونت، پس‌زمینه و اندازهٔ متن) را در خود نگه می‌دارد و با یک ضربه اعمال می‌شود. پاک‌سازی داده‌های مرورگر پروفایل‌ها را پاک می‌کند.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('share') + ' اشتراک‌گذاری تم</h3>'
+    + '<div class="settings-row"><span>کد</span><input class="inp" id="theme-code" dir="ltr" placeholder="VX1.…" aria-label="کد اشتراک تم" style="max-width:240px"></div>'
+    + '<div class="set-row-btns"><button type="button" class="btn sm ghost" id="theme-code-copy">' + ic('copy') + ' کپی کد تم فعال</button><button type="button" class="btn sm ghost" id="theme-code-apply">' + ic('check') + ' اعمال کد</button></div>'
+    + '<p class="settings-hint">کد را کپی کن و برای دوستانت بفرست؛ آن‌ها همین‌جا «اعمال کد» را می‌زنند.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('database') + ' پشتیبان تنظیمات</h3>'
+    + '<div class="set-row-btns"><button type="button" class="btn sm ghost" id="set-export">' + ic('download') + ' خروجی JSON</button><button type="button" class="btn sm ghost" id="set-import">' + ic('upload') + ' ورودی JSON</button></div>'
+    + '<input type="file" id="set-import-file" accept="application/json,.json" hidden>'
+    + '<p class="settings-hint">کل تنظیمات (ظاهر + سمت سرور) در یک فایل؛ فقط فایل‌های ساخته‌شده توسط همین برنامه پذیرفته می‌شوند.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('rotate-ccw') + ' بازنشانی</h3><button type="button" class="btn sm danger" id="set-app-reset">بازنشانی همهٔ تنظیمات ظاهر</button><p class="settings-hint">پروفایل‌ها باقی می‌مانند؛ فقط تم، رنگ، فونت و پس‌زمینه به پیش‌فرض برمی‌گردند.</p></div>';
   body.innerHTML = t;
 
   body.querySelectorAll('[data-theme-btn]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_theme', b.dataset.themeBtn); VXSettings.set('appearance.theme', b.dataset.themeBtn); applyAppearance(); persistActiveSkin(); renderAppSub(body); });
@@ -7201,9 +7320,170 @@ function renderAppSub(body) {
   body.querySelector('#set-font-dec').onclick = () => setFont(-1);
   body.querySelector('#set-font-inc').onclick = () => setFont(1);
   body.querySelector('#set-radius').oninput = (e) => { localStorage.setItem('vx_radius', e.target.value + 'px'); applyVX(); };
+  /* ── Stage 4 wiring ── */
+  const profName = body.querySelector('#prof-name');
+  const profSave = body.querySelector('#prof-save');
+  if (profSave) profSave.onclick = () => {
+    const raw = profName.value.trim().slice(0, 24);
+    if (!raw) return toast('نام پروفایل را بنویس');
+    const ps = readDesignProfiles(); ps[raw] = designSnapshotFull(); saveDesignProfiles(ps);
+    toast('پروفایل ذخیره شد'); renderAppSub(body);
+  };
+  body.querySelectorAll('[data-prof-apply]').forEach((b) => b.onclick = () => {
+    const snap = readDesignProfiles()[b.dataset.profApply]; if (!snap) return;
+    applyDesignSnapshotFull(snap);
+    toast('پروفایل اعمال شد'); renderAppSub(body);
+  });
+  body.querySelectorAll('[data-prof-del]').forEach((b) => b.onclick = async () => {
+    const n = b.dataset.profDel;
+    if (!(await uConfirm('پروفایل «' + n + '» حذف شود؟'))) return;
+    const ps = readDesignProfiles(); delete ps[n]; saveDesignProfiles(ps);
+    renderAppSub(body); toast('پروفایل حذف شد');
+  });
+  const tcCopy = body.querySelector('#theme-code-copy');
+  if (tcCopy) tcCopy.onclick = () => {
+    const code = designShareCode(designSnapshotFull());
+    const inp = body.querySelector('#theme-code'); if (inp) inp.value = code;
+    if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => toast('کد تم کپی شد')).catch(() => toast('کد در فیلد بالا قرار گرفت'));
+    else toast('کد در فیلد بالا قرار گرفت');
+  };
+  const tcApply = body.querySelector('#theme-code-apply');
+  if (tcApply) tcApply.onclick = () => {
+    const inp = body.querySelector('#theme-code');
+    const snap = parseDesignCode(inp ? inp.value.trim() : '');
+    if (!snap) return toast('کد نامعتبر است');
+    applyDesignSnapshotFull(snap);
+    toast('تم اعمال شد'); renderAppSub(body);
+  };
+  const exBtn = body.querySelector('#set-export');
+  if (exBtn) exBtn.onclick = () => {
+    try {
+      const blob = new Blob([settingsBackup()], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'vortexgram-settings-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      toast('فایل پشتیبان ساخته شد');
+    } catch (e) { toast('ساخت فایل ناموفق بود'); }
+  };
+  const imBtn = body.querySelector('#set-import'); const imFile = body.querySelector('#set-import-file');
+  if (imBtn && imFile) {
+    imBtn.onclick = () => imFile.click();
+    imFile.onchange = async () => {
+      const f = imFile.files && imFile.files[0]; if (!f) return;
+      try {
+        const out = JSON.parse(await f.text());
+        const res = settingsRestore(out);
+        if (res === 'ok') { toast('تنظیمات بازیابی شد'); renderAppSub(body); }
+        else toast(res === 'bad-file' ? 'این فایل پشتیبان Vortexgram نیست' : 'بازیابی ناموفق بود');
+      } catch (e) { toast('فایل معتبر نیست'); }
+      imFile.value = '';
+    };
+  }
+  const rsBtn = body.querySelector('#set-app-reset');
+  if (rsBtn) rsBtn.onclick = async () => {
+    if (!(await uConfirm('همهٔ تنظیمات ظاهر به پیش‌فرض برگردد؟'))) return;
+    const D2 = window.VXDesign;
+    if (D2) D2.reset();
+    localStorage.removeItem('vx_accent_custom'); localStorage.removeItem('vx_bgimg'); localStorage.removeItem('vx_bg');
+    localStorage.setItem('vx_radius', '18px'); localStorage.setItem('vx_font', 'default');
+    applyVX(); applyAppearance(); applyBackground();
+    if (typeof persistActiveSkin === 'function') persistActiveSkin();
+    for (const k of Object.keys(VX_SETTINGS_DEFAULTS.appearance)) VXSettings.set('appearance.' + k, VX_SETTINGS_DEFAULTS.appearance[k]);
+    toast('ظاهر به حالت پیش‌فرض برگشت'); renderAppSub(body);
+  };
   body.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { localStorage.setItem('vx_font', b.dataset.font); const D2 = window.VXDesign; if (D2 && D2.setFont) D2.setFont(b.dataset.font); applyAppearance(); renderAppSub(body); });
   applyIcons(body);
 }
+/* ── Stage 4 ─ appearance profiles, share-code and settings backup ── */
+/* Profiles live in localStorage under LS_PROFILES; each value is a
+   VXDesign.snapshot() plus the numeric font scale. Applying a profile
+   mirrors the whitelisted server appearance keys through VXSettings so
+   every device of the account gets the same look. */
+const LS_PROFILES = 'vx_design_profiles';
+function readDesignProfiles() {
+  try { const v = JSON.parse(localStorage.getItem(LS_PROFILES) || '{}'); return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; } catch (e) { return {}; }
+}
+function saveDesignProfiles(p) { try { localStorage.setItem(LS_PROFILES, JSON.stringify(p)); } catch (e) {} }
+/* appearanceSyncServer: mirror preset-style appearance keys to the server */
+function appearanceSyncServer(snap) {
+  if (!snap || typeof snap !== 'object') return;
+  const map = { theme: 'appearance.theme', accent: 'appearance.accent', bubbleRadius: 'appearance.bubbleRadius', reduceGlass: 'appearance.reduceGlass', aurora: 'appearance.aurora' };
+  for (const k of Object.keys(map)) if (snap[k] !== undefined) VXSettings.set(map[k], snap[k]);
+}
+function designShareCode(snap) {
+  const s = Object.assign({}, snap || {}); if (typeof state.fontScale === 'number') s.fontScale = state.fontScale;
+  return 'VX1.' + btoa(unescape(encodeURIComponent(JSON.stringify(s))));
+}
+function parseDesignCode(code) {
+  try {
+    if (typeof code !== 'string' || code.indexOf('VX1.') !== 0) return null;
+    const o = JSON.parse(decodeURIComponent(escape(atob(code.slice(4)))));
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null;
+  } catch (e) { return null; }
+}
+/* snapshot-with-fontScale helper shared by profile save + share code */
+function designSnapshotFull() {
+  const D = window.VXDesign;
+  const s = D ? D.snapshot() : {};
+  if (typeof state.fontScale === 'number') s.fontScale = state.fontScale;
+  return s;
+}
+function applyDesignSnapshotFull(s) {
+  if (!s || typeof s !== 'object') return;
+  const D = window.VXDesign;
+  if (D) D.applySnapshot(s);
+  if (typeof s.fontScale === 'number') {
+    state.fontScale = Math.max(12, Math.min(20, Math.round(s.fontScale)));
+    try { localStorage.setItem('vx_fontsize', String(state.fontScale)); } catch (e) {}
+  }
+  applyAppearance(); applyVX();
+  if (typeof persistActiveSkin === 'function') persistActiveSkin();
+  appearanceSyncServer(s);
+}
+/* Full settings backup: appearance snapshot + the authoritative server
+   settings document (whitelisted on the server on restore). Custom
+   wallpaper image data-URLs are intentionally skipped (big, device-bound). */
+function settingsBackup() {
+  const D = window.VXDesign;
+  return JSON.stringify({
+    app: 'vortexgram', type: 'settings', version: 1,
+    exportedAt: new Date().toISOString(),
+    appearance: designSnapshotFull(),
+    settings: VXSettings.cache(),
+    extra: {
+      vx_radius: localStorage.getItem('vx_radius') || '',
+      vx_bg: localStorage.getItem('vx_bg') || '',
+    },
+  }, null, 2);
+}
+function pushAllSettings(doc) {
+  const walk = (base, obj) => {
+    for (const k of Object.keys(obj || {})) {
+      const v = obj[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) walk(base + '.' + k, v);
+      else VXSettings.set(base + '.' + k, v);
+    }
+  };
+  for (const g of Object.keys(VX_SETTINGS_DEFAULTS)) walk(g, (doc || {})[g] || {});
+}
+function settingsRestore(out) {
+  if (!out || out.app !== 'vortexgram' || out.type !== 'settings') return 'bad-file';
+  const r = out.appearance;
+  if (r && typeof r === 'object') applyDesignSnapshotFull(r);
+  if (out.settings && typeof out.settings === 'object') {
+    VXSettings.adopt(out.settings, { silent: true });
+    pushAllSettings(VXSettings.cache());
+  }
+  if (out.extra && typeof out.extra === 'object') {
+    if (typeof out.extra.vx_radius === 'string' && /^\d+(px)?$/.test(out.extra.vx_radius)) localStorage.setItem('vx_radius', out.extra.vx_radius.endsWith('px') ? out.extra.vx_radius : out.extra.vx_radius + 'px');
+    if (typeof out.extra.vx_bg === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(out.extra.vx_bg)) { localStorage.setItem('vx_bg', out.extra.vx_bg); applyBackground(); }
+  }
+  applyAppearance(); applyVX();
+  return 'ok';
+}
+/* end Stage 4 helpers */
 function renderBgSub(body) {
   let t = '<div class="settings-sec"><h3>' + ic('palette') + ' رنگ پس‌زمینه</h3><input type="color" id="set-bg" value="' + (localStorage.getItem('vx_bg') || '#0a0a14') + '"></div>';
   t += '<div class="settings-sec"><h3>' + ic('image') + ' تصویر پس‌زمینه</h3><input type="file" id="set-bgimg" accept="image/*">';

@@ -370,6 +370,15 @@ a{color:var(--primary);text-decoration:none;}
 .conv-empty .big{font-size:60px;margin-bottom:14px;}
 .conv-empty h2{font-size:22px;font-weight:800;margin-bottom:8px;color:var(--on-surface);}
 .conv-empty p{color:var(--on-surface-variant);max-width:420px;}
+/* ── Stage 3: telegram-style conversation empty state ── */
+.conv-empty .ce-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:480px;}
+.conv-empty .ce-mark{width:88px;height:88px;border-radius:26px;display:grid;place-items:center;font-weight:800;font-size:36px;color:var(--on-primary);background:linear-gradient(135deg,var(--gradient-start),var(--gradient-end));box-shadow:var(--shadow-lg);margin-bottom:4px;}
+.conv-empty .ce-cta{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:4px;}
+.conv-empty .ce-cta .icon{width:16px;height:16px;}
+.conv-empty .ce-hints{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px;}
+.conv-empty .ce-hints span{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:20px;background:var(--surface-container);color:var(--on-surface-variant);font-size:12.5px;border:1px solid var(--border);}
+.conv-empty .ce-hints .icon{width:14px;height:14px;flex:none;}
+@media (max-width:719px){.conv-empty{padding:18px;}.conv-empty .ce-mark{width:72px;height:72px;border-radius:22px;font-size:30px;}}
 .conv-head{display:flex;align-items:center;gap:12px;padding:calc(11px + env(safe-area-inset-top)) 16px 11px;border-bottom:1px solid var(--glass-border);background:rgba(var(--primary-rgb,16,32,52),.06);backdrop-filter:blur(30px) saturate(1.6) brightness(1.05);-webkit-backdrop-filter:blur(30px) saturate(1.6) brightness(1.05);position:relative;z-index:10;box-shadow:0 1px 0 rgba(var(--white-rgb),.04) inset;}
 .conv-head .av{cursor:pointer;}
 .conv-head .ti{flex:1;min-width:0;}
@@ -379,7 +388,17 @@ a{color:var(--primary);text-decoration:none;}
 .icon-btn{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--on-surface-variant);transition:all .15s var(--ease);}
 .icon-btn:hover{background:var(--surface-container-high);color:var(--primary);}
 #messages{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:18px 16px 8px;display:flex;flex-direction:column;gap:8px;}
+/* ── Stage 3: empty-room placeholder ── */
+.msgs-empty{display:grid;place-items:center;flex:1;min-height:340px;text-align:center;padding:24px;}
+.msgs-empty .me-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;max-width:420px;}
+.msgs-empty .me-wrap .av.lg{width:76px;height:76px;border-radius:50%;font-size:26px;box-shadow:var(--shadow);}
+.msgs-empty h3{margin:8px 0 0;font-size:16.5px;font-weight:800;color:var(--on-surface);}
+.msgs-empty p{margin:2px 0 0;color:var(--on-surface-variant);font-size:13px;line-height:1.7;}
 .day-sep{align-self:center;margin:12px 0 6px;font-size:11px;color:var(--outline);background:var(--surface-container-high);padding:4px 12px;border-radius:20px;}
+/* Stage 3: unread-messages divider (telegram parity) */
+.unread-sep{align-self:center;display:flex;align-items:center;gap:6px;margin:10px 0 4px;font-size:11px;font-weight:700;color:var(--primary);padding:4px 12px;border-radius:12px;background:rgba(var(--primary-rgb),.12);border:1px solid rgba(var(--primary-rgb),.25);}
+.unread-sep .icon{width:13px;height:13px;}
+.unread-sep::before,.unread-sep::after{content:"";width:26px;height:1px;background:rgba(var(--primary-rgb),.35);border-radius:1px;}
 
 /* Selection toolbar (replaces header while selecting) */
 .sel-toolbar{position:absolute;inset:0;display:flex;align-items:center;gap:10px;padding:calc(11px + env(safe-area-inset-top)) 16px 11px;background:var(--surface-container-low);border-bottom:1px solid var(--border);z-index:13;}
