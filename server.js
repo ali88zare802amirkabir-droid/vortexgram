@@ -808,6 +808,17 @@ function canAccess(roomId, username) {
     const other = parts.find((p) => p !== username);
     const otherUser = db.users.find((u) => u.username === other);
     if (otherUser && Array.isArray(otherUser.blocked) && otherUser.blocked.includes(username)) return false;
+    /* privacy.messages: who can message me — enforced server-side */
+    if (otherUser) {
+      const priv = (otherUser.settings && otherUser.settings.privacy) || {};
+      const tier = (priv.messages !== undefined) ? priv.messages : (SETTINGS_DEFAULTS.privacy.messages || 'everybody');
+      const alwaysShare = Array.isArray(priv.alwaysShare) ? priv.alwaysShare : [];
+      const neverShare = Array.isArray(priv.neverShare) ? priv.neverShare : [];
+      if (neverShare.includes(username)) return false;
+      if (alwaysShare.includes(username)) return true;
+      if (tier === 'nobody') return false;
+      if (tier === 'contacts' && !relatesTo(username, other)) return false;
+    }
     return true;
   }
   if (roomId.startsWith('group:')) {
@@ -845,6 +856,10 @@ function canSee(viewerName, owner, key) {
   if (!owner) return false;
   if (viewerName && viewerName === owner.username) return true;
   const priv = (owner.settings && owner.settings.privacy) || {};
+  const alwaysShare = Array.isArray(priv.alwaysShare) ? priv.alwaysShare : [];
+  const neverShare = Array.isArray(priv.neverShare) ? priv.neverShare : [];
+  if (viewerName && neverShare.includes(viewerName)) return false;
+  if (viewerName && alwaysShare.includes(viewerName)) return true;
   let tier = priv[key];
   if (tier === undefined) tier = SETTINGS_DEFAULTS.privacy[key]; /* unset → documented default (e.g. phone=nobody) */
   if (tier === 'nobody') return false;
@@ -1258,6 +1273,7 @@ const SETTINGS_DEFAULTS = {
     lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody',
     readReceipts: true, presence: true, addToGroups: 'everybody', calls: 'everybody',
     forwards: 'everybody', groups: 'everybody', voiceMessages: 'everybody',
+    messages: 'everybody', typing: true,
     alwaysShare: [], neverShare: [],
   },
   notifications: {
@@ -1282,7 +1298,7 @@ const SETTINGS_DEFAULTS = {
     mediaTapToNext: false, raiseToListen: true, raiseToSpeak: false, pauseMusicRecord: true,
     pauseMusicMedia: true, internalMic: false, shortcutSend: 'enter', shortcutRead: 'enter',
   },
-  security: { passcode: false, autoLock: 'off', twoFactor: false, deleteMessages: 'off', sessionLimit: 0 },
+  security: { passcode: false, autoLock: 'off', twoFactor: false, twoFactorHint: '', twoFactorRecoveryEmail: '', deleteMessages: 'off', inactiveDelete: 'off', sessionLimit: 0 },
   calls: { micInput: 'auto', speaker: 'auto', camera: 'front', noiseSuppression: true, p2p: true, ringtone: 'default', quality: 'hd' },
   premium: { customStickers: false, customReactions: false, biggerFiles: false, customNameColor: false },
   ai: { enabled: true },
@@ -1298,6 +1314,7 @@ const SETTINGS_ENUMS = {
   'privacy.forwards': ['everybody', 'contacts', 'nobody'],
   'privacy.groups': ['everybody', 'contacts', 'nobody'],
   'privacy.voiceMessages': ['everybody', 'contacts', 'nobody'],
+  'privacy.messages': ['everybody', 'contacts', 'nobody'],
   /* Canonical themes + legacy names (normalized to canonical on write). */
   'appearance.theme': ['day', 'night', 'dark', 'cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
   'appearance.bubbleRadius': ['sharp', 'compact', 'round', 'pill'],
@@ -1318,6 +1335,7 @@ const SETTINGS_ENUMS = {
   'chat.shortcutRead': ['enter', 'ctrlEnter', 'off'],
   'security.autoLock': ['off', '1m', '5m', '30m', '1h'],
   'security.deleteMessages': ['off', '1d', '7d', '30d', '1y'],
+  'security.inactiveDelete': ['off', '1m', '3m', '6m', '12m'],
   'calls.micInput': ['auto', 'builtin', 'external'],
   'calls.speaker': ['auto', 'system', 'earpiece'],
   'calls.camera': ['front', 'back'],
@@ -1330,7 +1348,7 @@ const THEME_MIGRATE = {
   synthwave: 'night', sunset: 'night', forest: 'night', light: 'day', ios: 'day', amoled: 'dark',
 };
 const SETTINGS_BOOLS = [
-  'privacy.readReceipts', 'privacy.presence',
+  'privacy.readReceipts', 'privacy.presence', 'privacy.typing',
   'notifications.enabled', 'notifications.sound', 'notifications.preview',
   'notifications.privateMessages', 'notifications.groupMessages', 'notifications.channelMessages',
   'notifications.reactions', 'notifications.badgeCount', 'notifications.desktop',
@@ -1408,6 +1426,17 @@ function sanitizeSettingsPatch(patch) {
       setPath(out, key, v.map((x) => x.toLowerCase()));
     } else errors.push(key);
   }
+  const hint = getPath(patch, 'security.twoFactorHint');
+  if (hint !== undefined) {
+    const s = String(hint).trim().slice(0, 100);
+    setPath(out, 'security.twoFactorHint', s);
+  }
+  const rec = getPath(patch, 'security.twoFactorRecoveryEmail');
+  if (rec !== undefined) {
+    const s = String(rec).trim().slice(0, 120);
+    if (s === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) setPath(out, 'security.twoFactorRecoveryEmail', s);
+    else errors.push('security.twoFactorRecoveryEmail');
+  }
   const acv = getPath(patch, 'appearance.accentCustom');
   if (acv !== undefined) {
     const s = String(acv).trim();
@@ -1442,6 +1471,28 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, arr] of settingsWrites) { const f = arr.filter((t) => now - t < 60000); if (f.length) settingsWrites.set(k, f); else settingsWrites.delete(k); }
 }, 60000).unref();
+
+/* حذف حساب‌های غیرفعال: کاربرانی که برای مدت انتخاب‌شده فعالیت نکرده‌اند */
+const INACTIVE_DELETE_MS = { '1m': 30 * 86400000, '3m': 90 * 86400000, '6m': 180 * 86400000, '12m': 365 * 86400000 };
+setInterval(() => {
+  try {
+    const now = Date.now();
+    const toDelete = [];
+    for (const u of db.users) {
+      const inactive = (u.settings && u.settings.security && u.settings.security.inactiveDelete) || 'off';
+      const ms = INACTIVE_DELETE_MS[inactive];
+      if (!ms) continue;
+      const lastSeen = Number(u.lastSeen || 0);
+      if (lastSeen > 0 && (now - lastSeen) > ms) toDelete.push(u.username);
+    }
+    for (const name of toDelete) {
+      db.users = db.users.filter((u) => u.username !== name);
+      revokeUserSessions(name);
+      try { kickUser(name); } catch (e) {}
+    }
+    if (toDelete.length) saveDB();
+  } catch (e) {}
+}, 3600000).unref();
 
 app.get('/api/profile/settings', auth, (req, res) => {
   // `settings` = کامل (پیش‌فرض‌ها اعمال‌شده) برای رندر؛ `stored` = سند پراکندهٔ
@@ -1800,6 +1851,34 @@ app.post('/api/profile/delete-account', auth, (req, res) => {
   saveDB();
   pushUsers();
   res.json({ ok: true });
+});
+
+// ---------- security: two-step verification ---------- 
+app.post('/api/security/two-factor', auth, (req, res) => {
+  if (!authRateOk('2fa:' + req.user.username, 5, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  const body = req.body || {};
+  const enabled = !!body.enabled;
+  const password = String(body.password || '');
+  const hint = String(body.hint || '').trim().slice(0, 100);
+  const recoveryEmail = String(body.recoveryEmail || '').trim().slice(0, 120);
+  if (enabled) {
+    if (password.length < 4) return res.status(400).json({ error: 'رمز تأیید دو مرحله‌ای حداقل ۴ کاراکتر باشد' });
+    if (recoveryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail)) return res.status(400).json({ error: 'ایمیل بازیابی نامعتبر است' });
+    req.user.twoFactorHash = hash(password, req.user.salt);
+    req.user.twoFactorHint = hint;
+    req.user.twoFactorRecoveryEmail = recoveryEmail;
+  } else {
+    req.user.twoFactorHash = null;
+    req.user.twoFactorHint = '';
+    req.user.twoFactorRecoveryEmail = '';
+  }
+  req.user.settings = req.user.settings || {};
+  req.user.settings.security = req.user.settings.security || {};
+  req.user.settings.security.twoFactor = enabled;
+  req.user.settings.security.twoFactorHint = hint;
+  req.user.settings.security.twoFactorRecoveryEmail = recoveryEmail;
+  saveDB();
+  res.json({ ok: true, enabled });
 });
 
 // ---------- premium ----------
@@ -3977,7 +4056,15 @@ wss.on('connection', (ws, req) => {
       else msgs = all;
       /* پیام‌هایی که کاربر «فقط برای خودش» پاک کرده از تاریخچه‌ی او حذف می‌شود */
       msgs = msgs.filter((m) => !(Array.isArray(m.hiddenFor) && m.hiddenFor.includes(username)));
-      // بازدید پست‌های کانال شمرده می‌شود (فقط شمارنده؛ نه اینکه چه کسی دیده)
+      // const _delTimers = { '1d': 86400000, '7d': 604800000, '30d': 2592000000, '1y': 31536000000 };
+       msgs = msgs.filter((m) => {
+         if (!m || !m.from || !m.time) return true;
+         const sender = db.users.find((u) => u.username === m.from);
+         const del = (sender && sender.settings && sender.settings.security && sender.settings.security.deleteMessages) || 'off';
+         if (del === 'off' || !_delTimers[del]) return true;
+         return (Date.now() - Number(m.time)) < _delTimers[del];
+       });
+       // بازدید پست‌های کانال شمرده می‌شود (فقط شمارنده؛ نه اینکه چه کسی دیده)
       const visible = msgs.slice(-100);
       recordViews(visible, username);
       wsSend(ws, { type: 'history', roomId, messages: enrichMsgBatch(visible, username), incremental: incremental || undefined });
@@ -4173,6 +4260,8 @@ wss.on('connection', (ws, req) => {
       const typRoom = String(data.roomId || '').slice(0, 100);
       if (!canAccess(typRoom, username)) return;
       const user = db.users.find((u) => u.username === username);
+      const priv = (user && user.settings && user.settings.privacy) || {};
+      if (priv.typing === false) return; /* typing indicator disabled server-side */
       broadcast({ type: 'typing', roomId: typRoom, username, name: user ? user.displayName : username, on: data.on !== false }, ws);
     }
   });

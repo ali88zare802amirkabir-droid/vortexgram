@@ -714,12 +714,13 @@ applyAppearance();
    (debounced) to /api/profile/settings. The server also broadcasts
    `settings-updated` over WS so a change on one device lands on the others. */
 const VX_SETTINGS_DEFAULTS = {
-  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true },
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true, messages: 'everybody', typing: true, alwaysShare: [], neverShare: [] },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
   appearance: { theme: 'night', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true, power: 'auto', animations: true, wallMotion: false },
   language: { code: 'fa', translateEnabled: false },
   chat: { showTyping: true, enterToSend: true },
+  security: { passcode: false, autoLock: 'off', twoFactor: false, twoFactorHint: '', twoFactorRecoveryEmail: '', deleteMessages: 'off', inactiveDelete: 'off', sessionLimit: 0 },
   ai: { enabled: true },
 };
 function vxSetPath(obj, path, val) {
@@ -8077,10 +8078,30 @@ function renderPrivSub(body) {
   t += setSwitchRow('priv-presence', 'نمایش وضعیت آنلاین', S.get('privacy.presence'));
   t += setSelectRow('priv-groups', 'افزودن من به گروه‌ها', AUD, S.get('privacy.addToGroups'), 'users');
   t += setSelectRow('priv-calls', 'تماس‌ها', AUD, S.get('privacy.calls'), 'phone');
+  t += setSelectRow('priv-messages', 'چه کسی می‌تواند به من پیام دهد', AUD, S.get('privacy.messages'), 'message-circle');
+  t += setSwitchRow('priv-typing', 'نمایش «در حال نوشتن…»', S.get('privacy.typing'), '', 'type');
   t += '<p class="settings-hint">این تنظیمات روی سرور ذخیره و همان‌جا اعمال می‌شود؛ دیگران واقعاً نمی‌توانند چیزی را که پنهان کرده‌ای ببینند. «مخاطبان» یعنی کسانی که با آن‌ها گفتگوی خصوصی یا گروه مشترک داری.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('user-check') + ' استثناها (همیشه/هرگز)</h3>'
+    + '<div class="settings-row"><span>همیشه مجاز (نام کاربری)</span><input class="inp" id="priv-always" dir="ltr" placeholder="user1, user2" value="' + esc(S.get('privacy.alwaysShare').join(', ')) + '" style="max-width:200px"></div>'
+    + '<div class="settings-row"><span>هرگز مجاز (نام کاربری)</span><input class="inp" id="priv-never" dir="ltr" placeholder="user1, user2" value="' + esc(S.get('privacy.neverShare').join(', ')) + '" style="max-width:200px"></div>'
+    + '<button type="button" class="btn sm" id="priv-exceptions-save">' + ic('check') + ' ذخیرهٔ استثناها</button>'
+    + '<p class="settings-hint">نام کاربری‌ها را با کاما جدا کن. «هرگز مجاز» بر همهٔ تنظیمات بالا غلبه می‌کند.</p></div>';
   t += '<div class="settings-sec"><h3>' + ic('user-x') + ' کاربران مسدود</h3><div id="priv-blocked"><p class="settings-hint">در حال بارگذاری…</p></div></div>';
   t += '<div class="settings-sec"><h3>' + ic('key') + ' رمز عبور</h3>';
   t += '<div class="settings-row"><span>وضعیت رمز</span><b>' + (hasPw ? 'فعال' : 'غیرفعال — حساب با پیامک ساخته شده') + '</b></div>';
+  t += setSelectRow('sec-autolock', 'قفل خودکار', [['off', 'خاموش'], ['1m', '۱ دقیقه'], ['5m', '۵ دقیقه'], ['30m', '۳۰ دقیقه'], ['1h', '۱ ساعت']], S.get('security.autoLock'), 'lock');
+  t += setSwitchRow('sec-passcode', 'قفل با رمز عبور', S.get('security.passcode'), '', 'key');
+  t += '<div class="settings-sec"><h3>' + ic('shield') + ' تأیید دو مرحله‌ای</h3>';
+  t += setSwitchRow('sec-2fa', 'تأیید دو مرحله‌ای فعال', S.get('security.twoFactor'), '', 'shield');
+  t += '<div class="settings-row"><span>راهنمای بازیابی</span><input class="inp" id="sec-2fa-hint" placeholder="پرسش یا راهنمای بازیابی" value="' + esc(S.get('security.twoFactorHint')) + '" style="max-width:200px"></div>';
+  t += '<div class="settings-row"><span>ایمیل بازیابی</span><input class="inp" id="sec-2fa-email" type="email" placeholder="recovery@example.com" value="' + esc(S.get('security.twoFactorRecoveryEmail')) + '" style="max-width:200px"></div>';
+  t += '<button type="button" class="btn sm" id="sec-2fa-save">' + ic('check') + ' ذخیرهٔ تأیید دو مرحله‌ای</button></div>';
+  t += '<div class="settings-sec"><h3>' + ic('trash-2') + ' حذف خودکار پیام‌ها</h3>';
+  t += setSelectRow('sec-autodelete', 'حذف خودکار پیام‌های من', [['off', 'خاموش'], ['1d', '۱ روز'], ['7d', '۱ هفته'], ['30d', '۱ ماه'], ['1y', '۱ سال']], S.get('security.deleteMessages'), 'trash-2');
+  t += '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('clock') + ' حذف حساب در صورت عدم فعالیت</h3>';
+  t += setSelectRow('sec-inactive', 'حذف حساب پس از', [['off', 'هرگز'], ['1m', '۱ ماه'], ['3m', '۳ ماه'], ['6m', '۶ ماه'], ['12m', '۱۲ ماه']], S.get('security.inactiveDelete'), 'clock');
+  t += '<p class="settings-hint">اگر برای مدت انتخاب‌شده فعالیت نکنید، حساب شما به‌صورت خودکار حذف می‌شود.</p></div>';
   t += '<div class="settings-row' + (hasPw ? '' : ' hidden') + '"><span>رمز فعلی</span><input type="password" id="pw-current" class="inp" autocomplete="current-password" placeholder="••••••" style="max-width:150px"></div>';
   t += '<div class="settings-row"><span>رمز جدید</span><input type="password" id="pw-new" class="inp" placeholder="حداقل ۴ کاراکتر" autocomplete="new-password" style="max-width:150px"></div>';
   t += '<div class="settings-row"><span>تکرار رمز جدید</span><input type="password" id="pw-new2" class="inp" placeholder="تکرار" style="max-width:150px"></div>';
@@ -8098,6 +8119,28 @@ function renderPrivSub(body) {
   const pres = body.querySelector('#priv-presence'); if (pres) pres.onchange = () => { S.set('privacy.presence', pres.checked); toast('حریم خصوصی ذخیره شد'); };
   const grp = body.querySelector('#priv-groups'); if (grp) grp.onchange = () => { S.set('privacy.addToGroups', grp.value); toast('حریم خصوصی ذخیره شد'); };
   const cal = body.querySelector('#priv-calls'); if (cal) cal.onchange = () => { S.set('privacy.calls', cal.value); toast('حریم خصوصی ذخیره شد'); };
+  const msgs = body.querySelector('#priv-messages'); if (msgs) msgs.onchange = () => { S.set('privacy.messages', msgs.value); toast('حریم خصوصی ذخیره شد'); };
+  const typing = body.querySelector('#priv-typing'); if (typing) typing.onchange = () => { S.set('privacy.typing', typing.checked); toast('حریم خصوصی ذخیره شد'); };
+  const autolock = body.querySelector('#sec-autolock'); if (autolock) autolock.onchange = () => { S.set('security.autoLock', autolock.value); toast('ذخیره شد'); };
+  const passcode = body.querySelector('#sec-passcode'); if (passcode) passcode.onchange = () => { S.set('security.passcode', passcode.checked); toast('ذخیره شد'); };
+  const twoFactor = body.querySelector('#sec-2fa'); if (twoFactor) twoFactor.onchange = () => { S.set('security.twoFactor', twoFactor.checked); toast('ذخیره شد'); };
+  const twoFactorSave = body.querySelector('#sec-2fa-save'); if (twoFactorSave) twoFactorSave.onclick = () => {
+    const hint = body.querySelector('#sec-2fa-hint').value.trim();
+    const email = body.querySelector('#sec-2fa-email').value.trim();
+    S.set('security.twoFactorHint', hint);
+    S.set('security.twoFactorRecoveryEmail', email);
+    toast('تأیید دو مرحله‌ای ذخیره شد');
+  };
+  const autodelete = body.querySelector('#sec-autodelete'); if (autodelete) autodelete.onchange = () => { S.set('security.deleteMessages', autodelete.value); toast('ذخیره شد'); };
+  const inactive = body.querySelector('#sec-inactive'); if (inactive) inactive.onchange = () => { S.set('security.inactiveDelete', inactive.value); toast('ذخیره شد'); };
+  const excSave = body.querySelector('#priv-exceptions-save');
+  if (excSave) excSave.onclick = () => {
+    const always = (body.querySelector('#priv-always').value || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const never = (body.querySelector('#priv-never').value || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    S.set('privacy.alwaysShare', always);
+    S.set('privacy.neverShare', never);
+    toast('استثناها ذخیره شد');
+  };
   const blk = body.querySelector('#priv-blocked');
   if (blk) {
     api('/api/blocked').then((r) => r.json()).then((d) => {
@@ -8130,7 +8173,7 @@ function renderPrivSub(body) {
       logout(true);
     } catch (e) { toast('خطا: ' + e.message); }
   };
-  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('privacy.lastSeen', 'everybody'); S.set('privacy.profilePhoto', 'everybody'); S.set('privacy.bio', 'everybody'); S.set('privacy.phone', 'nobody'); S.set('privacy.readReceipts', true); S.set('privacy.presence', true); toast('بازنشانی انجام شد'); renderPrivSub(body); });
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('privacy.lastSeen', 'everybody'); S.set('privacy.profilePhoto', 'everybody'); S.set('privacy.bio', 'everybody'); S.set('privacy.phone', 'nobody'); S.set('privacy.readReceipts', true); S.set('privacy.presence', true); S.set('privacy.messages', 'everybody'); S.set('privacy.typing', true); S.set('security.autoLock', 'off'); S.set('security.passcode', false); S.set('security.twoFactor', false); S.set('security.deleteMessages', 'off'); S.set('security.inactiveDelete', 'off'); toast('بازنشانی انجام شد'); renderPrivSub(body); });
 }
 const SKINS = [
   { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'night', accent: 'blue', mood: 'happy', desc: 'تم پیش‌فرض ورتیکس' },
