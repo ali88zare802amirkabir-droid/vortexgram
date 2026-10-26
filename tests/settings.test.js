@@ -39,7 +39,7 @@ function seedDb(dir) {
     ],
     groups: [],
     // alice & bob share a DM room (carol does not) → "contacts" tier resolvable.
-    messages: { 'dm:alice|bob': [] },
+    messages: { 'dm:alice|bob': [], 'dm:bob|carol': [] },
     pinned: {},
     scheduled: [],
     renameRequests: [],
@@ -425,5 +425,70 @@ test('health: reports app version + build, no auth required', async (t) => {
     assert.strictEqual(r.d.version, require('../package.json').version, 'version matches package.json');
     assert.ok('build' in r.d, 'build field present (may be empty in dev)');
     assert.ok(!('token' in r.d) && !('db' in r.d) && !('users' in r.d), 'no sensitive fields leaked');
+  });
+});
+
+test('settings: privacy.addToGroups + privacy.calls enforced server-side', async (t) => {
+  await withServer(t, async ({ base }) => {
+    // default tier: the owner may add anyone
+    let r = await api(base, 'POST', '/api/groups', 'tokenAlice', { name: 'Alpha' });
+    assert.strictEqual(r.status, 200, 'group created');
+    const gid = r.d.group.id;
+    r = await api(base, 'POST', '/api/groups/' + gid + '/members', 'tokenAlice', { username: 'carol' });
+    assert.strictEqual(r.status, 200, 'default tier allows adding carol');
+    await api(base, 'POST', '/api/groups/' + gid + '/kick', 'tokenAlice', { username: 'carol' });
+
+    // carol locks herself down to nobody
+    r = await api(base, 'POST', '/api/profile/settings', 'tokenCarol', { settings: { privacy: { addToGroups: 'nobody' } } });
+    assert.strictEqual(r.status, 200);
+    r = await api(base, 'POST', '/api/groups/' + gid + '/members', 'tokenAlice', { username: 'carol' });
+    assert.strictEqual(r.status, 403, 'nobody tier blocks being added');
+
+    // contacts tier: alice is a stranger, bob shares a DM with carol
+    r = await api(base, 'POST', '/api/profile/settings', 'tokenCarol', { settings: { privacy: { addToGroups: 'contacts' } } });
+    assert.strictEqual(r.status, 200);
+    r = await api(base, 'POST', '/api/groups/' + gid + '/members', 'tokenAlice', { username: 'carol' });
+    assert.strictEqual(r.status, 403, 'contacts tier blocks strangers');
+    r = await api(base, 'POST', '/api/groups', 'tokenBob', { name: 'Beta' });
+    const gid2 = r.d.group.id;
+    r = await api(base, 'POST', '/api/groups/' + gid2 + '/members', 'tokenBob', { username: 'carol' });
+    assert.strictEqual(r.status, 200, 'contacts tier allows a contact (shared DM)');
+
+    // calls: bob restricts incoming calls, then opens them again
+    await api(base, 'POST', '/api/profile/settings', 'tokenBob', { settings: { privacy: { calls: 'nobody' } } });
+    const alice = await wsOpen('tokenAlice');
+    const bob = await wsOpen('tokenBob');
+    try {
+      await alice.waitFor((d) => d.type === 'ready');
+      await bob.waitFor((d) => d.type === 'ready');
+      alice.ws.send(JSON.stringify({ type: 'call-offer', to: 'bob', sdp: { type: 'offer', sdp: 'x' } }));
+      const err = await alice.waitFor((d) => d.type === 'error' && /تماس/.test(d.text || ''));
+      assert.ok(err, 'caller is told the callee restricts calls');
+      let relayed = false;
+      await bob.waitFor((d) => { if (d.type === 'call-offer') relayed = true; return false; }, 700).catch(() => {});
+      assert.strictEqual(relayed, false, 'restricted call is not relayed');
+
+      await api(base, 'POST', '/api/profile/settings', 'tokenBob', { settings: { privacy: { calls: 'everybody' } } });
+      alice.ws.send(JSON.stringify({ type: 'call-offer', to: 'bob', sdp: { type: 'offer', sdp: 'y' } }));
+      const offer = await bob.waitFor((d) => d.type === 'call-offer');
+      assert.strictEqual(offer.from, 'alice', 'allowed call is relayed');
+    } finally {
+      alice.ws.terminate(); bob.ws.terminate();
+    }
+  });
+});
+
+test('settings: privacy.blocked list round trip + unblock', async (t) => {
+  await withServer(t, async ({ base }) => {
+    let r = await api(base, 'GET', '/api/blocked', 'tokenAlice');
+    assert.strictEqual(r.status, 200);
+    assert.deepStrictEqual(r.d.blocked, [], 'starts empty');
+    r = await api(base, 'POST', '/api/block', 'tokenAlice', { username: 'carol' });
+    assert.strictEqual(r.status, 200);
+    assert.ok(r.d.blocked.includes('carol'), 'block persisted');
+    r = await api(base, 'GET', '/api/blocked', 'tokenAlice');
+    assert.deepStrictEqual(r.d.blocked, ['carol'], 'listed');
+    r = await api(base, 'POST', '/api/unblock', 'tokenAlice', { username: 'carol' });
+    assert.deepStrictEqual(r.d.blocked, [], 'unblock clears');
   });
 });

@@ -1254,7 +1254,7 @@ app.post('/api/profile/emoji-status', auth, (req, res) => {
    یک لیست سفید (enum/bool/accent) رد می‌شود، پس هیچ کلید یا رشتهٔ آزادی
    ذخیره نمی‌شود. */
 const SETTINGS_DEFAULTS = {
-  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true },
+  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true, addToGroups: 'everybody', calls: 'everybody' },
   notifications: { enabled: true, sound: true, preview: true },
   data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
   appearance: { theme: 'night', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
@@ -1267,6 +1267,8 @@ const SETTINGS_ENUMS = {
   'privacy.bio': ['everybody', 'contacts', 'nobody'],
   'privacy.birthday': ['everybody', 'contacts', 'nobody'],
   'privacy.phone': ['everybody', 'contacts', 'nobody'],
+  'privacy.addToGroups': ['everybody', 'contacts', 'nobody'],
+  'privacy.calls': ['everybody', 'contacts', 'nobody'],
   /* Canonical themes + legacy names (normalized to canonical on write). */
   'appearance.theme': ['day', 'night', 'dark', 'cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
   'appearance.bubbleRadius': ['sharp', 'compact', 'round', 'pill'],
@@ -3040,6 +3042,8 @@ app.post('/api/groups/:id/members', auth, (req, res) => {
   const uname = String((req.body || {}).username || '');
   const target = db.users.find((u) => u.username === uname);
   if (!target) return res.status(404).json({ error: 'چنین کاربری ثبت‌نشده' });
+  /* حریم خصوصی: «چه کسانی می‌توانند من را به گروه اضافه کنند» سمت سرور اعمال می‌شود */
+  if (!canSee(req.user.username, target, 'addToGroups')) return res.status(403).json({ error: 'حریم خصوصی این کاربر اجازهٔ افزودن به گروه/کانال را نمی‌دهد' });
   if (memberOf(g, uname)) return res.status(409).json({ error: 'از قبل عضو است' });
   g.members.push({ username: uname, role: 'member' });
   saveDB();
@@ -3852,6 +3856,11 @@ wss.on('connection', (ws, req) => {
       if (!canInteract(username, targetName)) {
         if (data.type === 'call-offer') wsSend(ws, { type: 'error', text: 'کاربر آنلاین نیست' });
         return;
+      }
+      /* حریم خصوصی تماس: طرف مقابل می‌تواند دریافت تماس را محدود کند */
+      if (data.type === 'call-offer') {
+        const calleeUser = db.users.find((u) => u.username === targetName);
+        if (calleeUser && !canSee(username, calleeUser, 'calls')) return wsSend(ws, { type: 'error', text: 'این کاربر دریافت تماس را محدود کرده است' });
       }
       const target = online.get(targetName);
       if (!target) {
