@@ -831,6 +831,28 @@ a{color:var(--primary);text-decoration:none;}
 .chip{padding:5px 11px;border-radius:20px;font-size:12px;font-weight:600;background:var(--surface-container-highest);border:1px solid var(--border);color:var(--on-surface-variant);cursor:pointer;}
 .chip:hover{border-color:var(--primary);color:var(--on-surface);}
 .chip.on{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--primary);}
+
+/* ── Section 1: account profile & inline fields ── */
+.acc-profile-sec{padding-top:8px;}
+.acc-avatar-wrap{text-align:center;margin:0 auto 12px;}
+.acc-avatar-btn{width:80px;height:80px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;border:2px solid var(--border);border-radius:var(--radius);background:var(--surface-container);cursor:pointer;transition:border-color .16s var(--ease);}
+.acc-avatar-btn:hover{border-color:var(--primary);}
+.acc-avatar-btn .av{width:64px;height:64px;}
+.acc-avatar-edit{position:absolute;bottom:4px;right:4px;width:24px;height:24px;border-radius:50%;background:var(--surface-container-high);border:2px solid var(--primary);display:flex;align-items:center;justify-content:center;}
+.acc-avatar-meta{text-align:left;margin-top:8px;font-size:12px;color:var(--on-surface-variant);white-space:nowrap;}
+.acc-inline{display:block;margin:12px 0;width:100%;}
+.acc-field{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.acc-field span{font-size:13px;font-weight:600;color:var(--on-surface);}
+.acc-status{font-size:11px;margin-top:4px;color:var(--outline);line-height:1.4;}
+.acc-status.ok{color:var(--success);}
+.acc-status.bad{color:var(--danger);}
+.acc-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px;}
+.acc-actions .btn{flex:0 0 auto;}
+.danger-zone{border-top:1px solid var(--danger);margin-top:12px;padding-top:12px;}
+.danger-zone h3{color:var(--danger);}
+.set-link{display:block;width:100%;padding:10px 0;background:none;border:none;text-align:left;color:var(--on-surface);font:inherit;cursor:pointer;}
+.set-link:hover{background:var(--primary-muted);border-radius:var(--radius);}
+
 .stepper{margin-inline-start:auto;display:flex;align-items:center;gap:10px;}
 .stepper button{width:30px;height:30px;border-radius:8px;background:var(--surface-container-highest);border:1px solid var(--border);font-size:16px;color:var(--on-surface);}
 .admin-user{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
