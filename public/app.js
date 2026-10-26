@@ -7233,12 +7233,12 @@ function setChipRow(attr, list, active, labelFn) {
   }).join('') + '</div>';
 }
 /* Phase 5E — server-backed row helpers (switch + enum select). */
-function setSwitchRow(id, label, checked, hint) {
-  return '<div class="settings-row"><span>' + esc(label) + '</span><label class="switch"><input type="checkbox" id="' + escAttr(id) + '"' + (checked ? ' checked' : '') + '><span class="slider"></span></label></div>'
+function setSwitchRow(id, label, checked, hint, icon) {
+  return '<div class="settings-row"><span' + (icon ? ' class="set-row-label"' : '') + '>' + (icon ? ic(icon) : '') + esc(label) + '</span><label class="switch"><input type="checkbox" id="' + escAttr(id) + '"' + (checked ? ' checked' : '') + '><span class="slider"></span></label></div>'
     + (hint ? '<p class="settings-hint">' + esc(hint) + '</p>' : '');
 }
-function setSelectRow(id, label, opts, value) {
-  return '<div class="settings-row"><span>' + esc(label) + '</span><select class="inp set-select" id="' + escAttr(id) + '">'
+function setSelectRow(id, label, opts, value, icon) {
+  return '<div class="settings-row"><span' + (icon ? ' class="set-row-label"' : '') + '>' + (icon ? ic(icon) : '') + esc(label) + '</span><select class="inp set-select" id="' + escAttr(id) + '">'
     + opts.map((o) => '<option value="' + escAttr(o[0]) + '"' + (o[0] === value ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('')
     + '</select></div>';
 }
@@ -7722,7 +7722,10 @@ function renderPrivSub(body) {
   t += setSelectRow('priv-birthday', 'تاریخ تولد', AUD, S.get('privacy.birthday'));
   t += setSwitchRow('priv-read', 'تیک خوانده‌شدن', S.get('privacy.readReceipts'));
   t += setSwitchRow('priv-presence', 'نمایش وضعیت آنلاین', S.get('privacy.presence'));
+  t += setSelectRow('priv-groups', 'افزودن من به گروه‌ها', AUD, S.get('privacy.addToGroups'), 'users');
+  t += setSelectRow('priv-calls', 'تماس‌ها', AUD, S.get('privacy.calls'), 'phone');
   t += '<p class="settings-hint">این تنظیمات روی سرور ذخیره و همان‌جا اعمال می‌شود؛ دیگران واقعاً نمی‌توانند چیزی را که پنهان کرده‌ای ببینند. «مخاطبان» یعنی کسانی که با آن‌ها گفتگوی خصوصی یا گروه مشترک داری.</p></div>';
+  t += '<div class="settings-sec"><h3>' + ic('user-x') + ' کاربران مسدود</h3><div id="priv-blocked"><p class="settings-hint">در حال بارگذاری…</p></div></div>';
   t += '<div class="settings-sec"><h3>' + ic('key') + ' رمز عبور</h3>';
   t += '<div class="settings-row"><span>وضعیت رمز</span><b>' + (hasPw ? 'فعال' : 'غیرفعال — حساب با پیامک ساخته شده') + '</b></div>';
   t += '<div class="settings-row' + (hasPw ? '' : ' hidden') + '"><span>رمز فعلی</span><input type="password" id="pw-current" class="inp" autocomplete="current-password" placeholder="••••••" style="max-width:150px"></div>';
@@ -7739,6 +7742,25 @@ function renderPrivSub(body) {
   const bday = body.querySelector('#priv-birthday'); if (bday) bday.onchange = () => { S.set('privacy.birthday', bday.value); toast('حریم خصوصی ذخیره شد'); };
   const read = body.querySelector('#priv-read'); if (read) read.onchange = () => { S.set('privacy.readReceipts', read.checked); toast('حریم خصوصی ذخیره شد'); };
   const pres = body.querySelector('#priv-presence'); if (pres) pres.onchange = () => { S.set('privacy.presence', pres.checked); toast('حریم خصوصی ذخیره شد'); };
+  const grp = body.querySelector('#priv-groups'); if (grp) grp.onchange = () => { S.set('privacy.addToGroups', grp.value); toast('حریم خصوصی ذخیره شد'); };
+  const cal = body.querySelector('#priv-calls'); if (cal) cal.onchange = () => { S.set('privacy.calls', cal.value); toast('حریم خصوصی ذخیره شد'); };
+  const blk = body.querySelector('#priv-blocked');
+  if (blk) {
+    api('/api/blocked').then((r) => r.json()).then((d) => {
+      const list = Array.isArray(d.blocked) ? d.blocked : [];
+      if (!list.length) { blk.innerHTML = '<p class="settings-hint">هیچ کاربری مسدود نیست.</p>'; return; }
+      blk.innerHTML = list.map((u) => '<div class="settings-row"><span class="set-row-label">' + ic('user-x') + '@' + esc(u) + '</span><button type="button" class="btn sm ghost" data-unblock="' + escAttr(u) + '">' + ic('user-check') + ' آنبلاک</button></div>').join('');
+      blk.querySelectorAll('[data-unblock]').forEach((b) => b.onclick = async () => {
+        try {
+          const rr = await api('/api/unblock', { method: 'POST', body: JSON.stringify({ username: b.dataset.unblock }) });
+          const dd = await rr.json().catch(() => ({}));
+          if (!rr.ok) return toast(dd.error || 'خطا');
+          if (state.me) state.me.blocked = dd.blocked;
+          buildChatList(); renderPrivSub(body); toast('کاربر آنبلاک شد');
+        } catch (e) { toast('خطا'); }
+      });
+    }).catch(() => { blk.innerHTML = '<p class="settings-hint">بارگذاری نشد.</p>'; });
+  }
   const save = body.querySelector('#pw-save');
   if (save) save.onclick = async () => {
     const cur = hasPw ? (body.querySelector('#pw-current') ? body.querySelector('#pw-current').value : '') : '';

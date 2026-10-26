@@ -776,6 +776,8 @@ a{color:var(--primary);text-decoration:none;}
 .settings-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
 .settings-row:last-child{border-bottom:none;}
 .settings-row>span{font-size:13.5px;font-weight:600;}
+.set-row-label{display:inline-flex;align-items:center;gap:8px;}
+.set-row-label .icon{width:16px;height:16px;color:var(--on-surface-variant);flex:none;}
 .settings-row b{margin-inline-start:auto;font-size:13px;color:var(--on-surface-variant);}
 .settings-row .inp{margin-inline-start:auto;}
 /* ====== cache-clear animation (پاک‌سازی حافظه پنهان) ====== */
