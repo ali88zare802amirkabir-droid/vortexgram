@@ -7763,29 +7763,99 @@ function renderNotifSub(body) {
   t += setSwitchRow('notif-preview', 'نمایش پیش‌نمایش پیام', S.get('notifications.preview'));
   t += '</div>';
   t += '<div class="settings-sec"><h3>' + ic('bell') + ' اعلان مرورگر</h3><div class="settings-row"><span>اجازهٔ اعلان سیستمی</span><button class="btn sm" id="set-notif">' + ((localStorage.getItem('vx_notify') === '1') ? 'روشن' : 'خاموش') + '</button></div></div>';
+  t += '<div class="settings-sec">' + renderResetRow('notif') + '</div>';
   body.innerHTML = t;
   const be = body.querySelector('#notif-enabled'); if (be) be.onchange = () => { S.set('notifications.enabled', be.checked); toast('اعلان‌ها ذخیره شد'); };
   const bs = body.querySelector('#notif-sound'); if (bs) bs.onchange = () => { S.set('notifications.sound', bs.checked); toast('اعلان‌ها ذخیره شد'); };
   const bp = body.querySelector('#notif-preview'); if (bp) bp.onchange = () => { S.set('notifications.preview', bp.checked); toast('اعلان‌ها ذخیره شد'); };
   const nb = body.querySelector('#set-notif'); if (nb) nb.onclick = async () => { if (!('Notification' in window)) { toast('مرورگر پشتیبانی نمی‌کند'); return; } const p = await Notification.requestPermission(); localStorage.setItem('vx_notify', p === 'granted' ? '1' : '0'); nb.textContent = p === 'granted' ? 'روشن' : 'خاموش'; toast(p === 'granted' ? 'اعلان روشن شد' : 'اعلان خاموش شد'); };
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('notifications.enabled', true); S.set('notifications.sound', true); S.set('notifications.preview', true); toast('بازنشانی انجام شد'); renderNotifSub(body); });
 }
 /* Phase 5E — chat behaviour + language sections (server-backed). */
+/* Section 2 — live bubble preview: shows the current chat appearance */
+function renderLiveBubblePreview() {
+  const wrap = document.createElement('div');
+  wrap.className = 'live-preview';
+  wrap.innerHTML = '<div class="live-preview-bubble" aria-label="نمونه حباب پیام">'
+    + '<span class="lb-avatar" aria-hidden="true">' + avatarEl(state.me || { username: 'user' }, 'md').outerHTML + '</span>'
+    + '<span class="lb-msg"><b>سلام</b><small>نمونهٔ پیام با تنظیمات فعلی</small></span>'
+    + '</div>';
+  return wrap;
+}
+/* Section 2 — per-section reset with confirmation */
+function renderResetRow(cat) {
+  return '<div class="settings-row reset-row"><span>بازنشانی این بخش به پیش‌فرض</span>'
+    + '<button type="button" class="btn sm ghost danger" data-reset="' + escAttr(cat) + '">' + ic('rotate-ccw') + ' بازنشانی</button></div>';
+}
+/* Settings → Chat Settings: expanded with wallpaper, sliders, animations, view, preview */
 function renderChatSub(body) {
   const S = VXSettings;
+  const D = window.VXDesign;
   let t = '<div class="settings-sec"><h3>' + ic('message-circle') + ' تنظیمات گفتگو</h3>';
   t += setSwitchRow('chat-typing', 'نمایش «در حال نوشتن…»', S.get('chat.showTyping'));
   t += setSwitchRow('chat-enter', 'ارسال با Enter (Shift+Enter = خط جدید)', S.get('chat.enterToSend'));
+  t += setSwitchRow('chat-preview', 'پیش‌نمایش لینک', S.get('chat.linkPreview'), '', 'link');
+  t += setSwitchRow('chat-browser', 'مرورگر درون‌برنامه', S.get('chat.inAppBrowser'), '', 'globe');
+  t += setSwitchRow('chat-anim', 'انیمیشن‌های گفتگو', S.get('appearance.animations'), '', 'zap');
   t += '</div>';
-  /*ظاهر گفتگو از همین‌جا در دسترس است (طبق چیدمان تلگرام). */
+  t += '<div class="settings-sec"><h3>' + ic('list') + ' نمای فهرست چت</h3>'
+    + setSelectRow('chat-listview', 'تعداد خط پیام', [['two', 'دو خط'], ['three', 'سه خط'], ['compact', 'فشرده']], S.get('chat.listView'), 'list')
+    + '</div>';
+  const curWall = (D && D.wallpaper) || 'none';
+  t += '<div class="settings-sec"><h3>' + ic('image') + ' پس‌زمینه چت</h3>'
+    + '<div class="chip-row">' + setChipRow('wall-btn', ['none', 'grad-ocean', 'grad-sunset', 'grad-aurora', 'grad-forest', 'pattern-dots', 'pattern-grid', 'pattern-bubbles'], curWall, (x) => x === 'none' ? 'بدون' : (x === 'grad-ocean' ? 'اقیانوس' : x === 'grad-sunset' ? 'غروب' : x === 'grad-aurora' ? 'شفق' : x === 'grad-forest' ? 'جنگل' : x === 'pattern-dots' ? 'نقطه‌ای' : x === 'pattern-grid' ? 'شبکه‌ای' : 'حبابی')) + '</div>'
+    + '<button type="button" class="btn sm ghost" id="chat-wall-upload" aria-label="بارگذاری تصویر پس‌زمینه">' + ic('upload') + ' بارگذاری تصویر یا رنگ سفارشی</button>'
+    + '<div class="settings-row"><span>بلور پس‌زمینه</span><input type="range" id="chat-wall-blur" min="0" max="40" step="1" value="' + (D ? (typeof D.wallBlur === 'number' ? D.wallBlur : 0) : 0) + '" aria-label="بلور"></div>'
+    + '<div class="settings-row"><span>روشنایی پس‌زمینه</span><input type="range" id="chat-wall-bright" min="0.2" max="1.5" step="0.05" value="' + (D ? (D.wallBright || 1) : 1) + '" aria-label="روشنایی"></div>'
+    + '<label class="set-row-label"><input type="checkbox" id="chat-wall-motion"' + ((D ? D.wallMotion : false) ? ' checked' : '') + ' aria-label="حرکت"> حرکت آرام پس‌زمینه</label>'
+    + '</div>';
+  const curRad = (D && D.bubbleRadius) || 'round';
+  t += '<div class="settings-sec"><h3>' + ic('maximize-2') + ' گردی حباب پیام</h3>'
+    + '<input type="range" id="chat-radius-slider" min="6" max="28" value="' + (parseInt(localStorage.getItem('vx_radius') || (curRad === 'pill' ? '28' : curRad === 'sharp' ? '6' : '18'), 10)) + '" aria-label="گردی گوشه‌ها">'
+    + '<div class="settings-hint">پیش‌نمایش زنده در بالای این بخش.</div>' + '</div>';
+  const curScale = D ? D.textScale : 'normal';
+  const scaleMap = { small: 12, normal: 15, large: 18, xlarge: 21 };
+  t += '<div class="settings-sec"><h3>' + ic('type') + ' مقیاس متن</h3>'
+    + '<input type="range" id="chat-text-slider" min="11" max="30" step="1" value="' + (scaleMap[curScale] || 15) + '" aria-label="مقیاس متن">'
+    + '<div class="settings-hint">اندازه متن پیام‌ها و فهرست چت را تغییر می‌دهد.</div>' + '</div>';
+  t += '<div class="settings-sec"><h3>' + ic('message-circle') + ' نمایش زندهٔ حباب</h3><div class="live-preview-area" id="chat-live-preview"></div><p class="settings-hint">این حباب نمونه‌ای از آخرین پیام گفتگو با تنظیمات فعلی شماست.</p></div>';
+  t += '<div class="settings-sec">' + renderResetRow('chat') + '</div>';
   t += '<div class="settings-sec"><h3>' + ic('palette') + ' ظاهر گفتگو</h3>'
     + '<button type="button" class="set-link" data-goto="appearance"><span class="set-row-label">' + ic('palette') + ' نمایش و تم</span><i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i></button>'
     + '<button type="button" class="set-link" data-goto="background"><span class="set-row-label">' + ic('image') + ' پس‌زمینه گفتگو</span><i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i></button>'
     + '<button type="button" class="set-link" data-goto="skins"><span class="set-row-label">' + ic('paintbrush') + ' اسکین‌ها و تم‌ها</span><i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i></button>'
     + '</div>';
   body.innerHTML = t;
+
   const bt = body.querySelector('#chat-typing'); if (bt) bt.onchange = () => { S.set('chat.showTyping', bt.checked); toast('ذخیره شد'); };
   const bn = body.querySelector('#chat-enter'); if (bn) bn.onchange = () => { S.set('chat.enterToSend', bn.checked); toast('ذخیره شد'); };
+  const bl = body.querySelector('#chat-preview'); if (bl) bl.onchange = () => { S.set('chat.linkPreview', bl.checked); toast('ذخیره شد'); };
+  const br = body.querySelector('#chat-browser'); if (br) br.onchange = () => { S.set('chat.inAppBrowser', br.checked); toast('ذخیره شد'); };
+  const anim = body.querySelector('#chat-anim'); if (anim) anim.onchange = () => { if (D && D.setAnimations) D.setAnimations(anim.checked); S.set('appearance.animations', anim.checked); toast('ذخیره شد'); };
+  const listv = body.querySelector('#chat-listview'); if (listv) listv.onchange = () => { S.set('chat.listView', listv.value); toast('ذخیره شد'); };
+
+  body.querySelectorAll('[data-wall-btn]').forEach((b) => { b.onclick = () => { if (D && D.setWallpaper) D.setWallpaper(b.dataset.wallBtn); applyBackground(); S.set('appearance.wallpaper', b.dataset.wallBtn); renderChatSub(body); toast('پس‌زمینه تغییر کرد'); }; });
+  const uploadBtn = body.querySelector('#chat-wall-upload');
+  if (uploadBtn) uploadBtn.onclick = () => { const fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = 'image/*'; fileInp.onchange = (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; openAvatarCrop(f, (blob, name) => uploadProfileFile(blob, name, 'avatar', () => renderChatSub(body))); }; fileInp.click(); };
+  const blurEl = body.querySelector('#chat-wall-blur'); if (blurEl) blurEl.oninput = (e) => { if (D && D.setWallBlur) D.setWallBlur(e.target.value); };
+  const brightEl = body.querySelector('#chat-wall-bright'); if (brightEl) brightEl.oninput = (e) => { if (D && D.setWallBright) D.setWallBright(e.target.value); };
+  const motionEl = body.querySelector('#chat-wall-motion'); if (motionEl) motionEl.onchange = () => { if (D && D.setWallMotion) D.setWallMotion(motionEl.checked); };
+  const radEl = body.querySelector('#chat-radius-slider'); if (radEl) radEl.oninput = (e) => { const v = e.target.value; if (D && D.setBubbleRadius) D.setBubbleRadius(v >= 20 ? 'pill' : v <= 10 ? 'sharp' : 'round'); localStorage.setItem('vx_radius', v + 'px'); applyVX(); };
+  const textEl = body.querySelector('#chat-text-slider'); if (textEl) textEl.oninput = (e) => { const val = Number(e.target.value); if (D && D.setTextScale) D.setTextScale(val <= 12 ? 'small' : val <= 16 ? 'normal' : val <= 19 ? 'large' : 'xlarge'); };
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('chat.showTyping', true); S.set('chat.enterToSend', true); S.set('chat.linkPreview', true); S.set('chat.inAppBrowser', false); S.set('chat.listView', 'two'); S.set('appearance.animations', true); S.set('appearance.wallpaper', 'none'); toast('بازنشانی انجام شد'); renderChatSub(body); });
+
+  /* live preview update */
+  const updateLive = () => {
+    const wrap = document.querySelector('#chat-live-preview'); if (!wrap) return;
+    const D2 = window.VXDesign;
+    const snap = (D2 && D2.snapshot) ? D2.snapshot() : {};
+    const previewHTML = renderLiveBubblePreview();
+    wrap.innerHTML = previewHTML.innerHTML || '';
+  };
+  setInterval(updateLive, 300);
   body.querySelectorAll('[data-goto]').forEach((b) => { b.onclick = () => { state.settingsCat = b.dataset.goto; state.settingsFocus = null; renderView('settings'); }; });
+  luc();
+  applyBackground();
 }
 function renderLangSub(body) {
   const S = VXSettings;
@@ -7794,9 +7864,11 @@ function renderLangSub(body) {
   t += setSelectRow('lang-code', 'زبان برنامه', LANGS, S.get('language.code'));
   t += setSwitchRow('lang-translate', 'نمایش دکمهٔ ترجمه روی پیام‌ها', S.get('language.translateEnabled'));
   t += '</div>';
+  t += '<div class="settings-sec">' + renderResetRow('lang') + '</div>';
   body.innerHTML = t;
   const lc = body.querySelector('#lang-code'); if (lc) lc.onchange = () => { S.set('language.code', lc.value); toast('زبان ذخیره شد'); };
   const lt = body.querySelector('#lang-translate'); if (lt) lt.onchange = () => { S.set('language.translateEnabled', lt.checked); toast('ذخیره شد'); };
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('language.code', 'fa'); S.set('language.translateEnabled', false); toast('بازنشانی انجام شد'); renderLangSub(body); });
 }
 /* Section 1 — power saving: really drives the design runtime and mirrors the
    choice to the server document so every device gets the same behaviour. */
@@ -7813,6 +7885,7 @@ function renderPowerSub(body) {
   t += setSwitchRow('power-anim', 'انیمیشن‌های رابط', S.get('appearance.animations'), 'خاموش‌کردن انیمیشن‌ها مصرف پردازنده و باتری را کم می‌کند.', 'zap');
   t += setSwitchRow('power-wall', 'حرکت پس‌زمینه', S.get('appearance.wallMotion'), 'پس‌زمینهٔ متحرک در باتری و داده بیشتر مصرف می‌کند.', 'image');
   t += '</div>';
+  t += '<div class="settings-sec">' + renderResetRow('power') + '</div>';
   body.innerHTML = t;
   const setPower = (mode) => {
     if (D && D.setPower) D.setPower(mode);
@@ -7827,12 +7900,14 @@ function renderPowerSub(body) {
   body.querySelectorAll('[data-power]').forEach((b) => { b.onclick = () => setPower(b.dataset.power); });
   const an = body.querySelector('#power-anim'); if (an) an.onchange = () => { if (D && D.setAnimations) D.setAnimations(an.checked); S.set('appearance.animations', an.checked); toast('ذخیره شد'); };
   const wm = body.querySelector('#power-wall'); if (wm) wm.onchange = () => { if (D && D.setWallMotion) D.setWallMotion(wm.checked); S.set('appearance.wallMotion', wm.checked); toast('ذخیره شد'); };
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; if (D && D.setPower) D.setPower('auto'); if (D && D.setAnimations) D.setAnimations(true); if (D && D.setWallMotion) D.setWallMotion(false); S.set('appearance.power', 'auto'); S.set('appearance.animations', true); S.set('appearance.wallMotion', false); toast('بازنشانی انجام شد'); renderPowerSub(body); });
 }
 /* Section 1 — devices as a standalone settings page (same endpoint as My Account). */
 function renderDevicesSub(body) {
   body.innerHTML = '<div class="settings-sec"><h3>' + ic('smartphone') + ' دستگاه‌های متصل</h3>'
     + '<div id="dev-list" class="acc-devices">در حال بارگذاری…</div>'
-    + '<p class="settings-hint">اگر دستگاهی را نمی‌شناسی، همین‌جا از حساب خارجش کن تا دسترسی‌اش قطع شود.</p></div>';
+    + '<p class="settings-hint">اگر دستگاهی را نمی‌شناسی، همین‌جا از حساب خارجش کن تا دسترسی‌اش قطع شود.</p>'
+    + '<div class="settings-sec">' + renderResetRow('devices') + '</div></div>';
   const box = body.querySelector('#dev-list');
   const rerender = () => { const cur = document.querySelector('.settings-sub'); if (cur && cur.parentElement) renderSettingsSub('devices', cur.parentElement); };
   api('/api/profile/devices').then((r) => r.json()).then((d) => {
@@ -7878,9 +7953,11 @@ function renderAiSub(body) {
   t += setSwitchRow('ai-translate', 'دکمهٔ ترجمه روی پیام‌ها', S.get('language.translateEnabled'), '', 'languages');
   t += '<button type="button" class="set-link" data-goto="language"><span class="set-row-label">' + ic('languages') + ' زبان برنامه</span><i data-lucide="chevron-left" class="icon set-cat-go" aria-hidden="true"></i></button>';
   t += '</div>';
+  t += '<div class="settings-sec">' + renderResetRow('ai') + '</div>';
   body.innerHTML = t;
   const en = body.querySelector('#ai-enabled'); if (en) en.onchange = () => { S.set('ai.enabled', en.checked); toast(en.checked ? 'دستیار هوشمند فعال شد' : 'دستیار هوشمند خاموش شد'); };
   const tr = body.querySelector('#ai-translate'); if (tr) tr.onchange = () => { S.set('language.translateEnabled', tr.checked); toast('ذخیره شد'); };
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('ai.enabled', true); toast('بازنشانی انجام شد'); renderAiSub(body); });
   body.querySelectorAll('[data-goto]').forEach((b) => { b.onclick = () => { state.settingsCat = b.dataset.goto; state.settingsFocus = null; renderView('settings'); }; });
 }
 function fmtBytes(n) { if (!n) return '۰ بایت'; if (n < 1024) return n + ' بایت'; if (n < 1048576) return (n / 1024).toFixed(1) + ' کیلوبایت'; if (n < 1073741824) return (n / 1048576).toFixed(1) + ' مگابایت'; return (n / 1073741824).toFixed(2) + ' گیگابایت'; }
@@ -7971,6 +8048,7 @@ function renderStorageSub(body) {
   t += '<p class="hint" style="margin:10px 0 12px;text-align:right;">این عمل فقط فایل‌های رسانه را از همین دستگاه حذف می‌کند تا فضا آزاد شود؛ پیام‌ها، پروفایل کاربران، گروه‌ها و کانال‌ها دست‌نخورده می‌مانند. فایل‌های حذف‌شده در صورت دیدن دوباره، دوباره دانلود می‌شوند.</p>';
   t += '<button class="btn danger" id="st-clear" style="width:100%;justify-content:center;">' + ic('trash-2') + ' پاک کردن حافظه پنهان رسانه</button>';
   t += '</div>';
+  t += '<div class="settings-sec">' + renderResetRow('storage') + '</div>';
   body.innerHTML = t;
   const dp = body.querySelector('#data-photos'); if (dp) dp.onchange = () => { S.set('data.autoDownloadPhotos', dp.checked); toast('ذخیره شد'); };
   const dv = body.querySelector('#data-videos'); if (dv) dv.onchange = () => { S.set('data.autoDownloadVideos', dv.checked); toast('ذخیره شد'); };
@@ -7983,6 +8061,7 @@ function renderStorageSub(body) {
   vxMediaUsage().then((u) => { const el = $('st-media'); if (el) el.textContent = u.n ? (u.n + ' فایل — ' + fmtBytes(u.bytes)) : 'خالی است'; });
   vxRoomsCount().then((n) => { const el = $('st-rooms'); if (el) el.textContent = n ? (n + ' گفتگو-') : 'خالی است'; });
   const cb = body.querySelector('#st-clear'); if (cb) cb.onclick = clearMediaCache;
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('data.autoDownloadPhotos', true); S.set('data.autoDownloadVideos', false); S.set('data.saveData', false); toast('بازنشانی انجام شد'); renderStorageSub(body); });
 }
 function renderPrivSub(body) {
   const S = VXSettings;
@@ -8008,6 +8087,7 @@ function renderPrivSub(body) {
   t += '<button class="btn sm primary" id="pw-save">' + (hasPw ? 'تغییر رمز عبور' : 'ساخت رمز عبور') + '</button>';
   t += '<div class="pw-note">بعد از ساخت رمز می‌توانید از صفحه ورود با «رمز عبور» وارد شوید.</div>';
   t += '</div>';
+  t += '<div class="settings-sec">' + renderResetRow('privacy') + '</div>';
   body.innerHTML = t;
   const seen = body.querySelector('#priv-lastseen'); if (seen) seen.onchange = () => { S.set('privacy.lastSeen', seen.value); toast('حریم خصوصی ذخیره شد'); };
   const photo = body.querySelector('#priv-photo'); if (photo) photo.onchange = () => { S.set('privacy.profilePhoto', photo.value); toast('حریم خصوصی ذخیره شد'); };
@@ -8050,6 +8130,7 @@ function renderPrivSub(body) {
       logout(true);
     } catch (e) { toast('خطا: ' + e.message); }
   };
+  body.querySelectorAll('[data-reset]').forEach((b) => b.onclick = async () => { if (!await uConfirm('این بخش به پیش‌فرض برگردد؟')) return; S.set('privacy.lastSeen', 'everybody'); S.set('privacy.profilePhoto', 'everybody'); S.set('privacy.bio', 'everybody'); S.set('privacy.phone', 'nobody'); S.set('privacy.readReceipts', true); S.set('privacy.presence', true); toast('بازنشانی انجام شد'); renderPrivSub(body); });
 }
 const SKINS = [
   { id: 'default', name: 'پیش‌فرض', price: 0, theme: 'night', accent: 'blue', mood: 'happy', desc: 'تم پیش‌فرض ورتیکس' },
