@@ -2331,8 +2331,9 @@ function renderMessagesBatch(messages) {
     }
     const mine = m.from === state.me.username;
     const wrap = document.createElement('div'); wrap.className = 'msg ' + (mine ? 'mine' : ''); wrap.dataset.id = m.id; wrap.dataset.from = m.from || '';
-    if (showMsgAvatar()) {
-      const av = mine ? avatarEl(state.me, 'xs') : avatarEl(state.users.find((u) => u.username === m.from) || { displayName: m.from }, 'xs');
+    /* Telegram parity: پیام‌های خروجی هرگز آواتار فرستنده ندارند */
+    if (showMsgAvatar() && !mine) {
+      const av = avatarEl(state.users.find((u) => u.username === m.from) || { displayName: m.from }, 'xs');
       wrap.innerHTML = '<div class="msg-av">' + av.outerHTML + '</div>';
     } else {
       wrap.classList.add('no-av');
@@ -3560,7 +3561,7 @@ function addUploadBubble(kind, blob, name) {
   const msgs = $('messages');
   const wrap = document.createElement('div');
   wrap.className = 'msg mine'; wrap.dataset.tempId = 'u' + Date.now() + '-' + Math.floor(Math.random() * 9999);
-  const av = showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '';
+  const av = '';
   const prevUrl = URL.createObjectURL(blob);
   let inner;
   if (kind === 'image') inner = '<div class="media dl-loading"><img src="' + prevUrl + '" alt=""></div>';
@@ -4418,7 +4419,7 @@ function addVoicePlaceholder() {
   const wrap = document.createElement('div');
   wrap.className = 'msg mine voice-sending';
   wrap.dataset.tempId = 'v' + Date.now();
-  wrap.innerHTML = (showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '')
+  wrap.innerHTML = ''
     + '<div class="bubble"><div class="msg-body"><div class="voice-cap voice-loading">'
     + '<div class="voice-play" style="pointer-events:none">' + ic('loader') + '</div>'
     + '<div class="voice-wave sending-wave">' + Array.from({length:30}, (_,i) => '<i style="animation-delay:' + (i * 50) + 'ms;height:20%"></i>').join('') + '</div>'
@@ -4440,7 +4441,7 @@ function showVoiceFailed(el, blob, dur, w) {
   const msgs = $('messages');
   const wrap = document.createElement('div');
   wrap.className = 'msg mine voice-failed';
-  wrap.innerHTML = (showMsgAvatar() ? '<div class="msg-av">' + avatarEl(state.me, 'xs').outerHTML + '</div>' : '')
+  wrap.innerHTML = ''
     + '<div class="bubble"><div class="msg-body"><div class="voice-cap voice-error">'
     + '<button class="voice-play" title="ارسال مجدد" aria-label="ارسال مجدد پیام صوتی">' + ic('refresh-cw') + '</button>'
     + '<span class="voice-time">خطا</span></div></div>'
