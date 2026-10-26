@@ -720,7 +720,7 @@ function publicSafe(u) {
 const LIMITS = {
   normalUploadMB: 30,
   premiumUploadMB: 100,
-  normalBio: 80,
+  normalBio: 70,
   premiumBio: 200,
 };
 
@@ -1254,12 +1254,38 @@ app.post('/api/profile/emoji-status', auth, (req, res) => {
    یک لیست سفید (enum/bool/accent) رد می‌شود، پس هیچ کلید یا رشتهٔ آزادی
    ذخیره نمی‌شود. */
 const SETTINGS_DEFAULTS = {
-  privacy: { lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody', readReceipts: true, presence: true, addToGroups: 'everybody', calls: 'everybody' },
-  notifications: { enabled: true, sound: true, preview: true },
-  data: { autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false },
-  appearance: { theme: 'night', accent: 'blue', bubbleRadius: 'round', reduceGlass: false, aurora: true },
-  language: { code: 'fa', translateEnabled: false },
-  chat: { showTyping: true, enterToSend: true },
+  privacy: {
+    lastSeen: 'everybody', profilePhoto: 'everybody', bio: 'everybody', birthday: 'contacts', phone: 'nobody',
+    readReceipts: true, presence: true, addToGroups: 'everybody', calls: 'everybody',
+    forwards: 'everybody', groups: 'everybody', voiceMessages: 'everybody',
+    alwaysShare: [], neverShare: [],
+  },
+  notifications: {
+    enabled: true, sound: true, preview: true, privateMessages: true, groupMessages: true,
+    channelMessages: true, reactions: true, badgeCount: true, desktop: true, calls: true, inAppSound: true,
+  },
+  data: {
+    autoDownloadPhotos: true, autoDownloadVideos: false, saveData: false,
+    autoDownloadOnMobile: false, autoDownloadOnWifi: true, maxSizeMB: 20, saveToGallery: false, proxy: '',
+  },
+  appearance: {
+    theme: 'night', accent: 'blue', accentCustom: '', bubbleRadius: 'round', bubbleStyle: 'classic',
+    reduceGlass: false, aurora: true, animations: true, glass: false, density: 'comfortable',
+    textScale: 'normal', font: 'default', uiRadius: 'round', wallpaper: 'none',
+    wallBlur: 0, wallBright: 1, wallMotion: false, themeAuto: 'off', power: 'auto',
+  },
+  language: { code: 'fa', translateEnabled: false, autoTranslate: false },
+  chat: {
+    showTyping: true, enterToSend: true, autoEmoji: true, linkPreview: true, translateMessages: false,
+    markdown: true, autoArchive: false, archiveDays: 30, folderBehavior: 'all', swipeAction: 'reply',
+    listView: 'two', shareDirect: true, spacingUnits: 'normal', inAppBrowser: false, autoNight: false,
+    mediaTapToNext: false, raiseToListen: true, raiseToSpeak: false, pauseMusicRecord: true,
+    pauseMusicMedia: true, internalMic: false, shortcutSend: 'enter', shortcutRead: 'enter',
+  },
+  security: { passcode: false, autoLock: 'off', twoFactor: false, deleteMessages: 'off', sessionLimit: 0 },
+  calls: { micInput: 'auto', speaker: 'auto', camera: 'front', noiseSuppression: true, p2p: true, ringtone: 'default', quality: 'hd' },
+  premium: { customStickers: false, customReactions: false, biggerFiles: false, customNameColor: false },
+  ai: { enabled: true },
 };
 const SETTINGS_ENUMS = {
   'privacy.lastSeen': ['everybody', 'contacts', 'nobody'],
@@ -1269,10 +1295,34 @@ const SETTINGS_ENUMS = {
   'privacy.phone': ['everybody', 'contacts', 'nobody'],
   'privacy.addToGroups': ['everybody', 'contacts', 'nobody'],
   'privacy.calls': ['everybody', 'contacts', 'nobody'],
+  'privacy.forwards': ['everybody', 'contacts', 'nobody'],
+  'privacy.groups': ['everybody', 'contacts', 'nobody'],
+  'privacy.voiceMessages': ['everybody', 'contacts', 'nobody'],
   /* Canonical themes + legacy names (normalized to canonical on write). */
   'appearance.theme': ['day', 'night', 'dark', 'cyber', 'midnight', 'midnight-rose', 'matrix', 'synthwave', 'sunset', 'forest', 'light', 'ios', 'amoled'],
   'appearance.bubbleRadius': ['sharp', 'compact', 'round', 'pill'],
+  'appearance.bubbleStyle': ['classic', 'accent', 'glass'],
+  'appearance.density': ['compact', 'comfortable', 'spacious'],
+  'appearance.textScale': ['small', 'normal', 'large', 'xlarge'],
+  'appearance.font': ['default', 'mono', 'round', 'vazir'],
+  'appearance.uiRadius': ['sharp', 'compact', 'round', 'pill'],
+  'appearance.wallpaper': ['none', 'grad-ocean', 'grad-sunset', 'grad-aurora', 'grad-forest', 'pattern-dots', 'pattern-grid', 'pattern-bubbles'],
+  'appearance.themeAuto': ['off', 'system', 'schedule'],
+  'appearance.power': ['auto', 'full', 'saver'],
   'language.code': ['fa', 'en', 'ar', 'tr', 'ru'],
+  'chat.folderBehavior': ['all', 'unread', 'groups', 'channels', 'folders'],
+  'chat.swipeAction': ['reply', 'pin', 'archive', 'delete', 'read', 'none'],
+  'chat.listView': ['two', 'three', 'compact'],
+  'chat.spacingUnits': ['narrow', 'normal', 'wide'],
+  'chat.shortcutSend': ['enter', 'ctrlEnter'],
+  'chat.shortcutRead': ['enter', 'ctrlEnter', 'off'],
+  'security.autoLock': ['off', '1m', '5m', '30m', '1h'],
+  'security.deleteMessages': ['off', '1d', '7d', '30d', '1y'],
+  'calls.micInput': ['auto', 'builtin', 'external'],
+  'calls.speaker': ['auto', 'system', 'earpiece'],
+  'calls.camera': ['front', 'back'],
+  'calls.ringtone': ['default', 'silent', 'custom'],
+  'calls.quality': ['sd', 'hd', 'fullhd'],
 };
 /* Legacy theme names are accepted from older clients but stored canonically. */
 const THEME_MIGRATE = {
@@ -1282,11 +1332,34 @@ const THEME_MIGRATE = {
 const SETTINGS_BOOLS = [
   'privacy.readReceipts', 'privacy.presence',
   'notifications.enabled', 'notifications.sound', 'notifications.preview',
+  'notifications.privateMessages', 'notifications.groupMessages', 'notifications.channelMessages',
+  'notifications.reactions', 'notifications.badgeCount', 'notifications.desktop',
+  'notifications.calls', 'notifications.inAppSound',
   'data.autoDownloadPhotos', 'data.autoDownloadVideos', 'data.saveData',
-  'appearance.reduceGlass', 'appearance.aurora',
-  'language.translateEnabled',
-  'chat.showTyping', 'chat.enterToSend',
+  'data.autoDownloadOnMobile', 'data.autoDownloadOnWifi', 'data.saveToGallery',
+  'appearance.reduceGlass', 'appearance.aurora', 'appearance.animations',
+  'appearance.glass', 'appearance.wallMotion',
+  'language.translateEnabled', 'language.autoTranslate',
+  'chat.showTyping', 'chat.enterToSend', 'chat.autoEmoji', 'chat.linkPreview',
+  'chat.translateMessages', 'chat.markdown', 'chat.autoArchive', 'chat.shareDirect',
+  'chat.inAppBrowser', 'chat.autoNight', 'chat.mediaTapToNext', 'chat.raiseToListen',
+  'chat.raiseToSpeak', 'chat.pauseMusicRecord', 'chat.pauseMusicMedia', 'chat.internalMic',
+  'security.passcode', 'security.twoFactor',
+  'calls.noiseSuppression', 'calls.p2p',
+  'premium.customStickers', 'premium.customReactions', 'premium.biggerFiles', 'premium.customNameColor',
+  'ai.enabled',
 ];
+/*عددهای تنظیمات: [کمینه، بیشینه] — نوع هم بررسی می‌شود تا رشتهٔ آزاد ذخیره نشود. */
+const SETTINGS_NUMBERS = {
+  'appearance.wallBlur': [0, 40],
+  'appearance.wallBright': [0.3, 1.5],
+  'chat.archiveDays': [1, 365],
+  'data.maxSizeMB': [1, 2048],
+  'security.sessionLimit': [0, 100],
+};
+/*فهرست‌های نام کاربری (لیست‌های استثنای حریم خصوصی). */
+const SETTINGS_LISTS = ['privacy.alwaysShare', 'privacy.neverShare'];
+const SETTINGS_USERNAME_LIST_RE = /^[a-z0-9_]{3,20}$/;
 function getPath(obj, path) { return path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj); }
 function setPath(obj, path, val) {
   const parts = path.split('.'); let o = obj;
@@ -1320,6 +1393,33 @@ function sanitizeSettingsPatch(patch) {
     const v = getPath(patch, key);
     if (v === undefined) continue;
     if (typeof v === 'boolean') setPath(out, key, v); else errors.push(key);
+  }
+  for (const key of Object.keys(SETTINGS_NUMBERS)) {
+    const v = getPath(patch, key);
+    if (v === undefined) continue;
+    const [min, max] = SETTINGS_NUMBERS[key];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max) setPath(out, key, v);
+    else errors.push(key);
+  }
+  for (const key of SETTINGS_LISTS) {
+    const v = getPath(patch, key);
+    if (v === undefined) continue;
+    if (Array.isArray(v) && v.length <= 100 && v.every((x) => typeof x === 'string' && SETTINGS_USERNAME_LIST_RE.test(x))) {
+      setPath(out, key, v.map((x) => x.toLowerCase()));
+    } else errors.push(key);
+  }
+  const acv = getPath(patch, 'appearance.accentCustom');
+  if (acv !== undefined) {
+    const s = String(acv).trim();
+    if (s === '' || /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s)) setPath(out, 'appearance.accentCustom', s);
+    else errors.push('appearance.accentCustom');
+  }
+  const px = getPath(patch, 'data.proxy');
+  if (px !== undefined) {
+    const s = String(px).trim();
+    let ok = s === '';
+    if (!ok) { try { const u = new URL(s); ok = (u.protocol === 'http:' || u.protocol === 'https:'); } catch (e) { ok = false; } }
+    if (ok) setPath(out, 'data.proxy', s); else errors.push('data.proxy');
   }
   const tv = getPath(out, 'appearance.theme');
   if (typeof tv === 'string' && THEME_MIGRATE[tv]) setPath(out, 'appearance.theme', THEME_MIGRATE[tv]);
@@ -1503,6 +1603,203 @@ app.post('/api/profile/avatar/url', auth, (req, res) => {
   saveDB(); pushUsers();
   broadcastProfile(req.user.username);
   res.json({ ok: true, avatar: req.user.avatar, me: publicUser(req.user) });
+});
+
+// ---------- account: username / phone / delete (Section 1) ----------
+/*نام کاربری: ۳ تا ۲۰ کاراکتر، فقط حروف کوچک انگلیسی، عدد و زیرخط. */
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+const pendingPhoneCodes = new Map();   // username -> { phone, code, exp }
+const pendingDeleteCodes = new Map();  // username -> { code, exp }
+
+function usernameStatus(raw) {
+  const username = String(raw || '').trim().replace(/^@/, '').toLowerCase();
+  if (!USERNAME_RE.test(username)) {
+    return { username, valid: false, available: false, reason: 'نام کاربری باید ۳ تا ۲۰ کاراکتر و شامل حروف کوچک انگلیسی، عدد یا _ باشد' };
+  }
+  const taken = db.users.some((u) => String(u.username || '').toLowerCase() === username);
+  return { username, valid: true, available: !taken, reason: taken ? 'این نام کاربری قبلاً گرفته شده است' : '' };
+}
+
+function remapDmRoom(roomId, oldName, newName) {
+  if (typeof roomId !== 'string' || !roomId.startsWith('dm:')) return roomId;
+  return 'dm:' + roomId.slice(3).split('|').map((part) => (part === oldName ? newName : part)).join('|');
+}
+/*همه‌ی ارجاع‌ها به نام کاربری را جابه‌جا می‌کند تا پیام‌ها، گروه‌ها، نشست‌ها
+  و وضعیت خوانده‌شدن بعد از تغییر نام کاربری از دست نروند. */
+function renameUserReferences(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) return;
+  for (const user of db.users) {
+    if (user.username === oldName) user.username = newName;
+    if (Array.isArray(user.contacts)) user.contacts = user.contacts.map((c) => (c === oldName ? newName : c));
+    if (Array.isArray(user.blocked)) user.blocked = user.blocked.map((b) => (b === oldName ? newName : b));
+  }
+  for (const record of sessions.values()) {
+    if (record && record.username === oldName) record.username = newName;
+  }
+  for (const group of db.groups || []) {
+    if (group.owner === oldName) group.owner = newName;
+    if (Array.isArray(group.members)) group.members.forEach((m) => { if (m && m.username === oldName) m.username = newName; });
+  }
+  const nextMessages = {};
+  for (const [roomId, list] of Object.entries(db.messages || {})) {
+    if (Array.isArray(list)) list.forEach((m) => { if (m && m.from === oldName) m.from = newName; });
+    nextMessages[remapDmRoom(roomId, oldName, newName)] = list;
+  }
+  db.messages = nextMessages;
+  const remapRoomMap = (src) => {
+    const outMap = {};
+    for (const [roomId, value] of Object.entries(src || {})) {
+      if (roomId === '__proto__' || roomId === 'constructor') continue;
+      outMap[remapDmRoom(roomId, oldName, newName)] = value;
+    }
+    return outMap;
+  };
+  if (db.pinned && typeof db.pinned === 'object') db.pinned = remapRoomMap(db.pinned);
+  if (db.chatState && typeof db.chatState === 'object') {
+    for (const uname of Object.keys(db.chatState)) {
+      const perUser = db.chatState[uname];
+      if (perUser && typeof perUser === 'object') db.chatState[uname] = remapRoomMap(perUser);
+    }
+    if (db.chatState[oldName]) { db.chatState[newName] = db.chatState[oldName]; delete db.chatState[oldName]; }
+  }
+  if (db.readState && typeof db.readState === 'object') {
+    const nextRead = {};
+    for (const [roomId, readers] of Object.entries(db.readState)) {
+      const perRoom = {};
+      for (const [reader, stamp] of Object.entries(readers || {})) perRoom[reader === oldName ? newName : reader] = stamp;
+      nextRead[remapDmRoom(roomId, oldName, newName)] = perRoom;
+    }
+    db.readState = nextRead;
+  }
+  if (Array.isArray(db.scheduled)) {
+    for (const item of db.scheduled) {
+      if (!item) continue;
+      if (item.from === oldName) item.from = newName;
+      if (item.roomId) item.roomId = remapDmRoom(item.roomId, oldName, newName);
+    }
+  }
+  if (Array.isArray(db.renameRequests)) {
+    for (const r of db.renameRequests) if (r && r.username === oldName) r.username = newName;
+  }
+}
+
+app.get('/api/profile/username-available', auth, (req, res) => {
+  if (!authRateOk('username-check:' + req.user.username, 60, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  const st = usernameStatus(req.query.username || req.query.u || '');
+  res.json({ ok: true, username: st.username, valid: st.valid, available: st.available, reason: st.reason });
+});
+
+app.post('/api/profile/username', auth, (req, res) => {
+  if (!authRateOk('username-set:' + req.user.username, 5, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  const st = usernameStatus((req.body || {}).username);
+  if (!st.valid) return res.status(400).json({ error: st.reason });
+  if (st.username === req.user.username) return res.json({ ok: true, me: publicUser(req.user) });
+  const taken = db.users.find((u) => u !== req.user && String(u.username || '').toLowerCase() === st.username);
+  if (taken) return res.status(409).json({ error: 'این نام کاربری قبلاً گرفته شده است' });
+  const oldName = req.user.username;
+  renameUserReferences(oldName, st.username);
+  saveDB();
+  pushUsers();
+  broadcastProfile(st.username);
+  notifyUser(st.username, { type: 'username-changed', username: st.username });
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
+app.post('/api/profile/phone/send-code', auth, async (req, res) => {
+  if (!authRateOk('phone-code:' + req.user.username, 5, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
+  const phone = normalizePhone((req.body || {}).phone);
+  if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
+  if (req.user.phone === phone) return res.status(400).json({ error: 'این شماره همان شمارهٔ فعلی حساب است' });
+  if (db.users.some((u) => u !== req.user && u.phone === phone)) return res.status(409).json({ error: 'این شماره قبلاً برای حساب دیگری ثبت شده است' });
+  const code = genCode();
+  pendingPhoneCodes.set(req.user.username, { phone, code, exp: Date.now() + 5 * 60 * 1000 });
+  const sms = await sendSMS(phone, `کد تغییر شماره VORTEXGRAM: ${code}`);
+  const out = { ok: true };
+  if (devCodeEnabled) out.devCode = code;
+  if (sms && sms.smsError) out.note = 'ارسال پیامک با خطا مواجه شد — کد در کنسول سرور چاپ شد';
+  res.json(out);
+});
+
+app.post('/api/profile/phone', auth, (req, res) => {
+  if (!authRateOk('phone-set:' + req.user.username, 10, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  const body = req.body || {};
+  const phone = normalizePhone(body.phone);
+  if (!phone) return res.status(400).json({ error: 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)' });
+  if (db.users.some((u) => u !== req.user && u.phone === phone)) return res.status(409).json({ error: 'این شماره قبلاً برای حساب دیگری ثبت شده است' });
+  const code = String(body.code || '').trim();
+  const password = String(body.password || '');
+  if (code) {
+    const rec = pendingPhoneCodes.get(req.user.username);
+    if (!rec || rec.phone !== phone || rec.exp < Date.now() || rec.code !== code) {
+      return res.status(403).json({ error: 'کد تأیید نامعتبر یا منقضی شده است' });
+    }
+  } else if (password) {
+    if (!verifyPassword(req.user, password)) return res.status(403).json({ error: 'رمز عبور اشتباه است' });
+  } else {
+    return res.status(403).json({ error: 'برای تغییر شماره، رمز عبور یا کد پیامکی لازم است', needCode: true });
+  }
+  pendingPhoneCodes.delete(req.user.username);
+  req.user.phone = phone;
+  saveDB();
+  pushUsers();
+  broadcastProfile(req.user.username);
+  res.json({ ok: true, me: publicUser(req.user) });
+});
+
+app.post('/api/profile/delete-account/send-code', auth, async (req, res) => {
+  if (!authRateOk('delacct-code:' + req.user.username, 3, 5 * 60 * 1000)) return res.status(429).json({ error: 'کد زیاد درخواست شده — چند دقیقه صبر کن' });
+  if (!req.user.phone) return res.status(400).json({ error: 'برای این حساب شماره‌ای ثبت نشده است — با رمز عبور تأیید کن', needPassword: true });
+  const code = genCode();
+  pendingDeleteCodes.set(req.user.username, { code, exp: Date.now() + 5 * 60 * 1000 });
+  const sms = await sendSMS(req.user.phone, `کد حذف حساب VORTEXGRAM: ${code}`);
+  const out = { ok: true };
+  if (devCodeEnabled) out.devCode = code;
+  if (sms && sms.smsError) out.note = 'ارسال پیامک با خطا مواجه شد — کد در کنسول سرور چاپ شد';
+  res.json(out);
+});
+
+app.post('/api/profile/delete-account', auth, (req, res) => {
+  if (!authRateOk('delacct:' + req.user.username, 5, 60 * 1000)) return res.status(429).json({ error: 'تلاش زیاد — کمی صبر کن' });
+  const body = req.body || {};
+  const password = String(body.password || '');
+  const code = String(body.code || '').trim();
+  if (password) {
+    if (!req.user.passHash) return res.status(403).json({ error: 'برای این حساب رمز عبوری تنظیم نشده است — با کد پیامکی تأیید کن', needCode: true });
+    if (!verifyPassword(req.user, password)) return res.status(403).json({ error: 'رمز عبور اشتباه است' });
+  } else if (code) {
+    const rec = pendingDeleteCodes.get(req.user.username);
+    if (!rec || rec.exp < Date.now() || rec.code !== code) return res.status(403).json({ error: 'کد تأیید نامعتبر یا منقضی شده است' });
+  } else {
+    return res.status(403).json({ error: 'برای تأیید حذف، رمز عبور یا کد پیامکی لازم است', needCode: true });
+  }
+  const username = req.user.username;
+  pendingDeleteCodes.delete(username);
+  pendingPhoneCodes.delete(username);
+  revokeUserSessions(username);
+  db.users = db.users.filter((u) => u.username !== username);
+  for (const u of db.users) {
+    if (Array.isArray(u.contacts)) u.contacts = u.contacts.filter((c) => c !== username);
+    if (Array.isArray(u.blocked)) u.blocked = u.blocked.filter((b) => b !== username);
+  }
+  const keptGroups = [];
+  for (const group of db.groups || []) {
+    const wasMember = (group.members || []).some((m) => m && m.username === username);
+    if (!wasMember) { keptGroups.push(group); continue; }
+    group.members = (group.members || []).filter((m) => m && m.username !== username);
+    if (group.owner === username) {
+      if (group.members.length) { group.owner = group.members[0].username; group.members[0].role = 'owner'; keptGroups.push(group); }
+      continue;
+    }
+    keptGroups.push(group);
+  }
+  db.groups = keptGroups;
+  if (db.chatState && db.chatState[username]) delete db.chatState[username];
+  if (Array.isArray(db.scheduled)) db.scheduled = db.scheduled.filter((s) => s && s.from !== username);
+  if (Array.isArray(db.renameRequests)) db.renameRequests = db.renameRequests.filter((r) => r && r.username !== username);
+  try { kickUser(username); } catch (e) {}
+  saveDB();
+  pushUsers();
+  res.json({ ok: true });
 });
 
 // ---------- premium ----------
@@ -2286,6 +2583,7 @@ app.get('/api/link-preview', auth, async (req, res) => {
 // اکنون از زنجیرهٔ ارائه‌دهندگان، سهمیهٔ روزانه و لایهٔ ایمنی عبور می‌کند.
 app.post('/api/ai', auth, async (req, res) => {
   if (!authRateOk('ai:' + req.user.username, 20, 60 * 1000)) return res.status(429).json({ error: 'درخواست زیاد — کمی صبر کن' });
+  if (settingsView(req.user).ai.enabled === false) return res.status(403).json({ error: 'دستیار هوشمند در تنظیمات خاموش شده است' });
   const { action, roomId, text, tone } = req.body || {};
   const a = String(action || '');
   const rid = String(roomId || '');
