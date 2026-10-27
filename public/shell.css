@@ -305,6 +305,25 @@
 /* ── mobile chrome spacing ──
    The list needs bottom padding so the last row is never hidden behind the pill. */
 @media (max-width: 899px) {
+  #nav-foot {
+    padding: 8px;
+    background: var(--surface-container-high);
+    border-radius: 12px;
+  }
+  #nav-foot .nav-foot-btn {
+    min-height: 48px;
+    padding: 10px 12px;
+    flex-direction: row-reverse;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  #nav-foot .nav-foot-btn .icon {
+    width: 24px;
+    height: 24px;
+  }
+  #nav-foot .nav-foot-btn .label {
+    font-size: 15px;
+  }
   #chat-list-column { padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 22px); }
 body.has-bottom-nav .settings-sub,
 body.has-bottom-nav .view-body,
