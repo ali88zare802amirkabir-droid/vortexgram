@@ -5924,6 +5924,10 @@ function openVideoPlayer(src, origUrl) {
     try { if (vd.buffered.length) buf.style.width = (vd.buffered.end(vd.buffered.length - 1) / (dur() || 1) * 100) + '%'; } catch (e) {}
   });
   vd.addEventListener('loadedmetadata', setFill);
+  /* Remember playback position per video */
+  const posKey = 'vx_vidpos_' + (real || '').slice(-40);
+  try { const saved = parseFloat(localStorage.getItem(posKey) || '0'); if (saved > 1) vd.currentTime = saved; } catch (e) {}
+  vd.addEventListener('timeupdate', () => { try { localStorage.setItem(posKey, String(vd.currentTime)); } catch (e) {} });
   vd.addEventListener('play', paintPP);
   vd.addEventListener('pause', paintPP);
   vd.addEventListener('volumechange', () => { btnMute.innerHTML = ic(vd.muted || vd.volume === 0 ? 'volume-x' : 'volume-2'); applyIcons(btnMute); });
@@ -5955,9 +5959,45 @@ function openVideoPlayer(src, origUrl) {
     } catch (e) { toast('تمام‌صفحه ممکن نیست'); }
   };
   document.addEventListener('fullscreenchange', fsIcon);
+  /* Keyboard shortcuts */
+  const onKeyVxp = (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    switch (e.key.toLowerCase()) {
+      case ' ': case 'k': e.preventDefault(); toggle(); break;
+      case 'j': seekTo(vd.currentTime - 10); break;
+      case 'l': seekTo(vd.currentTime + 10); break;
+      case 'arrowleft': seekTo(vd.currentTime - 5); break;
+      case 'arrowright': seekTo(vd.currentTime + 5); break;
+      case 'arrowup': vd.volume = Math.min(1, vd.volume + 0.1); break;
+      case 'arrowdown': vd.volume = Math.max(0, vd.volume - 0.1); break;
+      case 'f': btnFs.click(); break;
+      case 'm': btnMute.click(); break;
+      case 'escape': close(); break;
+    }
+  };
+  document.addEventListener('keydown', onKeyVxp);
   $('[data-a="dl"]').onclick = () => { const a = document.createElement('a'); a.href = real; a.download = name; a.click(); };
   $('[data-a="edit"]').onclick = () => { close(); openVideoEditor(real); };
   $('[data-a="gif"]').onclick = () => { close(); openGifConverter(real); };
+  /* Share button */
+  const shareBtn = document.createElement('button');
+  shareBtn.type = 'button'; shareBtn.className = 'vxp-ib'; shareBtn.title = 'اشتراک‌گذاری'; shareBtn.setAttribute('aria-label', 'اشتراک‌گذاری');
+  shareBtn.innerHTML = ic('share-2');
+  shareBtn.onclick = () => { if (navigator.share) { navigator.share({ title: name, url: real }).catch(() => {}); } else toast('اشتراک‌گذاری پشتیبانی نمی‌شود'); };
+  const actsEl = $('.vxp-acts'); if (actsEl) { actsEl.appendChild(shareBtn); applyIcons(shareBtn); }
+  /* Loop toggle */
+  const loopBtn = document.createElement('button');
+  loopBtn.type = 'button'; loopBtn.className = 'vxp-ib'; loopBtn.title = 'تکرار'; loopBtn.setAttribute('aria-label', 'تکرار');
+  loopBtn.innerHTML = ic('repeat');
+  let loopOn = false;
+  loopBtn.onclick = () => { loopOn = !loopOn; vd.loop = loopOn; loopBtn.style.color = loopOn ? 'var(--primary)' : ''; toast(loopOn ? 'تکرار روشن شد' : 'تکرار خاموش شد'); };
+  if (actsEl) { actsEl.appendChild(loopBtn); applyIcons(loopBtn); }
+  /* Caption display */
+  const captionEl = document.createElement('div');
+  captionEl.className = 'vxp-caption';
+  captionEl.style.cssText = 'position:absolute;bottom:60px;left:0;right:0;text-align:center;color:var(--on-surface);font-size:13px;padding:8px 16px;background:linear-gradient(0deg,rgba(var(--black-rgb),.6),transparent);z-index:4;';
+  if (opts && opts.caption) captionEl.textContent = opts.caption;
+  stage.appendChild(captionEl);
 
   /* ---------- منوی سرعت ---------- */
   let pop = null;
@@ -6125,7 +6165,7 @@ function openVideoPlayer(src, origUrl) {
     if (scrubRaf) cancelAnimationFrame(scrubRaf);
     closePop();
     try { vd.pause(); } catch (e) {}
-    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keydown', onKeyVxp);
     document.removeEventListener('fullscreenchange', fsIcon);
     if (document.fullscreenElement === v) { try { document.exitFullscreen(); } catch (e) {} }
     v.remove();
@@ -6138,6 +6178,82 @@ function openVideoPlayer(src, origUrl) {
   setFill();
   paintPP();
   vd.play().catch(() => {});
+  /* Auto-hide controls */
+  let hideTimer = null;
+  const barEl = $('.vxp-bar');
+  const topEl = $('.vxp-top');
+  const bigBtn = $('.vxp-big');
+  function showControls() {
+    if (barEl) barEl.style.opacity = '1';
+    if (topEl) topEl.style.opacity = '1';
+    if (bigBtn) bigBtn.style.opacity = '1';
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (!vd.paused) {
+        if (barEl) barEl.style.opacity = '0';
+        if (topEl) topEl.style.opacity = '0';
+        if (bigBtn) bigBtn.style.opacity = '0';
+      }
+    }, 3000);
+  }
+  stage.addEventListener('pointermove', showControls);
+  stage.addEventListener('touchstart', showControls, { passive: true });
+  showControls();
+  /* Double-tap to seek ±10s */
+  let lastTapTime = 0, lastTapX = 0;
+  stage.addEventListener('touchend', (e) => {
+    if (e.changedTouches.length !== 1) return;
+    const now = Date.now();
+    const x = e.changedTouches[0].clientX;
+    if (now - lastTapTime < 300 && Math.abs(x - lastTapX) < 10) {
+      const rect = stage.getBoundingClientRect();
+      if (x < rect.width / 2) seekTo(vd.currentTime - 10);
+      else seekTo(vd.currentTime + 10);
+      hud.hidden = false;
+      hudDir.innerHTML = ic(x < rect.width / 2 ? 'rewind' : 'fast-forward') + ' 10s';
+      hudTime.textContent = vxpFmt(vd.currentTime);
+      setTimeout(() => { hud.hidden = true; }, 600);
+      lastTapTime = 0;
+    } else {
+      lastTapTime = now;
+      lastTapX = x;
+    }
+  });
+  /* Swipe down to close */
+  let swipeStartY = 0, swiping = false;
+  stage.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) { swipeStartY = e.touches[0].clientY; swiping = true; }
+  }, { passive: true });
+  stage.addEventListener('touchend', (e) => {
+    if (!swiping) return;
+    swiping = false;
+    const dy = e.changedTouches[0].clientY - swipeStartY;
+    if (dy > 120) close();
+  });
+  /* Long-press for 2x speed */
+  let longPressTimer = null;
+  stage.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    longPressTimer = setTimeout(() => {
+      vd.playbackRate = 2;
+      hud.hidden = false;
+      hudRate.textContent = '2x';
+      hudDir.innerHTML = ic('fast-forward') + ' 2x';
+      setTimeout(() => { hud.hidden = true; vd.playbackRate = 1; setRate(1); }, 1500);
+    }, 500);
+  }, { passive: true });
+  stage.addEventListener('touchend', () => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } });
+  stage.addEventListener('touchmove', () => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } });
+  /* Error retry */
+  vd.addEventListener('error', () => {
+    toast('پخش این ویدیو ممکن نیست');
+    const errBtn = document.createElement('button');
+    errBtn.className = 'vxp-ib';
+    errBtn.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:auto;padding:8px 16px;border-radius:8px;background:var(--danger);color:var(--on-danger);z-index:10;';
+    errBtn.textContent = 'تلاش دوباره';
+    errBtn.onclick = () => { errBtn.remove(); vd.load(); vd.play().catch(() => {}); };
+    stage.appendChild(errBtn);
+  });
   return v;
 }
 
