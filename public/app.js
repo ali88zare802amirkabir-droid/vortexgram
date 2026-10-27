@@ -2858,22 +2858,14 @@ function voiceEl(m) {
   function fmtDur(s) { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
 
   function loadAudio() {
-    if (audioLoaded) return;
+    if (audioLoaded && !d.classList.contains('voice-error')) return;
     audioLoaded = true;
+    d.classList.remove('voice-error');
     setVoiceBtn('loader', 'در حال بارگذاری');
     d.classList.add('voice-loading');
-    d.classList.remove('voice-error');
-    fetch(u, { credentials: 'include' }).then(async (res) => {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      aud.src = url;
-    }).catch((e) => {
-      d.classList.remove('voice-loading');
-      d.classList.add('voice-error');
-      setVoiceBtn('refresh-cw', 'تلاش دوباره');
-      console.error('Voice load failed:', e);
-    });
+    /* Use direct src for streaming + Range support (Safari/iOS needs this) */
+    aud.src = u;
+    aud.load();
   }
 
   const toggle = () => {
@@ -2901,7 +2893,8 @@ function voiceEl(m) {
   };
 
   function paint() {
-    const t = totalDur || aud.duration || 0;
+    const rawDur = (typeof aud.duration === 'number' && isFinite(aud.duration)) ? aud.duration : 0;
+    const t = totalDur || rawDur || 0;
     const cur = aud.currentTime || 0;
     const frac = t > 0 ? Math.min(1, Math.max(0, cur / t)) : 0;
     d.style.setProperty('--prog', (frac * 100) + '%');
@@ -2915,7 +2908,8 @@ function voiceEl(m) {
   function seekFromEvent(e) {
     const rect = waveEl.getBoundingClientRect();
     const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const t = totalDur || aud.duration || 0;
+    const rawDur = (typeof aud.duration === 'number' && isFinite(aud.duration)) ? aud.duration : 0;
+    const t = totalDur || rawDur || 0;
     if (t > 0) { aud.currentTime = x * t; paint(); }
   }
 
@@ -2934,15 +2928,29 @@ function voiceEl(m) {
   aud.onloadedmetadata = () => {
     d.classList.remove('voice-loading');
     setVoiceBtn('play', 'پخش');
-    if (!totalDur) timeEl.textContent = fmtDur(aud.duration);
+    const dur = (typeof aud.duration === 'number' && isFinite(aud.duration)) ? aud.duration : totalDur;
+    if (!totalDur && dur) timeEl.textContent = fmtDur(dur);
     luc();
   };
   aud.onerror = () => {
+    audioLoaded = false;
     d.classList.remove('voice-loading');
     d.classList.add('voice-error');
     setVoiceBtn('refresh-cw', 'تلاش دوباره');
     luc();
   };
+  /* Timeout for loading: if metadata doesn't load within 15s, show error */
+  const loadTimeout = setTimeout(() => {
+    if (d.classList.contains('voice-loading')) {
+      audioLoaded = false;
+      d.classList.remove('voice-loading');
+      d.classList.add('voice-error');
+      setVoiceBtn('refresh-cw', 'تلاش دوباره');
+      luc();
+    }
+  }, 15000);
+  aud.addEventListener('loadedmetadata', () => clearTimeout(loadTimeout), { once: true });
+  aud.addEventListener('error', () => clearTimeout(loadTimeout), { once: true });
   aud.onplay = () => { d.classList.add('voice-playing'); d.classList.remove('voice-error'); setVoiceBtn('pause', 'توقف'); paint(); luc(); showNowPlaying(aud, (m&&m.name)||'ویس', totalDur); };
   function showNowPlaying(aud, name, duration) {
     const bars = [document.getElementById('now-playing'), document.getElementById('now-playing-main')];
@@ -9741,3 +9749,88 @@ function vxInitPalette() {
     try { showAuth(); } catch (e2) { alert('VORTEX: خطا هنگام راه‌اندازی — ' + e.message); }
   }
 })();
+/* Minimal ID3v2 tag parser � reads title/artist/cover from an ArrayBuffer.
+   Returns { title, artist, cover (object URL or null) }. */
+function parseID3(buffer) {
+  const out = { title: '', artist: '', cover: null };
+  try {
+    const view = new DataView(buffer);
+    if (view.getUint8(0) !== 0x49 || view.getUint8(1) !== 0x44 || view.getUint8(2) !== 0x33) return out;
+    const major = view.getUint8(3);
+    if (major < 2 || major > 4) return out;
+    const flags = view.getUint8(5);
+    const size = (view.getUint8(6) << 21) | (view.getUint8(7) << 14) | (view.getUint8(8) << 7) | view.getUint8(9);
+    let pos = 10;
+    if (flags & 0x40) pos += 10;
+    const end = Math.min(pos + size, buffer.byteLength);
+    while (pos < end) {
+      let frameId, frameSize;
+      if (major === 2) {
+        frameId = String.fromCharCode(view.getUint8(pos), view.getUint8(pos + 1), view.getUint8(pos + 2));
+        frameSize = (view.getUint8(pos + 3) << 16) | (view.getUint8(pos + 4) << 8) | view.getUint8(pos + 5);
+        pos += 6;
+      } else {
+        frameId = String.fromCharCode(view.getUint8(pos), view.getUint8(pos + 1), view.getUint8(pos + 2), view.getUint8(pos + 3));
+        if (major === 4) {
+          frameSize = (view.getUint8(pos + 4) << 21) | (view.getUint8(pos + 5) << 14) | (view.getUint8(pos + 6) << 7) | view.getUint8(pos + 7);
+        } else {
+          frameSize = (view.getUint8(pos + 4) << 24) | (view.getUint8(pos + 5) << 16) | (view.getUint8(pos + 6) << 8) | view.getUint8(pos + 7);
+        }
+        pos += 10;
+      }
+      if (!frameId || frameId.charCodeAt(0) === 0) break;
+      if (pos + frameSize > end) break;
+      const frameData = new Uint8Array(buffer, pos, frameSize);
+      if (frameId === 'TIT2' || frameId === 'TT2') {
+        out.title = decodeID3Text(frameData, major);
+      } else if (frameId === 'TPE1' || frameId === 'TP1') {
+        out.artist = decodeID3Text(frameData, major);
+      } else if (frameId === 'APIC' || frameId === 'PIC') {
+        let i = 0;
+        const enc = frameData[i++];
+        let mime = '';
+        if (major === 2) {
+          mime = String.fromCharCode(frameData[i], frameData[i + 1], frameData[i + 2]);
+          i += 3;
+          i++;
+        } else {
+          while (i < frameData.length && frameData[i] !== 0) mime += String.fromCharCode(frameData[i++]);
+          i++;
+          i++;
+        }
+        if (enc === 0 || enc === 3) { while (i < frameData.length && frameData[i] !== 0) i++; i++; }
+        else { while (i < frameData.length - 1 && !(frameData[i] === 0 && frameData[i + 1] === 0)) i += 2; i += 2; }
+        const imgData = frameData.slice(i);
+        const blob = new Blob([imgData], { type: mime === 'JPG' ? 'image/jpeg' : mime === 'PNG' ? 'image/png' : (mime || 'image/jpeg') });
+        out.cover = URL.createObjectURL(blob);
+      }
+      pos += frameSize;
+    }
+  } catch (e) {}
+  return out;
+}
+
+function decodeID3Text(data, major) {
+  if (!data || data.length < 2) return '';
+  const enc = data[0];
+  const bytes = data.slice(1);
+  if (enc === 0) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i++) { if (bytes[i] === 0) break; s += String.fromCharCode(bytes[i]); }
+    return s.trim();
+  }
+  if (enc === 1 || enc === 2) {
+    const le = enc === 1;
+    let s = '';
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      const code = le ? (bytes[i] | (bytes[i + 1] << 8)) : ((bytes[i] << 8) | bytes[i + 1]);
+      if (code === 0) break;
+      s += String.fromCharCode(code);
+    }
+    return s.trim();
+  }
+  if (enc === 3) {
+    try { return new TextDecoder('utf-8').decode(bytes).replace(/\0/g, '').trim(); } catch (e) { return ''; }
+  }
+  return '';
+}

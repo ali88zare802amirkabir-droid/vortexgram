@@ -767,13 +767,20 @@ async function durableUpload(filePath, filename, contentType) {
   }
   return finalUrl;
 }
-async function r2Proxy(key, res) {
+async function r2Proxy(key, res, req) {
   if (!r2) return false;
   try {
-    const cmd = new GetObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key });
+    const rangeHeader = (req && req.headers && req.headers.range) || '';
+    const cmdOpts = { Bucket: process.env.R2_BUCKET, Key: key };
+    if (rangeHeader) cmdOpts.Range = rangeHeader;
+    const cmd = new GetObjectCommand(cmdOpts);
     const data = await r2.send(cmd);
     res.setHeader('Content-Type', data.ContentType || 'application/octet-stream');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (data.ContentRange) res.setHeader('Content-Range', data.ContentRange);
+    if (data.ContentLength != null) res.setHeader('Content-Length', data.ContentLength);
+    if (rangeHeader && data.ContentRange) res.status(206);
     data.Body.pipe(res);
     return true;
   } catch (e) {
@@ -939,6 +946,7 @@ const uploadsStatic = express.static(UPLOAD_DIR, {
   setHeaders: (res, p) => {
     const ext = p.slice(p.lastIndexOf('.'));
     if (MIME_BY_EXT[ext]) res.setHeader('Content-Type', MIME_BY_EXT[ext]);
+    res.setHeader('Accept-Ranges', 'bytes');
     // نام هر فایل آپلودشده یک شناسه‌ی تصادفی یکتا دارد و محتوای یک URL هرگز تغییر
     // نمی‌کند؛ پس پاسخ را بلندمدت در کشِ همین مرورگر (private) نگه می‌داریم تا
     // بازدید/دانلود دوباره، فایل را از شبکه دریافت نکند. private یعنی هرگز در
@@ -954,7 +962,7 @@ app.use('/uploads', async (req, res) => {
   if (db.uploadFlags && db.uploadFlags[filename] && !(_cu && _cu.isAdmin)) return res.status(403).json({ error: '?????????? ?????? ???? ?? ??? ????? ??' });
   const key = r2Key(filename);
   if (R2_ENABLED) {
-    const ok = await r2Proxy(key, res);
+    const ok = await r2Proxy(key, res, req);
     if (ok) return;
   }
   uploadsStatic(req, res, (err) => {
