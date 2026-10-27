@@ -838,6 +838,8 @@ function enterApp() {
   showImpersonateBanner();
   if (isMobile()) { $('chat-list-column').classList.remove('m-open'); $('conversation').classList.remove('chat-open'); }
   initRoomOpenMirror();
+  initKeyboardHide();
+  initModalHide();
   if (state.me.isAdmin) {
     api('/api/admin/users').then((r) => r.json()).then((d) => { if (d.users) { state.users = d.users; buildChatList(); } }).catch(() => {});
     api('/api/admin/requests').then((r) => r.json()).then((d) => { const list = (d.requests || []).filter((s) => s.status === 'pending'); state.signupCount = list.length; renderNav(); }).catch(() => {});
@@ -860,6 +862,32 @@ function initRoomOpenMirror() {
     document.body.classList.toggle('vx-room-open', open);
   };
   new MutationObserver(apply).observe(conv, { attributes: true, attributeFilter: ['class'] });
+  apply();
+}
+
+/* Hide bottom nav when on-screen keyboard opens (visualViewport resize) */
+function initKeyboardHide() {
+  if (!window.visualViewport) return;
+  const apply = () => {
+    const vv = window.visualViewport;
+    const keyboardOpen = vv.height < window.innerHeight * 0.75;
+    document.body.classList.toggle('keyboard-open', keyboardOpen);
+    if (keyboardOpen) document.body.classList.remove('has-bottom-nav');
+    else updateBottomNav();
+  };
+  window.visualViewport.addEventListener('resize', apply);
+  window.visualViewport.addEventListener('scroll', apply);
+  apply();
+}
+
+/* Hide bottom nav when modals/sheets open */
+function initModalHide() {
+  const apply = () => {
+    const hasModal = !!document.querySelector('.modal-ov, .u-pop, .sheet, .media-viewer, .img-viewer, .rec-ui');
+    if (hasModal) document.body.classList.remove('has-bottom-nav');
+    else updateBottomNav();
+  };
+  new MutationObserver(apply).observe(document.body, { childList: true, subtree: true });
   apply();
 }
 
@@ -1053,11 +1081,22 @@ const pmMenu = $('pencil-menu'); if (pmMenu) pmMenu.addEventListener('click', (e
   }
   if (e.target.closest('.pencil-menu-close') || e.target === $('pencil-menu')) $('pencil-menu').classList.add('hidden');
 });
+function updateBottomNav() {
+  const nav = state.nav || 'chats';
+  const isTopLevel = (nav === 'chats' && !state.room) || nav === 'contacts' || (nav === 'settings' && (state.settingsCat || 'main') === 'main');
+  /* Hide when a room is open, on sub-pages, profile edit, search, media viewer, modals */
+  const roomOpen = !!(state && state.room);
+  const hasModal = !!document.querySelector('.modal-ov, .u-pop, .sheet, .media-viewer, .img-viewer');
+  const show = isTopLevel && !roomOpen && !hasModal;
+  document.body.classList.toggle('has-bottom-nav', show);
+}
 function switchNav(id) {
   state.nav = id;
+  updateBottomNav();
   /* leaving settings always re-opens it at the category list, never a stale sub-page */
   if (id !== 'settings') state.settingsCat = 'main';
   if (id !== 'settings') state.settingsFocus = null;
+  updateBottomNav();
   if (isMobile()) $('nav-sidebar').classList.remove('m-open');
   if (id === 'chats') { setMode('chats'); if (isMobile()) { closeDrawers(); $('conversation').classList.remove('chat-open'); } }
   else { setMode('view'); renderView(id); closeDrawers(); if (isMobile()) { $('conversation').classList.add('chat-open'); } }
@@ -6808,6 +6847,7 @@ function appendAIMsg(role, text) { const box = $('ai-conv'); const el = document
 
 /* VIEW ROUTER */
 function renderView(id) {
+  updateBottomNav();
   setMode('view'); viewHost.classList.remove('hidden'); viewHost.innerHTML = ''; viewHost.dataset.view = id;
   const title = NAV.find((n) => n.id === id);
   let icon = (title && title.icon) || 'layout';
@@ -7113,6 +7153,7 @@ function renderSettingsMain(wrap) {
     c.onclick = () => {
       if (c.dataset.action === 'logout') { logout(); return; }
       state.settingsCat = c.dataset.cat;
+      updateBottomNav();
       renderView('settings');
     };
   });

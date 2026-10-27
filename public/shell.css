@@ -30,8 +30,9 @@
   --vx-spring: cubic-bezier(.34,1.56,.64,1);   /* slight overshoot for tabs */
   --vx-ease: var(--ease);
 
-  /* Bottom-nav pill geometry. */
-  --vx-pill-h: 60px;
+  /* Bottom-nav pill geometry. Single source of truth for bar height. */
+  --bottom-nav-h: 56px;
+  --vx-pill-h: var(--bottom-nav-h);
   --vx-pill-inset: 14px;
   --vx-rail-w: 76px;
   --vx-rail-w-open: 232px;
@@ -113,6 +114,9 @@
   inset-inline: var(--vx-pill-inset);
   bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   height: var(--vx-pill-h);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Hidden by default; shown only on top-level screens via body.has-bottom-nav */
+  display: none;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -161,13 +165,14 @@
   -webkit-tap-highlight-color: transparent;
   transition: color var(--vx-press) var(--vx-ease), transform var(--vx-press) var(--vx-spring);
 }
-.vx-pill-btn .icon { width: 21px; height: 21px; }
+.vx-pill-btn .icon { width: 22px; height: 22px; }
 .vx-pill-btn .lb {
-  font-size: 10px; font-weight: 600; line-height: 1;
+  font-size: 11px; font-weight: 600; line-height: 1;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.vx-pill-btn[aria-selected="true"] { color: var(--on-surface); }
+.vx-pill-btn[aria-selected="true"] { color: var(--on-surface); font-weight: 700; }
 .vx-pill-btn[aria-selected="true"] .icon { color: var(--primary); }
+.vx-pill-btn[aria-selected="true"] .lb { font-weight: 700; }
 /* Filled look for the active tab (icon + label tint), not just a colour swap. */
 .vx-pill-btn[aria-selected="true"] .icon { stroke-width: 2.4; }
 .vx-pill-btn:active { transform: scale(.94); }
@@ -287,12 +292,19 @@
 /* ── mobile chrome spacing ──
    The list needs bottom padding so the last row is never hidden behind the pill. */
 @media (max-width: 899px) {
-  #chat-list-column { padding-bottom: calc(var(--vx-pill-h) + env(safe-area-inset-bottom, 0px) + 22px); }
+  #chat-list-column { padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 22px); }
+body.has-bottom-nav .settings-sub,
+body.has-bottom-nav .view-body,
+body.has-bottom-nav #contacts-list {
+  padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 12px);
+}
   /* The composer must clear the pill when the list is behind it. */
   #conversation { padding-bottom: 0; }
   /* While a real conversation is open the floating bottom nav would cover the
      composer, so it steps out of the way (a Back control is always present). */
-  body.vx-room-open .vx-pill {
+  body.has-bottom-nav .vx-pill { display: flex; }
+body.keyboard-open .vx-pill { display: none !important; }
+body.vx-room-open .vx-pill {
     transform: translateY(calc(100% + 20px));
     opacity: 0;
     pointer-events: none;
