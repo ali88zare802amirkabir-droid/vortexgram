@@ -304,7 +304,23 @@
 
 /* ── mobile chrome spacing ──
    The list needs bottom padding so the last row is never hidden behind the pill. */
+/* Hide pill when scrolling down in view mode */
+body.vx-pill-hidden .vx-pill { transform: translateY(120%); opacity: 0; pointer-events: none; }
+body.vx-pill-hidden .vx-pill { transition: transform .3s var(--vx-ease), opacity .2s; }
+
 @media (max-width: 899px) {
+  :root {
+    --set-row-h: 60px;
+    --set-row-px: 16px;
+    --set-row-title: 15px;
+    --set-row-sub: 13px;
+    --set-sec-header: 14px;
+    --set-icon-size: 24px;
+    --set-icon-square: 36px;
+    --set-icon-gap: 14px;
+    --set-card-radius: 14px;
+    --set-profile-av: 72px;
+  }
   #nav-foot {
     padding: 8px;
     background: var(--surface-container-high);
@@ -705,7 +721,7 @@ button.set-cat.danger {
 .set-account .set-cat-txt small { font-size: var(--set-row-sub, 12px); }
 
 /* ── profile screen ── */
-.profile-view { display: flex; flex-direction: column; gap: 14px; outline: none; }
+.profile-view { display: flex; flex-direction: column; gap: 14px; outline: none; overflow-y: auto; overscroll-behavior-y: contain; max-height: 100vh; padding-bottom: 80px; -webkit-overflow-scrolling: touch; }
 .profile-top { display: flex; justify-content: flex-start; }
 .profile-view .profile-top .btn.sm.ghost { margin-bottom: 0; }
 .profile-view .profile-name {

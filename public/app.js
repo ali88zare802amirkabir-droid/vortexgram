@@ -1081,6 +1081,18 @@ const pmMenu = $('pencil-menu'); if (pmMenu) pmMenu.addEventListener('click', (e
   }
   if (e.target.closest('.pencil-menu-close') || e.target === $('pencil-menu')) $('pencil-menu').classList.add('hidden');
 });
+let pillScrollY = 0, pillHidden = false;
+function onPillScroll() {
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  const nav = state.nav || 'chats';
+  const inViewMode = nav === 'contacts' || nav === 'settings' || nav === 'profile';
+  if (inViewMode) {
+    if (y > pillScrollY + 60 && !pillHidden) { pillHidden = true; document.body.classList.add('vx-pill-hidden'); }
+    else if (y < pillScrollY - 30 && pillHidden) { pillHidden = false; document.body.classList.remove('vx-pill-hidden'); }
+    pillScrollY = y;
+  } else { pillHidden = false; document.body.classList.remove('vx-pill-hidden'); pillScrollY = y; }
+}
+window.addEventListener('scroll', onPillScroll, { passive: true });
 function updateBottomNav() {
   const nav = state.nav || 'chats';
   const isTopLevel = (nav === 'chats' && !state.room) || nav === 'contacts' || (nav === 'settings' && (state.settingsCat || 'main') === 'main');
