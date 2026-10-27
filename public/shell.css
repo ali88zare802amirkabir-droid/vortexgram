@@ -34,6 +34,19 @@
   --bottom-nav-h: 56px;
   --vx-pill-h: var(--bottom-nav-h);
   --vx-pill-inset: 14px;
+
+  /* Settings compact sizing (single source of truth). */
+  --set-row-h: 46px;
+  --set-row-px: 14px;
+  --set-row-title: 14px;
+  --set-row-sub: 12px;
+  --set-sec-header: 12px;
+  --set-icon-size: 20px;
+  --set-icon-square: 30px;
+  --set-icon-gap: 12px;
+  --set-sec-gap: 8px;
+  --set-card-radius: 12px;
+  --set-profile-av: 56px;
   --vx-rail-w: 76px;
   --vx-rail-w-open: 232px;
 }
@@ -609,6 +622,7 @@ body.vx-room-open .vx-pill {
 }
 @media (min-width: 1025px) {
   #app.app-view { grid-template-columns: auto 0 minmax(0, 1fr); }
+  .settings-main, .settings-sub { max-width: 520px; margin-inline: auto; }
 }
 
 /* ── view header breadcrumb (settings sub-page) ── */
@@ -617,29 +631,31 @@ body.vx-room-open .vx-pill {
 .view-head .crumb::after { content: "/"; margin-inline-start: 6px; opacity: .55; }
 
 /* ── settings: grouped category list ── */
-.settings-main { gap: 12px; }
+.settings-main { gap: var(--set-sec-gap); }
 .set-grp {
-  font-size: 12px; font-weight: 800; letter-spacing: .02em;
-  color: var(--outline); padding: 4px 6px 0;
+  font-size: var(--set-sec-header); font-weight: 800; letter-spacing: .02em;
+  color: var(--outline); padding: 2px 4px 0;
 }
-.set-rows { display: flex; flex-direction: column; gap: 8px; }
+.set-rows { display: flex; flex-direction: column; gap: 6px; }
 
 button.set-cat {
   width: 100%; box-sizing: border-box;
   text-align: start; font: inherit; color: inherit;
-  gap: 14px;
+  gap: var(--set-icon-gap);
+  min-height: var(--set-row-h);
+  padding: 8px var(--set-row-px);
 }
 .set-cat:focus-visible { outline: 2px solid rgba(var(--primary-rgb), .75); outline-offset: 2px; }
 .set-cat-ic {
   display: grid; place-items: center;
-  width: 38px; height: 38px; border-radius: 12px;
+  width: var(--set-icon-square); height: var(--set-icon-square); border-radius: 10px;
   flex: 0 0 auto; background: var(--primary-muted);
 }
-.set-cat-ic .icon { width: 19px; height: 19px; color: var(--primary); }
-.set-cat-txt { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.set-cat-txt b { font-size: 15px; font-weight: 700; line-height: 1.35; color: var(--on-surface); }
-.set-cat-txt small { font-size: 12px; font-weight: 500; line-height: 1.45; color: var(--outline); }
-.set-cat-go { flex: 0 0 auto; width: 18px; height: 18px; color: var(--outline); opacity: .7; }
+.set-cat-ic .icon { width: var(--set-icon-size); height: var(--set-icon-size); color: var(--primary); }
+.set-cat-txt { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.set-cat-txt b { font-size: var(--set-row-title); font-weight: 700; line-height: 1.3; color: var(--on-surface); }
+.set-cat-txt small { font-size: var(--set-row-sub); font-weight: 500; line-height: 1.35; color: var(--outline); }
+.set-cat-go { flex: 0 0 auto; width: 16px; height: 16px; color: var(--outline); opacity: .7; }
 .set-cat:hover .set-cat-go { opacity: 1; }
 
 button.set-cat.danger {
@@ -651,10 +667,10 @@ button.set-cat.danger {
 
 /* account summary card that opens your own profile */
 .set-account {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: var(--set-icon-gap, 12px);
   width: 100%; box-sizing: border-box;
   text-align: start; font: inherit; color: inherit;
-  padding: 16px; border-radius: var(--radius-xl);
+  padding: 10px 12px; border-radius: var(--set-card-radius, 12px);
   border: 1px solid var(--border);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--primary) 16%, transparent), transparent 62%),
@@ -665,7 +681,9 @@ button.set-cat.danger {
 .set-account:hover { border-color: var(--primary); }
 .set-account:focus-visible { outline: 2px solid rgba(var(--primary-rgb), .75); outline-offset: 2px; }
 .set-account-av { flex: 0 0 auto; display: block; line-height: 0; }
-.set-account-av .av { flex: 0 0 auto; }
+.set-account-av .av { flex: 0 0 auto; width: var(--set-profile-av, 56px); height: var(--set-profile-av, 56px); }
+.set-account .set-cat-txt b { font-size: var(--set-row-title, 14px); }
+.set-account .set-cat-txt small { font-size: var(--set-row-sub, 12px); }
 
 /* ── profile screen ── */
 .profile-view { display: flex; flex-direction: column; gap: 14px; outline: none; }

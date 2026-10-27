@@ -600,13 +600,13 @@ a{color:var(--primary);text-decoration:none;}
 .dp-pin:hover{color:var(--primary);}
 .dp-act{display:flex;align-items:center;gap:10px;padding:11px 16px;font-size:13px;color:var(--on-surface-variant);cursor:pointer;border-bottom:1px solid var(--border);}
 .dp-act:hover{background:var(--surface-container-high);color:var(--on-surface);}
-.switch{position:relative;width:46px;height:26px;border-radius:13px;background:var(--surface-container-highest);margin-inline-start:auto;transition:background .25s var(--ease);flex:none;cursor:pointer;}
+.switch{position:relative;width:38px;height:22px;border-radius:11px;background:var(--surface-container-highest);margin-inline-start:auto;transition:background .25s var(--ease);flex:none;cursor:pointer;}
 .switch input{opacity:0;width:0;height:0;}
-.slider{position:absolute;top:3px;inset-inline-start:3px;width:20px;height:20px;border-radius:50%;background:var(--outline);transition:transform .25s var(--ease),background .25s;box-shadow:0 2px 4px rgba(var(--black-rgb),.2);}
-.switch input:checked + .slider{transform:translateX(20px);background:var(--primary);}
+.slider{position:absolute;top:2px;inset-inline-start:2px;width:18px;height:18px;border-radius:50%;background:var(--outline);transition:transform .25s var(--ease),background .25s;box-shadow:0 2px 4px rgba(var(--black-rgb),.2);}
+.switch input:checked + .slider{transform:translateX(16px);background:var(--primary);}
 /* در حالت راست‌به‌چپ، دکمه از سمت راست شروع می‌کند؛ پس حرکت باید به‌سمت چپ
    باشد وگرنه وقتی روشن می‌شود از قاب بیرون می‌زند */
-[dir="rtl"] .switch input:checked + .slider{transform:translateX(-20px);}
+[dir="rtl"] .switch input:checked + .slider{transform:translateX(-16px);}
 .switch input:focus-visible + .slider{outline:2px solid var(--primary);outline-offset:2px;}
 
 /* ===================== ROOM INFO (گروه/کانال/افراد) ===================== */
@@ -771,14 +771,14 @@ a{color:var(--primary);text-decoration:none;}
 .ai-actions button:hover{color:var(--on-surface);border-color:var(--primary);}
 
 /* settings */
-.settings-sec{border:1px solid var(--border);border-radius:20px;padding:14px 16px;margin-bottom:16px;background:var(--surface-container-low);}
-.settings-sec h3{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;margin-bottom:10px;}
-.settings-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.settings-sec{border:1px solid var(--border);border-radius:var(--set-card-radius, 12px);padding:10px 12px;margin-bottom:var(--set-sec-gap, 8px);background:var(--surface-container-low);}
+.settings-sec h3{display:flex;align-items:center;gap:6px;font-size:var(--set-sec-header, 12px);font-weight:700;margin-bottom:6px;}
+.settings-row{display:flex;align-items:center;gap:var(--set-icon-gap, 12px);padding:6px 0;border-bottom:1px solid var(--border);min-height:var(--set-row-h, 46px);}
 .settings-row:last-child{border-bottom:none;}
-.settings-row>span{font-size:13.5px;font-weight:600;}
-.set-row-label{display:inline-flex;align-items:center;gap:8px;}
-.set-row-label .icon{width:16px;height:16px;color:var(--on-surface-variant);flex:none;}
-.settings-row b{margin-inline-start:auto;font-size:13px;color:var(--on-surface-variant);}
+.settings-row>span{font-size:var(--set-row-title, 14px);font-weight:600;}
+.set-row-label{display:inline-flex;align-items:center;gap:6px;}
+.set-row-label .icon{width:var(--set-icon-size, 20px);height:var(--set-icon-size, 20px);color:var(--on-surface-variant);flex:none;}
+.settings-row b{margin-inline-start:auto;font-size:var(--set-row-sub, 12px);color:var(--on-surface-variant);}
 .settings-row .inp{margin-inline-start:auto;}
 /* ====== cache-clear animation (پاک‌سازی حافظه پنهان) ====== */
 .cm-overlay{position:fixed;inset:0;z-index:400;display:grid;place-items:center;background:color-mix(in srgb,var(--surface) 74%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:cmFade .25s ease;}
@@ -835,9 +835,9 @@ a{color:var(--primary);text-decoration:none;}
 /* ── Section 1: account profile & inline fields ── */
 .acc-profile-sec{padding-top:8px;}
 .acc-avatar-wrap{text-align:center;margin:0 auto 12px;}
-.acc-avatar-btn{width:80px;height:80px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;border:2px solid var(--border);border-radius:var(--radius);background:var(--surface-container);cursor:pointer;transition:border-color .16s var(--ease);}
+.acc-avatar-btn{width:calc(var(--set-profile-av, 56px) + 8px);height:calc(var(--set-profile-av, 56px) + 8px);margin:0 auto 8px;display:flex;align-items:center;justify-content:center;border:2px solid var(--border);border-radius:var(--radius);background:var(--surface-container);cursor:pointer;transition:border-color .16s var(--ease);}
 .acc-avatar-btn:hover{border-color:var(--primary);}
-.acc-avatar-btn .av{width:64px;height:64px;}
+.acc-avatar-btn .av{width:var(--set-profile-av, 56px);height:var(--set-profile-av, 56px);}
 .acc-avatar-edit{position:absolute;bottom:4px;right:4px;width:24px;height:24px;border-radius:50%;background:var(--surface-container-high);border:2px solid var(--primary);display:flex;align-items:center;justify-content:center;}
 .acc-avatar-meta{text-align:left;margin-top:8px;font-size:12px;color:var(--on-surface-variant);white-space:nowrap;}
 .acc-inline{display:block;margin:12px 0;width:100%;}
@@ -1276,11 +1276,11 @@ body.drag-sel #messages,body.drag-sel{user-select:none;-webkit-user-select:none;
 .set-cat{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:20px;background:var(--surface-container-low);border:1px solid var(--border);cursor:pointer;transition:all .16s var(--ease);font-size:15px;font-weight:600;color:var(--on-surface);}
 .set-cat:hover{background:var(--surface-container);border-color:var(--primary);}
 .set-cat .icon{color:var(--primary);flex:none;}
-.settings-sub .settings-sec{margin-bottom:14px;}
+.settings-sub .settings-sec{margin-bottom:var(--set-sec-gap, 8px);}
 .settings-sub .view-head{margin-bottom:10px;}
 
 /* skin cards */
-.skins-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));}
+.skins-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));}
 .skin-card{position:relative;background:var(--surface-container);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:all .18s var(--ease);cursor:pointer;}
 .skin-card:hover{transform:translateY(-3px);border-color:var(--border-hover);}
 .skin-card.active{border-color:var(--primary);box-shadow:0 0 0 2px var(--accent-glow);}
