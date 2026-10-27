@@ -10247,3 +10247,186 @@ function openViewer(src, kind, origUrl) {
   const items = [{ url: src, src: origUrl || src, name: '?????' }];
   return openLightbox(items, 0, {});
 }
+/* openVideoTools — Telegram-style "Send media" sheet for a single video. */
+function openVideoTools(file, opts) {
+  opts = opts || {};
+  const pop = veOpenModal('ارسال ویدیو');
+  pop.classList.add('ve-wide');
+  const body = pop.querySelector('.ve-body');
+  const foot = pop.querySelector('.ve-foot');
+  const url = URL.createObjectURL(file);
+  const preview = document.createElement('video');
+  preview.muted = true; preview.playsInline = true; preview.controls = false;
+  preview.src = url;
+  preview.className = 've-preview';
+  preview.style.objectFit = 'contain';
+  body.appendChild(preview);
+
+  let meta = null, start = 0, end = 0, duration = 0, width = 0, height = 0;
+  preview.onloadedmetadata = () => {
+    meta = { dur: preview.duration };
+    duration = preview.duration;
+    width = preview.videoWidth;
+    height = preview.videoHeight;
+    start = 0; end = duration;
+    if (endEl) endEl.max = duration;
+    if (startEl) startEl.max = duration;
+    syncRanges();
+  };
+
+  const startEl = document.createElement('input');
+  startEl.type = 'range'; startEl.min = 0; startEl.step = 0.05; startEl.value = 0;
+  const endEl = document.createElement('input');
+  endEl.type = 'range'; endEl.min = 0; endEl.step = 0.05; endEl.value = 0;
+  const syncRanges = () => {
+    if (!meta) return;
+    const t = document.createElement('div');
+    t.className = 've-timebar-label';
+    t.textContent = fmtTime(start) + ' — ' + fmtTime(end) + '  (' + (end - start).toFixed(1) + 's)';
+    const old = body.querySelector('.ve-timebar-label');
+    if (old) old.replaceWith(t);
+  };
+  const onStart = () => { start = Number(startEl.value); if (start >= end - 0.1) { start = Math.max(0, end - 0.1); startEl.value = start; } syncRanges(); try { preview.currentTime = start; } catch (e) {} };
+  const onEnd = () => { end = Number(endEl.value); if (end <= start + 0.1) { end = Math.min(meta ? meta.dur : end, start + 0.1); endEl.value = end; } syncRanges(); };
+  startEl.addEventListener('input', onStart);
+  endEl.addEventListener('input', onEnd);
+
+  const trimRow = document.createElement('div');
+  trimRow.className = 've-trim-row';
+  trimRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+  trimRow.appendChild(startEl);
+  trimRow.appendChild(endEl);
+  body.appendChild(trimRow);
+
+  const muteRow = document.createElement('label');
+  muteRow.className = 'settings-row';
+  muteRow.innerHTML = '<span>بی‌صدا</span><input type="checkbox" id="vt-mute">';
+  body.appendChild(muteRow);
+  const muteCb = muteRow.querySelector('#vt-mute');
+
+  const asFileRow = document.createElement('label');
+  asFileRow.className = 'settings-row';
+  asFileRow.innerHTML = '<span>ارسال به‌صورت فایل (بدون فشرده‌سازی)</span><input type="checkbox" id="vt-asfile">';
+  body.appendChild(asFileRow);
+  const asFileCb = asFileRow.querySelector('#vt-asfile');
+
+  const qualRow = document.createElement('div');
+  qualRow.className = 'settings-row';
+  qualRow.innerHTML = '<span>کیفیت</span><select id="vt-quality" class="inp"><option value="original">اصلی</option><option value="high">بالا</option><option value="medium">متوسط</option><option value="low">پایین</option></select>';
+  body.appendChild(qualRow);
+  const qualSel = qualRow.querySelector('#vt-quality');
+
+  const captionRow = document.createElement('div');
+  captionRow.className = 'settings-row';
+  captionRow.innerHTML = '<span>کپشن</span><input type="text" id="vt-caption" class="inp" placeholder="کپشن (اختیاری)" style="max-width:200px">';
+  body.appendChild(captionRow);
+  const captionInp = captionRow.querySelector('#vt-caption');
+
+  const spoilerRow = document.createElement('label');
+  spoilerRow.className = 'settings-row';
+  spoilerRow.innerHTML = '<span>اسپویلر</span><input type="checkbox" id="vt-spoiler">';
+  body.appendChild(spoilerRow);
+  const spoilerCb = spoilerRow.querySelector('#vt-spoiler');
+
+  const silentRow = document.createElement('label');
+  silentRow.className = 'settings-row';
+  silentRow.innerHTML = '<span>ارسال بی‌صدا</span><input type="checkbox" id="vt-silent">';
+  body.appendChild(silentRow);
+  const silentCb = silentRow.querySelector('#vt-silent');
+
+  const sendBtn = document.createElement('button');
+  sendBtn.type = 'button'; sendBtn.className = 'btn primary';
+  sendBtn.innerHTML = ic('send') + ' ارسال';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button'; cancelBtn.className = 'btn ghost';
+  cancelBtn.textContent = 'انصراف';
+  foot.appendChild(sendBtn); foot.appendChild(cancelBtn);
+  applyIcons(pop);
+
+  let closed = false;
+  function close() { if (closed) return; closed = true; URL.revokeObjectURL(url); pop.remove(); }
+  cancelBtn.onclick = close;
+  pop.addEventListener('mousedown', (e) => { if (e.target === pop) close(); });
+
+  sendBtn.onclick = async () => {
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'در حال ارسال…';
+    try {
+      const asFile = asFileCb.checked;
+      const quality = qualSel.value;
+      const caption = captionInp.value.trim();
+      const spoiler = spoilerCb.checked;
+      const silent = silentCb.checked;
+      const muted = muteCb.checked;
+
+      let poster = null;
+      try {
+        const c = document.createElement('canvas');
+        c.width = width || 320; c.height = height || 240;
+        const ctx = c.getContext('2d');
+        preview.currentTime = start || 0;
+        await new Promise((res) => { preview.onseeked = () => res(); });
+        ctx.drawImage(preview, 0, 0, c.width, c.height);
+        poster = c.toDataURL('image/jpeg', 0.7);
+      } catch (e) {}
+
+      close();
+      if (asFile) {
+        sendFileMessage(file, file.name || 'video');
+      } else {
+        const fd = new FormData();
+        fd.append('file', file, file.name || 'video.mp4');
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload');
+        if (state.token) xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            /* progress via upload manager */
+          }
+        };
+        xhr.onload = () => {
+          try {
+            const d = JSON.parse(xhr.responseText);
+            if (!d.url) { toast(d.error || 'ارسال ویدیو نشد'); return; }
+            doSend({
+              kind: 'video',
+              src: d.url,
+              poster: poster,
+              duration: duration,
+              width: width,
+              height: height,
+              size: file.size,
+              caption: caption,
+              spoiler: spoiler,
+              silent: silent,
+              muted: muted,
+              quality: quality,
+              content: caption || ''
+            });
+          } catch (e) { toast('خطا در ارسال ویدیو'); }
+        };
+        xhr.onerror = () => toast('خطا در ارسال ویدیو');
+        xhr.send(fd);
+      }
+    } catch (e) {
+      toast('خطا: ' + (e && e.message));
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = ic('send') + ' ارسال';
+    }
+  };
+}
+
+function fmtTime(s) {
+  if (!isFinite(s)) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + String(sec).padStart(2, '0');
+}
+
+function veRange2(min, max, val, label) {
+  const wrap = document.createElement('div');
+  wrap.className = 'settings-row';
+  wrap.innerHTML = '<span>' + esc(label) + '</span><input type="range" min="' + min + '" max="' + max + '" step="0.01" value="' + val + '" style="flex:1">';
+  return wrap;
+}
+
