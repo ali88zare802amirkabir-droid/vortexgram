@@ -5091,6 +5091,11 @@ function _roomInfoOpen() { return !!document.querySelector('.ri-backdrop') || (v
 function refreshRoomInfo() { if (_roomInfoOpen() && _roomInfoRid) { if (document.querySelector('.ri-backdrop')) renderRoomInfoModal(_roomInfoRid, true); else renderRoomInfoPage(_roomInfoRid, true); } }
 function openRoomInfo(rid) {
   if (!rid) return;
+  if (rid.startsWith('group:') && window.VXGroupSettings && window.VXGroupSettings.openInfo) {
+    vxPush({ vx: 1, nav: state.nav || 'chats', room: state.room || null, view: null, overlay: 1 });
+    window.VXGroupSettings.openInfo(rid);
+    return;
+  }
   _roomInfoRid = rid;
   if (isMobile()) renderRoomInfoPage(rid); else renderRoomInfoModal(rid);
   vxPush({ vx: 1, nav: state.nav || 'chats', room: state.room || null, view: null, overlay: 1 });
@@ -8736,6 +8741,11 @@ function restoreNav(s) {
 /* فقط لایه‌های رویی (منوی کناری، اطلاعات چت، پروفایل/صفحه‌های داخلی) را می‌بندد.
    به چت دست نمی‌زند؛ بازگرداندن چت با restoreFromUrl انجام می‌شود. */
 function closeTopOverlay() {
+  /* پنل تنظیمات گروه/کانال (Telegram-style) */
+  if (window.VXGroupSettings && window.VXGroupSettings.isOpen && window.VXGroupSettings.isOpen()) {
+    window.VXGroupSettings.close();
+    return true;
+  }
   /* اول نمایش‌گر تصویر/ویدیو و ادیتورها (لایهٔ تمام‌صفحه) */
   if (vxCloseFullOverlay()) return true;
   const ri = document.querySelector('.ri-backdrop');

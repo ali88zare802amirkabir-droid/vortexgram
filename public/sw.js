@@ -1,5 +1,5 @@
-var CACHE = 'vortex-v222';
-var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=8', '/landing-theme.js?v=1', '/landing.js?v=8', '/privacy.html', '/terms.html', '/font-face.css?v=1', '/fonts/Vazirmatn-var.woff2', '/style.css?v=170', '/tokens.css?v=4', '/shell.css?v=13', '/app.js?v=204', '/sanitize.js?v=1', '/emoji-effect.js?v=6', '/icons.js?v=91', '/effects.js?v=78', '/design.js?v=3', '/landing-theme.js?v=1', '/pwa.js?v=4', '/map-picker.js?v=6'];
+var CACHE = 'vortex-v231';
+var SHELL = ['/', '/app', '/manifest.json', '/landing.css?v=8', '/landing-theme.js?v=1', '/landing.js?v=8', '/privacy.html', '/terms.html', '/font-face.css?v=1', '/fonts/Vazirmatn-var.woff2', '/style.css?v=170', '/tokens.css?v=4', '/shell.css?v=13', '/group-settings.css?v=2', '/app.js?v=206', '/group-settings.js?v=9', '/sanitize.js?v=1', '/emoji-effect.js?v=6', '/icons.js?v=91', '/effects.js?v=78', '/design.js?v=3', '/landing-theme.js?v=1', '/pwa.js?v=4', '/map-picker.js?v=6'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));

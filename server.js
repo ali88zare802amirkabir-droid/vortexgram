@@ -152,6 +152,12 @@ if (!Array.isArray(db.aiDigestSchedules)) db.aiDigestSchedules = [];
     if (g.category && !cleanCategory(g.category)) delete g.category;
     g.members = (g.members || []).map((m) => (typeof m === 'string' ? { username: m, role: m === g.owner ? 'owner' : 'member' } : m));
     if (!g.members.some((m) => m.username === g.owner)) g.members.push({ username: g.owner, role: 'owner' });
+    /* Telegram-style settings document is created lazily on first use, but
+       normalize an existing one here so a hand-edited db.json can never
+       leave the panel with an undefined field. */
+    if (g.settings && typeof g.settings === 'object' && typeof groupSettings === 'function') {
+      try { groupSettings(g); } catch (e) { /* groupSettings uses consts declared later; safe to skip on boot */ }
+    }
   }
 }
 
@@ -3378,6 +3384,12 @@ app.post('/api/groups/:id/join', auth, (req, res) => {
   const g = findGroup(req.params.id);
   if (!g) return res.status(404).json({ error: 'یافت نشد' });
   if (!memberOf(g, req.user.username)) {
+    const s = groupSettings(g);
+    if (s.joinByRequest && g.owner !== req.user.username) {
+      if (!s.joinRequests.some((r) => r.username === req.user.username)) s.joinRequests.push({ username: req.user.username, at: Date.now() });
+      saveDB();
+      return res.json({ ok: true, pending: true });
+    }
     g.members.push({ username: req.user.username, role: 'member' });
     saveDB();
     broadcastGroups();
@@ -3567,6 +3579,437 @@ app.patch('/api/groups/:id', auth, (req, res)=>{
   }
   saveDB(); broadcastGroups();
   res.json({ok:true, group:g});
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Group / Channel settings (Telegram-style info + settings panel)
+   ─ A single normalized `g.settings` document per group keeps the schema
+     stable while the UI grows. Every write goes through a whitelist so a
+     client can never inject arbitrary keys into the persisted DB.
+   ─ Permission checks live here, never in the UI alone.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const GS_PERM_KEYS = ['sendMessages', 'sendPhotos', 'sendVideos', 'sendStickers', 'sendMusic', 'sendFiles', 'sendVoice', 'sendVideoMessages', 'sendPolls', 'embedLinks', 'addMembers', 'pinMessages', 'changeInfo'];
+const GS_BOOL_KEYS = ['protectedContent', 'joinByRequest', 'signMessages', 'showAdminNames', 'silentSendDefault', 'historyVisible'];
+const GS_ADMIN_RIGHTS = ['changeInfo', 'deleteMessages', 'banUsers', 'inviteUsers', 'pinMessages', 'manageCalls', 'anonymous', 'addAdmins', 'postMessages', 'editMessages', 'deleteOthers'];
+const GS_REACTION_SET = ['👍', '❤️', '🔥', '🎉', '😁', '🤔', '👎', '😢', '💯', '🙏', '👏', '🥰', '🤩', '😍', '😮', '🤯', '😡', '🤝'];
+
+function groupSettings(g) {
+  if (!g.settings || typeof g.settings !== 'object') g.settings = {};
+  const s = g.settings;
+  if (!s.permissions || typeof s.permissions !== 'object') s.permissions = {};
+  for (const k of GS_PERM_KEYS) if (typeof s.permissions[k] !== 'boolean') s.permissions[k] = true;
+  for (const k of GS_BOOL_KEYS) if (typeof s[k] !== 'boolean') s[k] = k === 'showAdminNames';
+  if (typeof s.slowMode !== 'number' || s.slowMode < 0 || !isFinite(s.slowMode)) s.slowMode = 0;
+  if (s.discussionGroupId === undefined) s.discussionGroupId = null;
+  if (!s.reactions || typeof s.reactions !== 'object') s.reactions = { mode: 'all', set: GS_REACTION_SET.slice(0, 8) };
+  if (!['all', 'some', 'none'].includes(s.reactions.mode)) s.reactions.mode = 'all';
+  if (!Array.isArray(s.reactions.set)) s.reactions.set = GS_REACTION_SET.slice(0, 8);
+  if (!s.exceptions || typeof s.exceptions !== 'object') s.exceptions = {};
+  if (!s.admins || typeof s.admins !== 'object') s.admins = {};
+  if (!Array.isArray(s.inviteLinks)) s.inviteLinks = [];
+  if (!Array.isArray(s.joinRequests)) s.joinRequests = [];
+  if (!Array.isArray(s.banned)) s.banned = [];
+  if (!Array.isArray(s.log)) s.log = [];
+  return s;
+}
+function groupAdminOf(g, username) {
+  if (!username) return false;
+  if (g.owner === username) return true;
+  const m = memberOf(g, username);
+  return !!(m && m.role === 'admin');
+}
+function groupOwnerOrSiteAdmin(g, user) { return !!user && (user.isAdmin || g.owner === user.username); }
+function gsLogPush(g, actor, action, target, extra) {
+  const s = groupSettings(g);
+  s.log.unshift({ id: crypto.randomBytes(5).toString('hex'), actor: actor || null, action, target: target || null, extra: extra || null, at: Date.now() });
+  if (s.log.length > 300) s.log.length = 300;
+}
+function gsBase(req) { return (req.protocol || 'https') + '://' + (req.get('host') || 'vortexgram.onrender.com'); }
+function gsInviteLink(req, g) {
+  if (!g.inviteToken) { g.inviteToken = crypto.randomBytes(8).toString('hex'); saveDB(); }
+  return gsBase(req) + '/join/' + g.inviteToken;
+}
+function gsMemberPayload(g, viewer) {
+  const out = [];
+  for (const m of (g.members || [])) {
+    const u = db.users.find((x) => x.username === m.username);
+    const s = groupSettings(g);
+    const rights = (s.admins[m.username] && s.admins[m.username].rights) || {};
+    const ex = s.exceptions[m.username] || null;
+    out.push({
+      username: m.username,
+      displayName: (u && u.displayName) || m.username,
+      avatar: (u && canSee(viewer, u, 'profilePhoto')) ? (u.avatar || null) : null,
+      online: online.has(m.username),
+      role: m.role === 'owner' ? 'owner' : (m.role === 'admin' ? 'admin' : 'member'),
+      title: (s.admins[m.username] && s.admins[m.username].title) || null,
+      rights,
+      restriction: ex,
+    });
+  }
+  return out;
+}
+
+/* ── info + settings (read) ── */
+app.get('/api/groups/:id/settings', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!memberOf(g, req.user.username) && !req.user.isAdmin) return res.status(403).json({ error: 'عضو نیستی' });
+  const s = groupSettings(g);
+  const isStaff = groupAdminOf(g, req.user.username) || req.user.isAdmin;
+  res.json({
+    ok: true,
+    info: {
+      id: g.id, type: g.type || 'group', name: g.name,
+      username: g.username || null,
+      visibility: g.visibility || (g.username ? 'public' : 'private'),
+      description: g.description || '', avatar: g.avatar || null,
+      owner: g.owner, createdAt: g.createdAt || null,
+      memberCount: (g.members || []).length,
+      onlineCount: (g.members || []).filter((m) => online.has(m.username)).length,
+      myRole: g.owner === req.user.username ? 'owner' : ((memberOf(g, req.user.username) || {}).role || null),
+      inviteLink: gsInviteLink(req, g),
+      staffCount: (g.members || []).filter((m) => m.role === 'admin' || m.role === 'owner').length,
+    },
+    settings: {
+      permissions: s.permissions,
+      slowMode: s.slowMode,
+      protectedContent: s.protectedContent,
+      joinByRequest: s.joinByRequest,
+      signMessages: s.signMessages,
+      showAdminNames: s.showAdminNames,
+      silentSendDefault: s.silentSendDefault,
+      historyVisible: s.historyVisible,
+      discussionGroupId: s.discussionGroupId,
+      reactions: s.reactions,
+      exceptions: isStaff ? s.exceptions : {},
+    },
+    isStaff,
+  });
+});
+
+/* ── settings (write) ── */
+app.patch('/api/groups/:id/settings', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const s = groupSettings(g);
+  const body = req.body || {};
+  if (body.permissions && typeof body.permissions === 'object') {
+    for (const k of GS_PERM_KEYS) {
+      if (typeof body.permissions[k] === 'boolean') s.permissions[k] = body.permissions[k];
+    }
+  }
+  for (const k of GS_BOOL_KEYS) {
+    if (typeof body[k] === 'boolean') s[k] = body[k];
+  }
+  if (typeof body.slowMode === 'number') {
+    const allowed = [0, 10, 30, 60, 300, 900, 3600];
+    s.slowMode = allowed.includes(body.slowMode) ? body.slowMode : Math.max(0, Math.min(3600, Math.floor(body.slowMode)));
+  }
+  if (typeof body.discussionGroupId === 'string' || body.discussionGroupId === null) {
+    const did = body.discussionGroupId;
+    if (did) {
+      const dg = findGroup(did);
+      if (!dg) return res.status(404).json({ error: 'گروه گفتگو یافت نشد' });
+      if (dg.id === g.id) return res.status(400).json({ error: 'گروه گفتگو نمی‌تواند خودش باشد' });
+      s.discussionGroupId = did;
+    } else s.discussionGroupId = null;
+  }
+  if (body.reactions && typeof body.reactions === 'object') {
+    const mode = body.reactions.mode;
+    if (!['all', 'some', 'none'].includes(mode)) return res.status(400).json({ error: 'حالت واکنش نامعتبر' });
+    const set = Array.isArray(body.reactions.set) ? body.reactions.set.filter((e) => GS_REACTION_SET.includes(e)).slice(0, 20) : s.reactions.set;
+    s.reactions = { mode, set };
+  }
+  gsLogPush(g, req.user.username, 'change-info', null, 'تنظیمات');
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true, settings: { permissions: s.permissions, slowMode: s.slowMode, protectedContent: s.protectedContent, joinByRequest: s.joinByRequest, signMessages: s.signMessages, showAdminNames: s.showAdminNames, silentSendDefault: s.silentSendDefault, historyVisible: s.historyVisible, discussionGroupId: s.discussionGroupId, reactions: s.reactions } });
+});
+
+/* ── admins ── */
+app.get('/api/groups/:id/admins', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!memberOf(g, req.user.username) && !req.user.isAdmin) return res.status(403).json({ error: 'عضو نیستی' });
+  const s = groupSettings(g);
+  const out = (g.members || []).filter((m) => m.role === 'admin' || m.role === 'owner').map((m) => {
+    const u = db.users.find((x) => x.username === m.username);
+    const meta = s.admins[m.username] || {};
+    return {
+      username: m.username,
+      displayName: (u && u.displayName) || m.username,
+      avatar: (u && canSee(req.user.username, u, 'profilePhoto')) ? (u.avatar || null) : null,
+      role: m.role === 'owner' ? 'owner' : 'admin',
+      title: meta.title || null,
+      rights: meta.rights || {},
+      appointedBy: meta.appointedBy || (m.role === 'owner' ? null : g.owner),
+      appointedAt: meta.appointedAt || null,
+    };
+  });
+  res.json({ ok: true, admins: out });
+});
+
+app.post('/api/groups/:id/admins/:username', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const uname = String(req.params.username || '');
+  const m = memberOf(g, uname);
+  if (!m) return res.status(404).json({ error: 'عضو نیست' });
+  if (m.role === 'owner') return res.status(400).json({ error: 'مالک قابل ویرایش نیست' });
+  const s = groupSettings(g);
+  if (m.role !== 'admin') { m.role = 'admin'; }
+  const meta = s.admins[uname] || {};
+  const rights = {};
+  const bodyRights = (req.body && req.body.rights) || {};
+  for (const k of GS_ADMIN_RIGHTS) {
+    rights[k] = typeof bodyRights[k] === 'boolean' ? bodyRights[k] : (typeof meta.rights?.[k] === 'boolean' ? meta.rights[k] : false);
+  }
+  meta.rights = rights;
+  let title = (req.body && req.body.title);
+  if (typeof title === 'string') {
+    title = title.trim().slice(0, 16);
+    meta.title = title || null;
+  }
+  meta.appointedBy = meta.appointedBy || req.user.username;
+  meta.appointedAt = meta.appointedAt || Date.now();
+  s.admins[uname] = meta;
+  gsLogPush(g, req.user.username, 'promote', uname);
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+app.delete('/api/groups/:id/admins/:username', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const uname = String(req.params.username || '');
+  const m = memberOf(g, uname);
+  if (!m) return res.status(404).json({ error: 'عضو نیست' });
+  if (m.role === 'owner') return res.status(400).json({ error: 'مالک حذف نمی‌شود' });
+  m.role = 'member';
+  const s = groupSettings(g);
+  delete s.admins[uname];
+  gsLogPush(g, req.user.username, 'demote', uname);
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+/* ── per-user restrictions / exceptions ── */
+app.post('/api/groups/:id/restrict/:username', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const uname = String(req.params.username || '');
+  if (uname === g.owner) return res.status(400).json({ error: 'مالک قابل محدودسازی نیست' });
+  const m = memberOf(g, uname);
+  if (!m) return res.status(404).json({ error: 'عضو نیست' });
+  const s = groupSettings(g);
+  const body = req.body || {};
+  if (body.clear) { delete s.exceptions[uname]; }
+  else {
+    const perms = {};
+    const bp = body.permissions || {};
+    for (const k of GS_PERM_KEYS) if (typeof bp[k] === 'boolean') perms[k] = bp[k];
+    let until = body.until === undefined ? null : body.until;
+    if (until !== null) {
+      if (typeof until !== 'number' || !isFinite(until) || until <= Date.now()) until = null;
+    }
+    s.exceptions[uname] = { permissions: perms, until };
+  }
+  gsLogPush(g, req.user.username, body.clear ? 'unrestrict' : 'restrict', uname);
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true, exception: s.exceptions[uname] || null });
+});
+
+/* ── invite links ── */
+app.get('/api/groups/:id/invite-links', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!memberOf(g, req.user.username) && !req.user.isAdmin) return res.status(403).json({ error: 'عضو نیستی' });
+  const s = groupSettings(g);
+  const base = gsBase(req);
+  res.json({
+    ok: true,
+    primary: { link: gsInviteLink(req, g) },
+    links: s.inviteLinks.map((l) => ({ ...l, link: base + '/join/' + l.token, invite: base + '/invite/' + l.token })),
+  });
+});
+
+app.post('/api/groups/:id/invite-links', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const s = groupSettings(g);
+  const body = req.body || {};
+  const name = typeof body.name === 'string' ? body.name.trim().slice(0, 32) : '';
+  let expiresAt = null;
+  if (typeof body.expiresAt === 'number' && body.expiresAt > Date.now()) expiresAt = body.expiresAt;
+  let maxUses = 0;
+  if (typeof body.maxUses === 'number' && body.maxUses > 0) maxUses = Math.min(100000, Math.floor(body.maxUses));
+  const link = {
+    token: crypto.randomBytes(8).toString('hex'),
+    name: name || null,
+    expiresAt,
+    maxUses,
+    uses: 0,
+    approve: !!body.approve,
+    createdAt: Date.now(),
+    createdBy: req.user.username,
+    revoked: false,
+  };
+  s.inviteLinks.unshift(link);
+  gsLogPush(g, req.user.username, 'invite-create', null, link.token);
+  saveDB();
+  const base = gsBase(req);
+  res.json({ ok: true, link: { ...link, link: base + '/join/' + link.token, invite: base + '/invite/' + link.token } });
+});
+
+app.delete('/api/groups/:id/invite-links/:token', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const s = groupSettings(g);
+  const l = s.inviteLinks.find((x) => x.token === req.params.token);
+  if (!l) return res.status(404).json({ error: 'لینک یافت نشد' });
+  l.revoked = true; l.revokedAt = Date.now();
+  gsLogPush(g, req.user.username, 'invite-revoke', null, l.token);
+  saveDB();
+  res.json({ ok: true });
+});
+
+/* ── join requests ── */
+app.get('/api/groups/:id/join-requests', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const s = groupSettings(g);
+  const base = gsBase(req);
+  res.json({
+    ok: true,
+    requests: s.joinRequests.map((r) => {
+      const u = db.users.find((x) => x.username === r.username);
+      return { username: r.username, displayName: (u && u.displayName) || r.username, avatar: (u && u.avatar) || null, at: r.at, link: r.token ? base + '/join/' + r.token : null };
+    }),
+  });
+});
+
+app.post('/api/groups/:id/join-requests/:username', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const uname = String(req.params.username || '');
+  const action = (req.body || {}).action;
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'عملیات نامعتبر' });
+  const s = groupSettings(g);
+  s.joinRequests = s.joinRequests.filter((r) => r.username !== uname);
+  if (action === 'approve' && !memberOf(g, uname)) g.members.push({ username: uname, role: 'member' });
+  gsLogPush(g, req.user.username, action === 'approve' ? 'join-approve' : 'join-reject', uname);
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+/* ── banned (blocked) users ── */
+app.get('/api/groups/:id/banned', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const s = groupSettings(g);
+  res.json({ ok: true, banned: s.banned.map((b) => { const u = db.users.find((x) => x.username === b.username); return { ...b, displayName: (u && u.displayName) || b.username, avatar: (u && u.avatar) || null }; }) });
+});
+
+app.post('/api/groups/:id/banned/:username', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const uname = String(req.params.username || '');
+  const s = groupSettings(g);
+  if ((req.body || {}).unban) {
+    s.banned = s.banned.filter((b) => b.username !== uname);
+    gsLogPush(g, req.user.username, 'unban', uname);
+  } else {
+    if (!s.banned.some((b) => b.username === uname)) s.banned.push({ username: uname, at: Date.now(), by: req.user.username });
+    g.members = g.members.filter((m) => m.username !== uname || m.role === 'owner');
+    gsLogPush(g, req.user.username, 'ban', uname);
+  }
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+/* ── admin log ── */
+app.get('/api/groups/:id/log', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const s = groupSettings(g);
+  const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 60));
+  res.json({ ok: true, log: s.log.slice(0, limit) });
+});
+
+/* ── aggregated media for the info tabs ── */
+app.get('/api/groups/:id/media', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!memberOf(g, req.user.username) && !req.user.isAdmin) return res.status(403).json({ error: 'عضو نیستی' });
+  const all = (db.messages['group:' + g.id] || []);
+  const kind = String(req.query.kind || 'media');
+  const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 60));
+  const deletes = new Set(db.deletedMsgs || []);
+  const items = [];
+  for (let i = all.length - 1; i >= 0 && items.length < limit; i--) {
+    const m = all[i];
+    if (!m || deletes.has(m.id)) continue;
+    const k = String(m.kind || 'text');
+    let ok = false;
+    if (kind === 'media') ok = ['image', 'video', 'gif', 'sticker'].includes(k);
+    else if (kind === 'files') ok = ['file', 'document'].includes(k);
+    else if (kind === 'links') ok = !!m.link || /https?:\/\//i.test(String(m.content || ''));
+    else if (kind === 'music') ok = ['audio', 'music'].includes(k);
+    else if (kind === 'voice') ok = ['voice', 'video_message'].includes(k);
+    else if (kind === 'gif') ok = k === 'gif';
+    if (!ok) continue;
+    items.push({ id: m.id, kind: k, src: m.src || m.url || null, name: m.name || null, size: m.size || null, content: m.content || '', time: m.time || null, from: m.from || null, fromName: m.fromName || m.from || null, link: m.link || null });
+  }
+  res.json({ ok: true, kind, items });
+});
+
+/* ── ownership transfer ── */
+app.post('/api/groups/:id/transfer', auth, (req, res) => {
+  const g = findGroup(req.params.id);
+  if (!g) return res.status(404).json({ error: 'یافت نشد' });
+  if (!groupOwnerOrSiteAdmin(g, req.user)) return res.status(403).json({ error: 'فقط مالک' });
+  const uname = String((req.body || {}).username || '');
+  if (!memberOf(g, uname)) return res.status(404).json({ error: 'عضو نیست' });
+  if (uname === g.owner) return res.status(400).json({ error: 'همین کاربر مالک است' });
+  const s = groupSettings(g);
+  const oldOwner = g.owner;
+  g.owner = uname;
+  const om = memberOf(g, oldOwner); if (om) om.role = 'admin';
+  const nm = memberOf(g, uname); if (nm) nm.role = 'owner';
+  s.admins[oldOwner] = Object.assign({}, s.admins[oldOwner], { rights: s.admins[oldOwner]?.rights || {} });
+  delete s.admins[uname];
+  gsLogPush(g, req.user.username, 'transfer', uname);
+  saveDB();
+  broadcastGroups();
+  res.json({ ok: true });
+});
+
+/* ── username availability (for the Type page) ── */
+app.get('/api/groups/username-available', auth, (req, res) => {
+  const raw = String(req.query.u || '').trim().replace(/^@/, '').toLowerCase();
+  if (!raw) return res.json({ ok: true, available: false, reason: 'خالی' });
+  if (!/^[a-z0-9_]{3,20}$/.test(raw)) return res.json({ ok: true, available: false, reason: 'format' });
+  if (/^[0-9]/.test(raw)) return res.json({ ok: true, available: false, reason: 'format' });
+  const taken = db.groups.some((x) => x.username === raw) || db.users.some((x) => x.username === raw);
+  res.json({ ok: true, available: !taken, reason: taken ? 'taken' : null });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════
